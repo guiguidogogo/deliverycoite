@@ -27,6 +27,7 @@ type Dashboard = {
 
 type Order = {
   id: string;
+  orderNumber: number;
   status: "RECEIVED" | "PREPARING" | "OUT_FOR_DELIVERY" | "DELIVERED" | "FINISHED" | "CANCELED";
   fulfillmentType: "DELIVERY" | "PICKUP";
   total: number;
@@ -49,15 +50,20 @@ const labels: Record<Order["status"], string> = {
 };
 
 async function authApi<T>(path: string, token: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-      ...(init?.headers ?? {})
-    },
-    cache: "no-store"
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        ...(init?.headers ?? {})
+      },
+      cache: "no-store"
+    });
+  } catch {
+    throw new Error("Servidor indisponivel. Verifique se a API esta ligada.");
+  }
 
   if (!res.ok) {
     const payload = await res.json().catch(() => ({}));
@@ -147,7 +153,7 @@ export function AdminPanel() {
           return;
         }
 
-        toast.error("Sessao expirada. Faca login novamente.");
+        toast.error(message || "Nao foi possivel conectar ao servidor.");
       }
     }
 
@@ -272,7 +278,7 @@ export function AdminPanel() {
             <article key={order.id} className={`rounded-xl border p-3 ${order.viewedByStaff ? "border-black/10 dark:border-white/10" : "border-amber-500 bg-amber-50 dark:bg-amber-900/20"}`}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <p className="font-semibold">{order.customer.name}</p>
+                  <p className="font-semibold">#{String(order.orderNumber).padStart(5, "0")} - {order.customer.name}</p>
                   <p className="text-sm opacity-70">{order.customer.phone}</p>
                   <p className={`text-xs font-semibold ${order.fulfillmentType === "PICKUP" ? "text-violet-600" : "text-blue-600"}`}>
                     {order.fulfillmentType === "PICKUP" ? "Retirada na loja" : "Entrega"}
@@ -286,7 +292,9 @@ export function AdminPanel() {
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
-                {Object.entries(labels).map(([status, label]) => (
+                {Object.entries(labels)
+                  .filter(([status]) => order.fulfillmentType === "DELIVERY" || status !== "OUT_FOR_DELIVERY")
+                  .map(([status, label]) => (
                   <button
                     key={status}
                     className="rounded-lg border border-black/15 px-2 py-1 text-xs dark:border-white/20"
@@ -300,7 +308,11 @@ export function AdminPanel() {
                         method: "PATCH",
                         body: JSON.stringify({ status })
                       }).then((payload) => {
-                        setOrders((prev) => prev.map((item) => (item.id === order.id ? { ...item, status: payload.status } : item)));
+                        setOrders((prev) =>
+                          payload.status === "FINISHED" && filterStatus !== "FINISHED"
+                            ? prev.filter((item) => item.id !== order.id)
+                            : prev.map((item) => (item.id === order.id ? { ...item, status: payload.status } : item))
+                        );
                         if (payload.statusWhatsappUrl) {
                           window.open(payload.statusWhatsappUrl, "_blank");
                           toast.success("Mensagem de status pronta no WhatsApp");
@@ -400,6 +412,16 @@ export function AdminPanel() {
                     )}
                   </>
                 )}
+                <button
+                  className="rounded-lg bg-slate-700 px-2 py-1 text-xs text-white"
+                  onClick={() => {
+                    void authApi<{ message?: string }>(`/admin/orders/${order.id}/print`, token, { method: "POST" })
+                      .then((payload) => toast.success(payload.message ?? "Pedido enviado para impressao"))
+                      .catch((error) => toast.error(error instanceof Error ? error.message : "Falha ao imprimir"));
+                  }}
+                >
+                  Imprimir
+                </button>
                 {(order.status === "FINISHED" || order.status === "CANCELED") && (
                   <button
                     className="rounded-lg bg-red-600 px-2 py-1 text-xs text-white"

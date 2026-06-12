@@ -161,6 +161,7 @@ model Coupon {
 
 model Order {
   id             String        @id @default(cuid())
+  orderNumber    Int           @unique @default(autoincrement())
   customerId     String
   customer       Customer      @relation(fields: [customerId], references: [id])
   status         OrderStatus   @default(RECEIVED)
@@ -230,6 +231,17 @@ model Setting {
   menuiaApiKey        String?
   menuiaStoreId       String?
   menuiaEnabled       Boolean  @default(false)
+  whatsappOnReceived  Boolean  @default(true)
+  whatsappOnPreparing Boolean  @default(true)
+  whatsappOnOutForDelivery Boolean @default(true)
+  whatsappOnDelivered Boolean  @default(true)
+  whatsappOnFinished  Boolean  @default(true)
+  whatsappOnCanceled  Boolean  @default(true)
+  whatsappOnPaymentConfirmed Boolean @default(true)
+  printerEnabled      Boolean  @default(false)
+  printerName         String?
+  printerPaperWidth   Int      @default(58)
+  printerAutoPrint    Boolean  @default(false)
   updatedAt           DateTime @updatedAt
   createdAt           DateTime @default(now())
 }

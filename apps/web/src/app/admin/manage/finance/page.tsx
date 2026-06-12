@@ -34,6 +34,7 @@ type FinanceSummary = {
     amount: number;
     paymentMethod?: "CASH" | "PIX" | "CARD" | null;
     orderId?: string | null;
+    orderCode?: string | null;
     description?: string | null;
     createdAt: string;
   }>;
@@ -214,8 +215,8 @@ export default function FinanceManagePage() {
                   {entry.paymentMethod && (
                     <p className="text-xs opacity-70">Forma: {labelPayment(entry.paymentMethod)}</p>
                   )}
-                  {entry.orderId && (
-                    <p className="text-xs opacity-70">Pedido: #{entry.orderId.slice(-6).toUpperCase()}</p>
+                  {entry.orderCode && (
+                    <p className="text-xs opacity-70">Pedido: #{entry.orderCode}</p>
                   )}
                   <p className="text-xs opacity-70">{entry.description || "Sem descricao"}</p>
                   <p className="text-xs opacity-60">{new Date(entry.createdAt).toLocaleString("pt-BR")}</p>

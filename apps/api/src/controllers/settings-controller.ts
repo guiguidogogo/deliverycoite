@@ -17,7 +17,18 @@ const settingsSchema = z.object({
   darkModeEnabled: z.boolean().optional(),
   menuiaApiKey: z.string().optional(),
   menuiaStoreId: z.string().optional(),
-  menuiaEnabled: z.boolean().optional()
+  menuiaEnabled: z.boolean().optional(),
+  whatsappOnReceived: z.boolean().optional(),
+  whatsappOnPreparing: z.boolean().optional(),
+  whatsappOnOutForDelivery: z.boolean().optional(),
+  whatsappOnDelivered: z.boolean().optional(),
+  whatsappOnFinished: z.boolean().optional(),
+  whatsappOnCanceled: z.boolean().optional(),
+  whatsappOnPaymentConfirmed: z.boolean().optional(),
+  printerEnabled: z.boolean().optional(),
+  printerName: z.string().optional(),
+  printerPaperWidth: z.union([z.literal(58), z.literal(80)]).optional(),
+  printerAutoPrint: z.boolean().optional()
 });
 
 async function ensureDefaultSettings() {
@@ -52,6 +63,7 @@ export async function updateSettings(req: Request, res: Response) {
     where: { id: current.id },
     data: {
       ...body,
+      ...(body.printerName !== undefined ? { printerName: body.printerName.trim() || null } : {}),
       ...(body.deliveryFee !== undefined ? { deliveryFee: new Prisma.Decimal(body.deliveryFee) } : {})
     }
   });

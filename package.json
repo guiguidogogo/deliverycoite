@@ -10,6 +10,8 @@
     "dev": "concurrently \"npm run dev -w @delivery/api\" \"npm run dev -w @delivery/web\"",
     "build": "npm run build -w @delivery/api && npm run build -w @delivery/web",
     "start": "npm run start -w @delivery/api",
+    "render:build": "npm run render:build -w @delivery/api",
+    "render:migrate": "npm run render:migrate -w @delivery/api",
     "lint": "npm run lint -w @delivery/api && npm run lint -w @delivery/web"
   },
   "devDependencies": {

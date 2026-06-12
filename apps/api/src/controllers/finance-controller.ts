@@ -2,6 +2,7 @@ import { CashEntryType, PaymentMethod, Prisma } from "@prisma/client";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
+import { formatOrderCode } from "../utils/order-code.js";
 
 const money = (value: number) => new Prisma.Decimal(value.toFixed(2));
 
@@ -71,6 +72,17 @@ async function buildSummary() {
   const expectedCash =
     Number(currentSession.openingAmount) + cashOrders + manualIncome - withdrawals - expenses;
 
+  const orderIds = currentSession.entries
+    .map((entry) => entry.orderId)
+    .filter((orderId): orderId is string => Boolean(orderId));
+  const orders = orderIds.length
+    ? await prisma.order.findMany({
+        where: { id: { in: orderIds } },
+        select: { id: true, orderNumber: true }
+      })
+    : [];
+  const orderCodes = new Map(orders.map((order) => [order.id, formatOrderCode(order.orderNumber)]));
+
   return {
     session: currentSession,
     totals: {
@@ -88,6 +100,7 @@ async function buildSummary() {
       amount: Number(entry.amount),
       paymentMethod: entry.paymentMethod,
       orderId: entry.orderId,
+      orderCode: entry.orderId ? orderCodes.get(entry.orderId) ?? null : null,
       description: entry.description,
       createdAt: entry.createdAt
     }))

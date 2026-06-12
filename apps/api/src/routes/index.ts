@@ -39,6 +39,7 @@ import {
   markOrderViewed,
   deleteOrder,
   markOrderPaid,
+  printOrderById,
   sendToDelivery,
   updateOrderStatus
 } from "../controllers/orders-controller.js";
@@ -51,6 +52,7 @@ import {
   updateProduct
 } from "../controllers/products-controller.js";
 import { exportOrdersExcel, exportOrdersPdf } from "../controllers/reports-controller.js";
+import { listPrinters } from "../controllers/printer-controller.js";
 import { getSettings, updateSettings } from "../controllers/settings-controller.js";
 import { auth } from "../middlewares/auth.js";
 import { customerAuth } from "../middlewares/customer-auth.js";
@@ -85,6 +87,8 @@ router.patch("/admin/orders/:id/viewed", markOrderViewed);
 router.patch("/admin/orders/:id/paid", markOrderPaid);
 router.delete("/admin/orders/:id", deleteOrder);
 router.post("/admin/orders/:id/send-delivery", sendToDelivery);
+router.post("/admin/orders/:id/print", printOrderById);
+router.get("/admin/printers", listPrinters);
 router.get("/admin/dashboard", getDashboard);
 router.get("/admin/notifications/new-orders", listNewOrders);
 router.get("/admin/reports/orders.xlsx", exportOrdersExcel);

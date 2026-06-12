@@ -5,6 +5,23 @@ import { publishNewOrder } from "../services/realtime.js";
 import { printOrder } from "../services/thermal-printer.js";
 import { buildOrderStatusWhatsappMessage, buildWhatsappMessage, dispatchWhatsappMessage } from "../services/whatsapp.js";
 import { prisma } from "../utils/prisma.js";
+import { formatOrderCode } from "../utils/order-code.js";
+
+function shouldSendStatusWhatsapp(
+  settings: Awaited<ReturnType<typeof prisma.setting.findFirstOrThrow>>,
+  status: OrderStatus
+) {
+  const enabledByStatus: Record<OrderStatus, boolean> = {
+    RECEIVED: settings.whatsappOnReceived,
+    PREPARING: settings.whatsappOnPreparing,
+    OUT_FOR_DELIVERY: settings.whatsappOnOutForDelivery,
+    DELIVERED: settings.whatsappOnDelivered,
+    FINISHED: settings.whatsappOnFinished,
+    CANCELED: settings.whatsappOnCanceled
+  };
+
+  return settings.menuiaEnabled && enabledByStatus[status];
+}
 
 const checkoutSchema = z
   .object({
@@ -229,11 +246,14 @@ export async function createOrder(req: Request, res: Response) {
     data: { whatsappLink: sent.whatsappUrl ?? whatsapp.url }
   });
 
-  await printOrder({
-    id: updatedOrder.id,
-    customer: order.customer.name,
-    items: order.items.map((item) => ({ name: item.product.name, quantity: item.quantity }))
-  });
+  let printError: string | null = null;
+  if (settings.printerEnabled && settings.printerAutoPrint) {
+    try {
+      await printOrder(order, settings);
+    } catch (error) {
+      printError = error instanceof Error ? error.message : "Falha na impressao automatica";
+    }
+  }
 
   publishNewOrder({
     orderId: updatedOrder.id,
@@ -246,13 +266,17 @@ export async function createOrder(req: Request, res: Response) {
     whatsappUrl: sent.whatsappUrl ?? null,
     sentByServer: sent.channel === "MENUAI",
     sendError: sent.ok ? null : (sent.error ?? "Falha ao enviar via Menuia"),
+    printError,
     message: whatsapp.message,
     total: updatedOrder.total
   });
 }
 
 export async function listOrders(req: Request, res: Response) {
-  const status = req.query.status?.toString() as OrderStatus | undefined;
+  const requestedStatus = req.query.status?.toString();
+  const status = requestedStatus && Object.values(OrderStatus).includes(requestedStatus as OrderStatus)
+    ? requestedStatus as OrderStatus
+    : undefined;
   const customer = req.query.customer?.toString();
   const phone = req.query.phone?.toString();
   const dateFrom = req.query.dateFrom?.toString();
@@ -267,7 +291,7 @@ export async function listOrders(req: Request, res: Response) {
 
   const orders = await prisma.order.findMany({
     where: {
-      ...(status ? { status } : {}),
+      status: status ?? { not: "FINISHED" },
       createdAt: {
         gte: startDate,
         lte: endDate
@@ -301,6 +325,10 @@ export async function updateOrderStatus(req: Request, res: Response) {
     return res.status(400).json({ message: "Pedido finalizado nao pode ser alterado" });
   }
 
+  if (current.fulfillmentType === "PICKUP" && body.status === "OUT_FOR_DELIVERY") {
+    return res.status(400).json({ message: "Pedido para retirada nao pode sair para entrega" });
+  }
+
   const order = await prisma.order.update({
     where: { id: req.params.id },
     data: { status: body.status }
@@ -315,7 +343,7 @@ export async function updateOrderStatus(req: Request, res: Response) {
           type: "EXPENSE",
           amount: toDecimal(Number(current.total)),
           orderId: current.id,
-          description: `Estorno por cancelamento do pedido #${current.id.slice(-6).toUpperCase()}`
+          description: `Estorno por cancelamento do pedido #${formatOrderCode(current.orderNumber)}`
         }
       });
     }
@@ -323,7 +351,7 @@ export async function updateOrderStatus(req: Request, res: Response) {
 
   const settings = await prisma.setting.findFirst();
   const statusWhatsapp =
-    settings && settings.menuiaEnabled
+    settings && shouldSendStatusWhatsapp(settings, body.status)
       ? buildOrderStatusWhatsappMessage(current.customer.phone, current.customer.name, body.status, settings)
       : null;
 
@@ -378,7 +406,7 @@ export async function sendToDelivery(req: Request, res: Response) {
   const items = order.items.map(item => `${item.quantity}x ${item.product.name}`).join('\n');
   
   const message = `🛵 *NOVO PEDIDO PARA ENTREGA*\n\n` +
-    `📋 *Pedido:* #${order.id.slice(-6).toUpperCase()}\n` +
+    `📋 *Pedido:* #${formatOrderCode(order.orderNumber)}\n` +
     `👤 *Cliente:* ${order.customer.name}\n` +
     `📱 *Telefone:* ${order.customer.phone}\n\n` +
     `📦 *Itens:*\n${items}\n\n` +
@@ -433,7 +461,7 @@ export async function deleteOrder(req: Request, res: Response) {
           type: "EXPENSE",
           amount: toDecimal(Number(order.total)),
           orderId: order.id,
-          description: `Estorno por exclusao do pedido #${order.id.slice(-6).toUpperCase()}`
+          description: `Estorno por exclusao do pedido #${formatOrderCode(order.orderNumber)}`
         }
       });
     }
@@ -495,7 +523,7 @@ export async function markOrderPaid(req: Request, res: Response) {
         amount: toDecimal(Number(updated.total)),
         paymentMethod,
         orderId: updated.id,
-        description: `Pagamento pedido #${updated.id.slice(-6).toUpperCase()} via ${paymentDetail}`
+        description: `Pagamento pedido #${formatOrderCode(updated.orderNumber)} via ${paymentDetail}`
       }
     });
   }
@@ -506,7 +534,7 @@ export async function markOrderPaid(req: Request, res: Response) {
   });
   const settings = await prisma.setting.findFirst();
   const paymentWhatsapp =
-    settings && settings.menuiaEnabled && orderWithCustomer
+    settings && settings.menuiaEnabled && settings.whatsappOnPaymentConfirmed && orderWithCustomer
       ? buildOrderStatusWhatsappMessage(
           orderWithCustomer.customer.phone,
           orderWithCustomer.customer.name,
@@ -533,4 +561,30 @@ export async function markOrderPaid(req: Request, res: Response) {
     paymentWhatsappSent: paymentSendResult?.ok ?? false,
     paymentWhatsappError: paymentSendResult?.ok ? null : (paymentSendResult?.error ?? null)
   });
+}
+
+export async function printOrderById(req: Request, res: Response) {
+  const [settings, order] = await Promise.all([
+    prisma.setting.findFirstOrThrow(),
+    prisma.order.findUnique({
+      where: { id: req.params.id },
+      include: { customer: true, items: { include: { product: true } } }
+    })
+  ]);
+
+  if (!order) {
+    return res.status(404).json({ message: "Pedido nao encontrado" });
+  }
+
+  try {
+    await printOrder(order, settings);
+    return res.json({
+      ok: true,
+      message: `Pedido #${formatOrderCode(order.orderNumber)} enviado para impressao`
+    });
+  } catch (error) {
+    return res.status(400).json({
+      message: error instanceof Error ? error.message : "Falha ao imprimir pedido"
+    });
+  }
 }

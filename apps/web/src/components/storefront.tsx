@@ -118,8 +118,8 @@ export function Storefront() {
         );
         setSettings({ ...s, deliveryFee: Number((s as any).deliveryFee ?? 0) });
       })
-      .catch(() => {
-        toast.error("Nao foi possivel carregar o cardapio");
+      .catch((error) => {
+        toast.error(error instanceof Error ? error.message : "Nao foi possivel carregar o cardapio");
       });
 
     const stored = localStorage.getItem("delivery:favorites");

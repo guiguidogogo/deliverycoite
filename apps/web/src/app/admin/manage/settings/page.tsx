@@ -18,8 +18,20 @@ export default function SettingsManagePage() {
     pixQrCodeUrl: "",
     menuiaApiKey: "",
     menuiaStoreId: "",
-    menuiaEnabled: false
+    menuiaEnabled: false,
+    whatsappOnReceived: true,
+    whatsappOnPreparing: true,
+    whatsappOnOutForDelivery: true,
+    whatsappOnDelivered: true,
+    whatsappOnFinished: true,
+    whatsappOnCanceled: true,
+    whatsappOnPaymentConfirmed: true,
+    printerEnabled: false,
+    printerName: "",
+    printerPaperWidth: 58,
+    printerAutoPrint: false
   });
+  const [printers, setPrinters] = useState<string[]>([]);
 
   useEffect(() => {
     const token = localStorage.getItem("delivery:token");
@@ -40,9 +52,26 @@ export default function SettingsManagePage() {
           pixQrCodeUrl: data.pixQrCodeUrl ?? "",
           menuiaApiKey: data.menuiaApiKey ?? "",
           menuiaStoreId: data.menuiaStoreId ?? "",
-          menuiaEnabled: data.menuiaEnabled ?? false
+          menuiaEnabled: data.menuiaEnabled ?? false,
+          whatsappOnReceived: data.whatsappOnReceived ?? true,
+          whatsappOnPreparing: data.whatsappOnPreparing ?? true,
+          whatsappOnOutForDelivery: data.whatsappOnOutForDelivery ?? true,
+          whatsappOnDelivered: data.whatsappOnDelivered ?? true,
+          whatsappOnFinished: data.whatsappOnFinished ?? true,
+          whatsappOnCanceled: data.whatsappOnCanceled ?? true,
+          whatsappOnPaymentConfirmed: data.whatsappOnPaymentConfirmed ?? true,
+          printerEnabled: data.printerEnabled ?? false,
+          printerName: data.printerName ?? "",
+          printerPaperWidth: data.printerPaperWidth === 80 ? 80 : 58,
+          printerAutoPrint: data.printerAutoPrint ?? false
         });
       });
+
+    void fetch(`${API_URL}/admin/printers`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then((res) => res.ok ? res.json() : [])
+      .then((data) => setPrinters(Array.isArray(data) ? data : []));
   }, []);
 
   async function save() {
@@ -128,6 +157,77 @@ export default function SettingsManagePage() {
         <button className="mt-3 rounded-xl bg-ink px-4 py-2 text-sm text-white" onClick={() => void testMenuia()}>
           Testar conexao Menuia
         </button>
+      </section>
+
+      <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
+        <h2 className="mb-1 text-xl font-bold">Mensagens por etapa</h2>
+        <p className="mb-3 text-sm opacity-70">Desative as etapas que nao devem consumir envios do WhatsApp.</p>
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+          {[
+            ["whatsappOnReceived", "Recebido"],
+            ["whatsappOnPreparing", "Em preparo"],
+            ["whatsappOnOutForDelivery", "Saiu para entrega"],
+            ["whatsappOnDelivered", "Entregue"],
+            ["whatsappOnFinished", "Finalizado"],
+            ["whatsappOnCanceled", "Cancelado"],
+            ["whatsappOnPaymentConfirmed", "Pagamento confirmado"]
+          ].map(([field, label]) => (
+            <label key={field} className="flex items-center gap-2 rounded-xl border border-black/10 px-3 py-2 dark:border-white/20">
+              <input
+                type="checkbox"
+                checked={Boolean(form[field as keyof typeof form])}
+                onChange={(e) => setForm((value) => ({ ...value, [field]: e.target.checked }))}
+              />
+              Enviar ao marcar: {label}
+            </label>
+          ))}
+        </div>
+      </section>
+
+      <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
+        <h2 className="mb-3 text-xl font-bold">Impressora termica</h2>
+        <label className="mb-3 flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={form.printerEnabled}
+            onChange={(e) => setForm((value) => ({ ...value, printerEnabled: e.target.checked }))}
+          />
+          Ativar impressao de pedidos
+        </label>
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+          <label>
+            <span className="mb-1 block text-xs font-semibold">Impressora do Windows</span>
+            <input
+              list="installed-printers"
+              className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
+              value={form.printerName}
+              onChange={(e) => setForm((value) => ({ ...value, printerName: e.target.value }))}
+              placeholder="Nome exato da impressora"
+            />
+            <datalist id="installed-printers">
+              {printers.map((printer) => <option key={printer} value={printer} />)}
+            </datalist>
+          </label>
+          <label>
+            <span className="mb-1 block text-xs font-semibold">Largura do papel</span>
+            <select
+              className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
+              value={form.printerPaperWidth}
+              onChange={(e) => setForm((value) => ({ ...value, printerPaperWidth: Number(e.target.value) }))}
+            >
+              <option value={58}>58 mm</option>
+              <option value={80}>80 mm</option>
+            </select>
+          </label>
+        </div>
+        <label className="mt-3 flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={form.printerAutoPrint}
+            onChange={(e) => setForm((value) => ({ ...value, printerAutoPrint: e.target.checked }))}
+          />
+          Imprimir automaticamente quando chegar pedido
+        </label>
       </section>
 
       <button className="mt-4 w-full rounded-xl bg-ember px-4 py-3 text-white" onClick={() => void save()}>

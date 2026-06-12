@@ -37,8 +37,8 @@ async function bootstrap() {
   const server = http.createServer(app);
   attachRealtimeServer(server);
 
-  server.listen(env.port, () => {
-    console.log(`API online em http://localhost:${env.port}`);
+  server.listen(env.port, "0.0.0.0", () => {
+    console.log(`API online na porta ${env.port}`);
   });
 }
 

@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import ExcelJS from "exceljs";
 import PDFDocument from "pdfkit";
 import { prisma } from "../utils/prisma.js";
+import { formatOrderCode } from "../utils/order-code.js";
 
 function getDateRange(req: Request) {
   const dateFrom = req.query.dateFrom?.toString();
@@ -36,7 +37,7 @@ export async function exportOrdersExcel(req: Request, res: Response) {
 
   orders.forEach((order) => {
     sheet.addRow({
-      id: order.id,
+      id: formatOrderCode(order.orderNumber),
       customer: order.customer.name,
       phone: order.customer.phone,
       status: order.status,
@@ -66,7 +67,7 @@ export async function exportOrdersPdf(req: Request, res: Response) {
   orders.forEach((order) => {
     doc
       .fontSize(11)
-      .text(`${order.createdAt.toLocaleString("pt-BR")} | ${order.customer.name} | ${order.status} | R$ ${Number(order.total).toFixed(2)}`);
+      .text(`#${formatOrderCode(order.orderNumber)} | ${order.createdAt.toLocaleString("pt-BR")} | ${order.customer.name} | ${order.status} | R$ ${Number(order.total).toFixed(2)}`);
   });
 
   doc.end();

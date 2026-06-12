@@ -1,4 +1,5 @@
 import type { Order, OrderItem, Product, Customer, Setting } from "@prisma/client";
+import { formatOrderCode } from "../utils/order-code.js";
 
 type FullOrder = Order & {
   customer: Customer;
@@ -15,7 +16,7 @@ export function buildWhatsappMessage(order: FullOrder, setting: Setting) {
     .join("\n");
 
   const lines = [
-    "NOVO PEDIDO",
+    `NOVO PEDIDO #${formatOrderCode(order.orderNumber)}`,
     "",
     `Cliente: ${order.customer.name}`,
     `Telefone: ${order.customer.phone}`,

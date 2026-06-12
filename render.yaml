@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: delivery-api
+    runtime: node
+    plan: free
+    rootDir: .
+    buildCommand: npm ci && npm run render:build && npm run render:migrate
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        sync: false
+      - key: WHATSAPP_NUMBER
+        sync: false
+      - key: MENUIA_API_BASE_URL
+        value: https://chatbot.menuia.com
+      - key: MENUIA_LICENSE
+        value: hugocursos
+
+  - type: web
+    name: delivery-web
+    runtime: node
+    plan: free
+    rootDir: .
+    buildCommand: npm ci && npm run build -w @delivery/web
+    startCommand: npm run start -w @delivery/web
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: NEXT_PUBLIC_API_URL
+        sync: false

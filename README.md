@@ -127,6 +127,23 @@ npm run dev
 docker compose up --build
 ```
 
+## Deploy no Render
+
+Use o `render.yaml` da raiz para criar dois Web Services:
+
+- `delivery-api`: API Express
+- `delivery-web`: site Next.js
+
+Configure no Render:
+
+- `DATABASE_URL`: conexao MySQL externa, no formato `mysql://usuario:senha@host:3306/banco?sslaccept=strict`
+- `CORS_ORIGIN`: URL publica do site
+- `NEXT_PUBLIC_API_URL`: URL publica da API terminando em `/api`
+- `WHATSAPP_NUMBER`: numero da loja
+
+Nao use `localhost` na `DATABASE_URL`. No Render, `localhost` aponta para o
+proprio container, nao para o MySQL instalado no seu computador.
+
 ## Banco de dados
 
 Tabelas no schema Prisma:
