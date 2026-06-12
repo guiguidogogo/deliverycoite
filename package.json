@@ -1,0 +1,18 @@
+{
+  "name": "delivery-monorepo",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w @delivery/api\" \"npm run dev -w @delivery/web\"",
+    "build": "npm run build -w @delivery/api && npm run build -w @delivery/web",
+    "start": "npm run start -w @delivery/api",
+    "lint": "npm run lint -w @delivery/api && npm run lint -w @delivery/web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1"
+  }
+}

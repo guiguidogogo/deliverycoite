@@ -1,0 +1,245 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  ATTENDANT
+}
+
+enum OrderStatus {
+  RECEIVED
+  PREPARING
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FINISHED
+  CANCELED
+}
+
+enum PaymentMethod {
+  CASH
+  PIX
+  CARD
+}
+
+enum FulfillmentType {
+  DELIVERY
+  PICKUP
+}
+
+enum CashEntryType {
+  OPENING
+  WITHDRAWAL
+  EXPENSE
+  MANUAL_INCOME
+  CLOSING
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(ATTENDANT)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Category {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  slug        String    @unique
+  description String?
+  active      Boolean   @default(true)
+  products    Product[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Product {
+  id          String    @id @default(cuid())
+  name        String
+  description String
+  price       Decimal   @db.Decimal(10, 2)
+  promoPrice  Decimal?  @db.Decimal(10, 2)
+  imageUrl    String?
+  available   Boolean   @default(true)
+  active      Boolean   @default(true)
+  categoryId  String
+  category    Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  orderItems  OrderItem[]
+  favorites   Favorite[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([categoryId])
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String   @unique
+  address   String
+  number    String
+  district  String
+  complement String?
+  email     String?  @unique
+  passwordHash String?
+  addresses CustomerAddress[]
+  orders    Order[]
+  couponRedemptions CouponRedemption[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CashSession {
+  id            String      @id @default(cuid())
+  openedBy      String
+  openingAmount Decimal     @db.Decimal(10, 2)
+  openedAt      DateTime    @default(now())
+  closedAt      DateTime?
+  closingAmount Decimal?    @db.Decimal(10, 2)
+  notes         String?
+  entries       CashEntry[]
+
+  @@index([openedAt])
+  @@index([closedAt])
+}
+
+model CashEntry {
+  id          String        @id @default(cuid())
+  sessionId   String
+  session     CashSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  type        CashEntryType
+  amount      Decimal       @db.Decimal(10, 2)
+  paymentMethod PaymentMethod?
+  orderId     String?
+  description String?
+  createdAt   DateTime      @default(now())
+
+  @@index([sessionId, createdAt])
+}
+
+model CustomerAddress {
+  id          String   @id @default(cuid())
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  label       String   // Casa, Trabalho, etc
+  address     String
+  number      String
+  district    String
+  complement  String?
+  latitude    Float?
+  longitude   Float?
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([customerId])
+}
+
+model Coupon {
+  id           String    @id @default(cuid())
+  code         String    @unique
+  type         String
+  value        Decimal   @db.Decimal(10, 2)
+  minOrder     Decimal?  @db.Decimal(10, 2)
+  maxUses      Int?
+  maxUsesPerCustomer Int?
+  maxUsesPerDay Int?
+  active       Boolean   @default(true)
+  expiresAt    DateTime?
+  redemptions  CouponRedemption[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Order {
+  id             String        @id @default(cuid())
+  customerId     String
+  customer       Customer      @relation(fields: [customerId], references: [id])
+  status         OrderStatus   @default(RECEIVED)
+  paymentMethod  PaymentMethod
+  fulfillmentType FulfillmentType @default(DELIVERY)
+  changeFor      Decimal?      @db.Decimal(10, 2)
+  subtotal       Decimal       @db.Decimal(10, 2)
+  deliveryFee    Decimal       @db.Decimal(10, 2)
+  discount       Decimal       @db.Decimal(10, 2) @default(0)
+  total          Decimal       @db.Decimal(10, 2)
+  couponCode     String?
+  customerNotes  String?
+  paidAt         DateTime?
+  paidMethodDetail String?
+  notes          String?
+  whatsappLink   String?
+  viewedByStaff  Boolean       @default(false)
+  sentToDelivery Boolean       @default(false)
+  deliverySentAt DateTime?
+  items          OrderItem[]
+  couponRedemption CouponRedemption?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model CouponRedemption {
+  id          String   @id @default(cuid())
+  couponId    String
+  coupon      Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  orderId     String   @unique
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  usedAt      DateTime @default(now())
+
+  @@index([couponId, usedAt])
+  @@index([customerId, usedAt])
+}
+
+model OrderItem {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  quantity  Int
+  price     Decimal  @db.Decimal(10, 2)
+  total     Decimal  @db.Decimal(10, 2)
+}
+
+model Setting {
+  id                  String   @id @default(cuid())
+  companyName         String   @default("Lanchonete Delivery")
+  logoUrl             String?
+  whatsappNumber      String
+  deliveryPhoneNumber String?
+  deliveryFee         Decimal  @db.Decimal(10, 2) @default(5)
+  openTime            String   @default("18:00")
+  closeTime           String   @default("23:59")
+  autoMessage         String   @default("Obrigado pelo pedido!")
+  pixKey              String?
+  pixQrCodeUrl        String?
+  darkModeEnabled     Boolean  @default(true)
+  menuiaApiKey        String?
+  menuiaStoreId       String?
+  menuiaEnabled       Boolean  @default(false)
+  updatedAt           DateTime @updatedAt
+  createdAt           DateTime @default(now())
+}
+
+model Favorite {
+  id         String   @id @default(cuid())
+  phone      String
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id])
+  createdAt  DateTime @default(now())
+
+  @@unique([phone, productId])
+}

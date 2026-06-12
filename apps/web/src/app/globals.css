@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-base text-ink font-body;
+  background-image: theme("backgroundImage.mesh");
+  min-height: 100vh;
+}
+
+.dark body {
+  @apply bg-night text-slate-100;
+  background-image: radial-gradient(circle at 20% 20%, rgba(231,111,81,0.2), transparent 35%), linear-gradient(180deg, #0f172a 0%, #111827 100%);
+}
+
+.card-surface {
+  @apply rounded-2xl border border-black/10 bg-white/85 shadow-lg backdrop-blur;
+}
+
+.dark .card-surface {
+  @apply border-white/10 bg-slate-900/70;
+}
+
+.reveal {
+  animation: fade-in-up 0.5s ease both;
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

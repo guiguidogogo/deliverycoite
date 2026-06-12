@@ -1,0 +1,270 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { MapPin } from "lucide-react";
+import { api } from "../../lib/api";
+
+type Tab = "login" | "register";
+
+export default function CustomerAuthPage() {
+  const router = useRouter();
+  const [tab, setTab] = useState<Tab>("login");
+  const [loading, setLoading] = useState(false);
+
+  // Login form
+  const [loginPhone, setLoginPhone] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+
+  // Register form
+  const [registerName, setRegisterName] = useState("");
+  const [registerPhone, setRegisterPhone] = useState("");
+  const [registerEmail, setRegisterEmail] = useState("");
+  const [registerPassword, setRegisterPassword] = useState("");
+  const [registerAddress, setRegisterAddress] = useState("");
+  const [registerNumber, setRegisterNumber] = useState("");
+  const [registerDistrict, setRegisterDistrict] = useState("");
+  const [registerComplement, setRegisterComplement] = useState("");
+  const [registerLat, setRegisterLat] = useState<number | undefined>();
+  const [registerLng, setRegisterLng] = useState<number | undefined>();
+
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      const response = await api<{ token: string; customer: any }>("/customer/login", {
+        method: "POST",
+        body: JSON.stringify({
+          phone: loginPhone,
+          password: loginPassword
+        })
+      });
+
+      localStorage.setItem("delivery:customer-token", response.token);
+      localStorage.setItem("delivery:customer", JSON.stringify(response.customer));
+      toast.success(`Bem-vindo, ${response.customer.name}!`);
+      router.push("/");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Erro ao fazer login");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleRegister(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      const response = await api<{ token: string; customer: any }>("/customer/register", {
+        method: "POST",
+        body: JSON.stringify({
+          name: registerName,
+          phone: registerPhone,
+          email: registerEmail || undefined,
+          password: registerPassword,
+          address: registerAddress || undefined,
+          number: registerNumber || undefined,
+          district: registerDistrict || undefined,
+          complement: registerComplement || undefined,
+          latitude: registerLat,
+          longitude: registerLng
+        })
+      });
+
+      localStorage.setItem("delivery:customer-token", response.token);
+      localStorage.setItem("delivery:customer", JSON.stringify(response.customer));
+      toast.success("Cadastro realizado com sucesso!");
+      router.push("/");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Erro ao criar conta");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function getLocation() {
+    if (!navigator.geolocation) {
+      toast.error("Geolocalização não suportada");
+      return;
+    }
+
+    toast.info("Obtendo sua localização...");
+    
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        setRegisterLat(position.coords.latitude);
+        setRegisterLng(position.coords.longitude);
+
+        // Tentar preencher endereço via geocoding reverso
+        try {
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}`
+          );
+          const data = await response.json();
+          
+          if (data.address) {
+            setRegisterAddress(data.address.road || "");
+            setRegisterNumber(data.address.house_number || "");
+            setRegisterDistrict(data.address.suburb || data.address.neighbourhood || "");
+          }
+          
+          toast.success("Localização obtida!");
+        } catch {
+          toast.success("Localização obtida! Preencha o endereço manualmente.");
+        }
+      },
+      () => {
+        toast.error("Erro ao obter localização");
+      }
+    );
+  }
+
+  return (
+    <main className="flex min-h-screen items-center justify-center p-4">
+      <div className="w-full max-w-md rounded-2xl border border-black/10 bg-white/85 p-5 dark:border-white/10 dark:bg-slate-900/70">
+        <h1 className="font-display text-4xl">Minha Conta</h1>
+        <p className="text-sm opacity-70">Faça login ou crie sua conta</p>
+
+        <div className="mt-4 flex gap-2">
+          <button
+            className={`flex-1 rounded-lg px-4 py-2 text-sm font-semibold ${
+              tab === "login"
+                ? "bg-ink text-white dark:bg-ember"
+                : "border border-black/10 dark:border-white/20"
+            }`}
+            onClick={() => setTab("login")}
+          >
+            Login
+          </button>
+          <button
+            className={`flex-1 rounded-lg px-4 py-2 text-sm font-semibold ${
+              tab === "register"
+                ? "bg-ink text-white dark:bg-ember"
+                : "border border-black/10 dark:border-white/20"
+            }`}
+            onClick={() => setTab("register")}
+          >
+            Cadastrar
+          </button>
+        </div>
+
+        {tab === "login" ? (
+          <form onSubmit={handleLogin} className="mt-4 space-y-3">
+            <input
+              className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
+              placeholder="Telefone"
+              value={loginPhone}
+              onChange={(e) => setLoginPhone(e.target.value)}
+              required
+            />
+            <input
+              className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
+              placeholder="Senha"
+              type="password"
+              value={loginPassword}
+              onChange={(e) => setLoginPassword(e.target.value)}
+              required
+            />
+            <button
+              className="w-full rounded-xl bg-ink px-4 py-2 font-semibold text-white dark:bg-ember disabled:opacity-50"
+              type="submit"
+              disabled={loading}
+            >
+              {loading ? "Entrando..." : "Entrar"}
+            </button>
+            <a href="/" className="block text-center text-sm text-ink dark:text-ember">
+              Voltar para o cardápio
+            </a>
+          </form>
+        ) : (
+          <form onSubmit={handleRegister} className="mt-4 space-y-3">
+            <input
+              className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
+              placeholder="Nome completo *"
+              value={registerName}
+              onChange={(e) => setRegisterName(e.target.value)}
+              required
+            />
+            <input
+              className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
+              placeholder="Telefone *"
+              value={registerPhone}
+              onChange={(e) => setRegisterPhone(e.target.value)}
+              required
+            />
+            <input
+              className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
+              placeholder="Email (opcional)"
+              type="email"
+              value={registerEmail}
+              onChange={(e) => setRegisterEmail(e.target.value)}
+            />
+            <input
+              className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
+              placeholder="Senha *"
+              type="password"
+              value={registerPassword}
+              onChange={(e) => setRegisterPassword(e.target.value)}
+              required
+              minLength={6}
+            />
+
+            <div className="rounded-xl border border-dashed border-ink/30 p-3 dark:border-ember/30">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold">Endereço (opcional)</p>
+                <button
+                  type="button"
+                  className="flex items-center gap-1 rounded-lg bg-emerald-500 px-2 py-1 text-xs text-white"
+                  onClick={getLocation}
+                >
+                  <MapPin size={14} />
+                  Usar minha localização
+                </button>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <input
+                  className="col-span-2 rounded-xl border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/20"
+                  placeholder="Endereço"
+                  value={registerAddress}
+                  onChange={(e) => setRegisterAddress(e.target.value)}
+                />
+                <input
+                  className="rounded-xl border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/20"
+                  placeholder="Número"
+                  value={registerNumber}
+                  onChange={(e) => setRegisterNumber(e.target.value)}
+                />
+                <input
+                  className="rounded-xl border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/20"
+                  placeholder="Bairro"
+                  value={registerDistrict}
+                  onChange={(e) => setRegisterDistrict(e.target.value)}
+                />
+                <input
+                  className="col-span-2 rounded-xl border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/20"
+                  placeholder="Complemento"
+                  value={registerComplement}
+                  onChange={(e) => setRegisterComplement(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <button
+              className="w-full rounded-xl bg-ink px-4 py-2 font-semibold text-white dark:bg-ember disabled:opacity-50"
+              type="submit"
+              disabled={loading}
+            >
+              {loading ? "Criando conta..." : "Criar conta"}
+            </button>
+            <a href="/" className="block text-center text-sm text-ink dark:text-ember">
+              Voltar para o cardápio
+            </a>
+          </form>
+        )}
+      </div>
+    </main>
+  );
+}

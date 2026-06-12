@@ -1,0 +1,536 @@
+import type { Request, Response } from "express";
+import { FulfillmentType, OrderStatus, PaymentMethod, Prisma } from "@prisma/client";
+import { z } from "zod";
+import { publishNewOrder } from "../services/realtime.js";
+import { printOrder } from "../services/thermal-printer.js";
+import { buildOrderStatusWhatsappMessage, buildWhatsappMessage, dispatchWhatsappMessage } from "../services/whatsapp.js";
+import { prisma } from "../utils/prisma.js";
+
+const checkoutSchema = z
+  .object({
+    customer: z.object({
+      name: z.string().min(2),
+      phone: z.string().min(8),
+      address: z.string(),
+      number: z.string(),
+      district: z.string(),
+      complement: z.string().optional()
+    }),
+    fulfillmentType: z.nativeEnum(FulfillmentType).default(FulfillmentType.DELIVERY),
+    paymentMethod: z.nativeEnum(PaymentMethod),
+    changeFor: z.coerce.number().optional(),
+    couponCode: z.string().optional(),
+    notes: z.string().optional(),
+    items: z
+      .array(
+        z.object({
+          productId: z.string(),
+          quantity: z.coerce.number().int().positive()
+        })
+      )
+      .min(1)
+  })
+  .superRefine((body, ctx) => {
+    if (body.fulfillmentType !== FulfillmentType.DELIVERY) return;
+
+    if (body.customer.address.trim().length < 3) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["customer", "address"], message: "Endereco obrigatorio" });
+    }
+    if (!body.customer.number.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["customer", "number"], message: "Numero obrigatorio" });
+    }
+    if (body.customer.district.trim().length < 2) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["customer", "district"], message: "Bairro obrigatorio" });
+    }
+  });
+
+function toDecimal(value: number) {
+  return new Prisma.Decimal(value.toFixed(2));
+}
+
+function parseTimeToMinutes(value: string) {
+  if (!value) return 0;
+  const [h, m] = value.split(":").map((part) => Number(part));
+  return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
+}
+
+function isStoreOpen(openTime: string | null | undefined, closeTime: string | null | undefined, now = new Date()) {
+  const safeOpen = openTime || "00:00";
+  const safeClose = closeTime || "23:59";
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const openMinutes = parseTimeToMinutes(safeOpen);
+  const closeMinutes = parseTimeToMinutes(safeClose);
+
+  if (openMinutes <= closeMinutes) {
+    return nowMinutes >= openMinutes && nowMinutes <= closeMinutes;
+  }
+
+  return nowMinutes >= openMinutes || nowMinutes <= closeMinutes;
+}
+
+export async function createOrder(req: Request, res: Response) {
+  const body = checkoutSchema.parse(req.body);
+
+  const settings = await prisma.setting.findFirstOrThrow();
+
+  if (!isStoreOpen(settings.openTime ?? "00:00", settings.closeTime ?? "23:59")) {
+    return res.status(400).json({
+      message: `Loja fechada no momento. Funcionamento: ${settings.openTime} ate ${settings.closeTime}`
+    });
+  }
+
+  const products = await prisma.product.findMany({
+    where: { id: { in: body.items.map((item) => item.productId) }, active: true, available: true }
+  });
+
+  if (products.length !== body.items.length) {
+    return res.status(400).json({ message: "Um ou mais produtos estao indisponiveis" });
+  }
+
+  const subtotalNumber = body.items.reduce((acc, item) => {
+    const product = products.find((p) => p.id === item.productId)!;
+    const unit = Number(product.promoPrice ?? product.price);
+    return acc + unit * item.quantity;
+  }, 0);
+
+  const pickup = body.fulfillmentType === FulfillmentType.PICKUP;
+  const customer = await prisma.customer.upsert({
+    where: { phone: body.customer.phone },
+    create: {
+      ...body.customer,
+      address: pickup ? "Retirada na loja" : body.customer.address,
+      number: pickup ? "S/N" : body.customer.number,
+      district: pickup ? "Retirada" : body.customer.district
+    },
+    update: pickup
+      ? {
+          name: body.customer.name
+        }
+      : body.customer
+  });
+
+  let discountNumber = 0;
+  let normalizedCouponCode: string | undefined;
+  let couponIdUsed: string | null = null;
+  if (body.couponCode) {
+    const code = body.couponCode.trim().toUpperCase();
+    normalizedCouponCode = code;
+    const coupon = await prisma.coupon.findUnique({ where: { code } });
+
+    if (!coupon || !coupon.active) {
+      return res.status(400).json({ message: "Cupom invalido" });
+    }
+
+    if (coupon.expiresAt && coupon.expiresAt < new Date()) {
+      return res.status(400).json({ message: "Cupom expirado" });
+    }
+
+    if (coupon.minOrder && subtotalNumber < Number(coupon.minOrder)) {
+      return res.status(400).json({
+        message: `Pedido minimo para este cupom: R$ ${Number(coupon.minOrder).toFixed(2)}`
+      });
+    }
+
+    const totalUses = await prisma.couponRedemption.count({ where: { couponId: coupon.id } });
+    if (coupon.maxUses && totalUses >= coupon.maxUses) {
+      return res.status(400).json({ message: "Cupom atingiu o limite total de uso" });
+    }
+
+    const customerUses = await prisma.couponRedemption.count({
+      where: { couponId: coupon.id, customerId: customer.id }
+    });
+    if (coupon.maxUsesPerCustomer && customerUses >= coupon.maxUsesPerCustomer) {
+      return res.status(400).json({ message: "Voce atingiu o limite deste cupom" });
+    }
+
+    const startDay = new Date();
+    startDay.setHours(0, 0, 0, 0);
+    const endDay = new Date();
+    endDay.setHours(23, 59, 59, 999);
+
+    const usesToday = await prisma.couponRedemption.count({
+      where: {
+        couponId: coupon.id,
+        customerId: customer.id,
+        usedAt: { gte: startDay, lte: endDay }
+      }
+    });
+    if (coupon.maxUsesPerDay && usesToday >= coupon.maxUsesPerDay) {
+      return res.status(400).json({ message: "Limite diario deste cupom atingido" });
+    }
+
+    discountNumber =
+      coupon.type === "PERCENT"
+        ? subtotalNumber * (Number(coupon.value) / 100)
+        : Number(coupon.value);
+    couponIdUsed = coupon.id;
+  }
+
+  const subtotal = toDecimal(subtotalNumber);
+  const deliveryFee =
+    body.fulfillmentType === FulfillmentType.PICKUP
+      ? toDecimal(0)
+      : settings.deliveryFee;
+  const discount = toDecimal(Math.min(discountNumber, subtotalNumber));
+  const totalNumber = subtotalNumber + Number(deliveryFee) - Number(discount);
+  const total = toDecimal(totalNumber);
+
+  const order = await prisma.order.create({
+    data: {
+      customerId: customer.id,
+      paymentMethod: body.paymentMethod,
+      fulfillmentType: body.fulfillmentType,
+      changeFor: body.changeFor ? toDecimal(body.changeFor) : null,
+      subtotal,
+      deliveryFee,
+      discount,
+      total,
+      couponCode: normalizedCouponCode,
+      customerNotes: body.notes,
+      items: {
+        create: body.items.map((item) => {
+          const product = products.find((p) => p.id === item.productId)!;
+          const unit = Number(product.promoPrice ?? product.price);
+          return {
+            productId: item.productId,
+            quantity: item.quantity,
+            price: toDecimal(unit),
+            total: toDecimal(unit * item.quantity)
+          };
+        })
+      }
+    },
+    include: {
+      customer: true,
+      items: { include: { product: true } }
+    }
+  });
+
+  if (couponIdUsed) {
+    await prisma.couponRedemption.create({
+      data: {
+        couponId: couponIdUsed,
+        customerId: customer.id,
+        orderId: order.id
+      }
+    });
+  }
+
+  const whatsapp = buildWhatsappMessage(order, settings);
+  const sent = await dispatchWhatsappMessage(
+    settings,
+    settings.whatsappNumber,
+    whatsapp.message,
+    settings.whatsappNumber
+  );
+
+  const updatedOrder = await prisma.order.update({
+    where: { id: order.id },
+    data: { whatsappLink: sent.whatsappUrl ?? whatsapp.url }
+  });
+
+  await printOrder({
+    id: updatedOrder.id,
+    customer: order.customer.name,
+    items: order.items.map((item) => ({ name: item.product.name, quantity: item.quantity }))
+  });
+
+  publishNewOrder({
+    orderId: updatedOrder.id,
+    customer: order.customer.name,
+    total: Number(updatedOrder.total)
+  });
+
+  return res.status(201).json({
+    orderId: updatedOrder.id,
+    whatsappUrl: sent.whatsappUrl ?? null,
+    sentByServer: sent.channel === "MENUAI",
+    sendError: sent.ok ? null : (sent.error ?? "Falha ao enviar via Menuia"),
+    message: whatsapp.message,
+    total: updatedOrder.total
+  });
+}
+
+export async function listOrders(req: Request, res: Response) {
+  const status = req.query.status?.toString() as OrderStatus | undefined;
+  const customer = req.query.customer?.toString();
+  const phone = req.query.phone?.toString();
+  const dateFrom = req.query.dateFrom?.toString();
+  const dateTo = req.query.dateTo?.toString();
+
+  const now = new Date();
+  const defaultStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+  const defaultEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+
+  const startDate = dateFrom ? new Date(`${dateFrom}T00:00:00`) : defaultStart;
+  const endDate = dateTo ? new Date(`${dateTo}T23:59:59`) : defaultEnd;
+
+  const orders = await prisma.order.findMany({
+    where: {
+      ...(status ? { status } : {}),
+      createdAt: {
+        gte: startDate,
+        lte: endDate
+      },
+      customer: {
+        ...(customer ? { name: { contains: customer } } : {}),
+        ...(phone ? { phone: { contains: phone } } : {})
+      }
+    },
+    include: { customer: true, items: { include: { product: true } } },
+    orderBy: { createdAt: "desc" }
+  });
+
+  return res.json(orders);
+}
+
+export async function updateOrderStatus(req: Request, res: Response) {
+  const schema = z.object({ status: z.nativeEnum(OrderStatus) });
+  const body = schema.parse(req.body);
+
+  const current = await prisma.order.findUnique({
+    where: { id: req.params.id },
+    include: { customer: true }
+  });
+
+  if (!current) {
+    return res.status(404).json({ message: "Pedido nao encontrado" });
+  }
+
+  if (current.status === "FINISHED" && body.status !== "FINISHED") {
+    return res.status(400).json({ message: "Pedido finalizado nao pode ser alterado" });
+  }
+
+  const order = await prisma.order.update({
+    where: { id: req.params.id },
+    data: { status: body.status }
+  });
+
+  if (body.status === "CANCELED" && current.paidAt) {
+    const session = await prisma.cashSession.findFirst({ where: { closedAt: null } });
+    if (session) {
+      await prisma.cashEntry.create({
+        data: {
+          sessionId: session.id,
+          type: "EXPENSE",
+          amount: toDecimal(Number(current.total)),
+          orderId: current.id,
+          description: `Estorno por cancelamento do pedido #${current.id.slice(-6).toUpperCase()}`
+        }
+      });
+    }
+  }
+
+  const settings = await prisma.setting.findFirst();
+  const statusWhatsapp =
+    settings && settings.menuiaEnabled
+      ? buildOrderStatusWhatsappMessage(current.customer.phone, current.customer.name, body.status, settings)
+      : null;
+
+  let statusSendResult: { ok: boolean; whatsappUrl?: string; error?: string } | null = null;
+  if (settings && statusWhatsapp) {
+    statusSendResult = await dispatchWhatsappMessage(settings, current.customer.phone, statusWhatsapp.message, current.customer.phone);
+  }
+
+  return res.json({
+    ...order,
+    statusWhatsappUrl: statusSendResult?.whatsappUrl ?? null,
+    statusWhatsappSent: statusSendResult?.ok ?? false,
+    statusWhatsappError: statusSendResult?.ok ? null : (statusSendResult?.error ?? null),
+    statusWhatsappMessage: statusWhatsapp?.message ?? null
+  });
+}
+
+export async function markOrderViewed(req: Request, res: Response) {
+  const order = await prisma.order.update({
+    where: { id: req.params.id },
+    data: { viewedByStaff: true }
+  });
+
+  return res.json(order);
+}
+
+export async function sendToDelivery(req: Request, res: Response) {
+  const settings = await prisma.setting.findFirstOrThrow();
+  
+  if (!settings.deliveryPhoneNumber) {
+    return res.status(400).json({ message: "Numero do motoboy nao configurado" });
+  }
+
+  const order = await prisma.order.findUnique({
+    where: { id: req.params.id },
+    include: { customer: true, items: { include: { product: true } } }
+  });
+
+  if (!order) {
+    return res.status(404).json({ message: "Pedido nao encontrado" });
+  }
+
+  if (order.fulfillmentType === "PICKUP") {
+    return res.status(400).json({ message: "Este pedido e para retirada na loja" });
+  }
+
+  // Criar link do Google Maps
+  const address = `${order.customer.address}, ${order.customer.number} - ${order.customer.district}`;
+  const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+
+  // Criar mensagem para o motoboy
+  const items = order.items.map(item => `${item.quantity}x ${item.product.name}`).join('\n');
+  
+  const message = `🛵 *NOVO PEDIDO PARA ENTREGA*\n\n` +
+    `📋 *Pedido:* #${order.id.slice(-6).toUpperCase()}\n` +
+    `👤 *Cliente:* ${order.customer.name}\n` +
+    `📱 *Telefone:* ${order.customer.phone}\n\n` +
+    `📦 *Itens:*\n${items}\n\n` +
+    `📍 *Endereço:*\n${order.customer.address}, ${order.customer.number}\n` +
+    `${order.customer.district}\n` +
+    `${order.customer.complement ? `Complemento: ${order.customer.complement}\n` : ''}` +
+    `\n💰 *Total:* R$ ${Number(order.total).toFixed(2)}\n` +
+    `💳 *Pagamento:* ${order.paymentMethod === 'CASH' ? 'Dinheiro' : order.paymentMethod === 'PIX' ? 'PIX' : 'Cartão'}\n` +
+    `${order.changeFor ? `💵 *Troco para:* R$ ${Number(order.changeFor).toFixed(2)}\n` : ''}` +
+    `\n📍 *Clique para abrir no Google Maps:*\n${googleMapsUrl}`;
+
+  const deliverySend = await dispatchWhatsappMessage(
+    settings,
+    settings.deliveryPhoneNumber,
+    message,
+    settings.deliveryPhoneNumber
+  );
+
+  if (settings.menuiaEnabled && !deliverySend.ok) {
+    return res.status(400).json({ message: deliverySend.error ?? "Falha ao enviar para motoboy via Menuia" });
+  }
+
+  // Atualizar pedido
+  await prisma.order.update({
+    where: { id: order.id },
+    data: { 
+      sentToDelivery: true,
+      deliverySentAt: new Date()
+    }
+  });
+
+  return res.json({ whatsappUrl: deliverySend.whatsappUrl ?? null, message, sentByServer: deliverySend.channel === "MENUAI" });
+}
+
+export async function deleteOrder(req: Request, res: Response) {
+  const order = await prisma.order.findUnique({ where: { id: req.params.id } });
+
+  if (!order) {
+    return res.status(404).json({ message: "Pedido nao encontrado" });
+  }
+
+  if (order.status !== "FINISHED" && order.status !== "CANCELED") {
+    return res.status(400).json({ message: "Apague somente pedidos finalizados ou cancelados" });
+  }
+
+  if (order.paidAt) {
+    const session = await prisma.cashSession.findFirst({ where: { closedAt: null } });
+    if (session) {
+      await prisma.cashEntry.create({
+        data: {
+          sessionId: session.id,
+          type: "EXPENSE",
+          amount: toDecimal(Number(order.total)),
+          orderId: order.id,
+          description: `Estorno por exclusao do pedido #${order.id.slice(-6).toUpperCase()}`
+        }
+      });
+    }
+  }
+
+  await prisma.order.delete({ where: { id: req.params.id } });
+  return res.status(204).send();
+}
+
+export async function markOrderPaid(req: Request, res: Response) {
+  const schema = z.object({
+    method: z.enum(["CASH", "PIX", "DEBIT", "CREDIT"])
+  });
+
+  const body = schema.parse(req.body);
+  const order = await prisma.order.findUnique({ where: { id: req.params.id } });
+
+  if (!order) {
+    return res.status(404).json({ message: "Pedido nao encontrado" });
+  }
+
+  if (order.status === "CANCELED") {
+    return res.status(400).json({ message: "Pedido cancelado nao pode ser pago" });
+  }
+
+  if (order.paidAt) {
+    return res.status(400).json({ message: "Pedido ja foi marcado como pago" });
+  }
+
+  const paymentMethod: PaymentMethod = body.method === "PIX" ? "PIX" : body.method === "CASH" ? "CASH" : "CARD";
+  const paymentDetail =
+    body.method === "DEBIT"
+      ? "Cartao Debito"
+      : body.method === "CREDIT"
+        ? "Cartao Credito"
+        : body.method === "PIX"
+          ? "PIX"
+          : "Dinheiro";
+
+  const updated = await prisma.order.update({
+    where: { id: req.params.id },
+    data: {
+      paymentMethod,
+      paidAt: new Date(),
+      paidMethodDetail: paymentDetail,
+      notes: [order.notes, `[PAGO: ${paymentDetail} em ${new Date().toLocaleString("pt-BR")}]`]
+        .filter(Boolean)
+        .join(" "),
+      status: order.status === "RECEIVED" ? "PREPARING" : order.status
+    }
+  });
+
+  const session = await prisma.cashSession.findFirst({ where: { closedAt: null } });
+  if (session) {
+    await prisma.cashEntry.create({
+      data: {
+        sessionId: session.id,
+        type: "MANUAL_INCOME",
+        amount: toDecimal(Number(updated.total)),
+        paymentMethod,
+        orderId: updated.id,
+        description: `Pagamento pedido #${updated.id.slice(-6).toUpperCase()} via ${paymentDetail}`
+      }
+    });
+  }
+
+  const orderWithCustomer = await prisma.order.findUnique({
+    where: { id: req.params.id },
+    include: { customer: true }
+  });
+  const settings = await prisma.setting.findFirst();
+  const paymentWhatsapp =
+    settings && settings.menuiaEnabled && orderWithCustomer
+      ? buildOrderStatusWhatsappMessage(
+          orderWithCustomer.customer.phone,
+          orderWithCustomer.customer.name,
+          "PAYMENT_CONFIRMED",
+          settings
+        )
+      : null;
+
+  let paymentSendResult: { ok: boolean; whatsappUrl?: string; error?: string } | null = null;
+  if (settings && paymentWhatsapp && orderWithCustomer) {
+    paymentSendResult = await dispatchWhatsappMessage(
+      settings,
+      orderWithCustomer.customer.phone,
+      paymentWhatsapp.message,
+      orderWithCustomer.customer.phone
+    );
+  }
+
+  return res.json({
+    ...updated,
+    paid: true,
+    paymentDetail,
+    paymentWhatsappUrl: paymentSendResult?.whatsappUrl ?? null,
+    paymentWhatsappSent: paymentSendResult?.ok ?? false,
+    paymentWhatsappError: paymentSendResult?.ok ? null : (paymentSendResult?.error ?? null)
+  });
+}
