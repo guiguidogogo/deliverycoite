@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -129,7 +129,7 @@ model CustomerAddress {
   id          String   @id @default(cuid())
   customerId  String
   customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  label       String   // Casa, Trabalho, etc
+  label       String
   address     String
   number      String
   district    String
