@@ -7,7 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/src/server.js",
-    "render:prepare": "prisma migrate deploy && npm run prisma:seed",
+    "render:prepare": "prisma migrate resolve --rolled-back 20260610190323_add_menuia_integration || true; prisma migrate deploy && npm run prisma:seed",
     "render:serve": "node dist/src/server.js",
     "render:build": "prisma generate && tsc -p tsconfig.json",
     "render:migrate": "prisma migrate deploy",
