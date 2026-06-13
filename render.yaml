@@ -18,6 +18,10 @@ services:
         sync: false
       - key: WHATSAPP_NUMBER
         sync: false
+      - key: SEED_ADMIN_EMAIL
+        sync: false
+      - key: SEED_ADMIN_PASSWORD
+        sync: false
       - key: MENUIA_API_BASE_URL
         value: https://chatbot.menuia.com
       - key: MENUIA_LICENSE
@@ -35,4 +39,9 @@ services:
       - key: NODE_VERSION
         value: 20
       - key: NEXT_PUBLIC_API_URL
-        sync: false
+        value: /api
+      - key: API_SERVER_HOST
+        fromService:
+          type: web
+          name: delivery-api
+          property: hostport
