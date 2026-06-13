@@ -46,29 +46,30 @@ async function main() {
   const hamb = await prisma.category.findUniqueOrThrow({ where: { slug: "hamburgueres" } });
   const bebidas = await prisma.category.findUniqueOrThrow({ where: { slug: "bebidas" } });
 
-  await prisma.product.createMany({
-    data: [
-      {
-        name: "X-Burger",
-        description: "Pao, carne, queijo e molho especial",
-        price: 15,
-        imageUrl: "https://images.unsplash.com/photo-1550547660-d9450f859349",
-        categoryId: hamb.id,
-        active: true,
-        available: true
-      },
-      {
-        name: "Refrigerante Lata",
-        description: "350ml, sabores variados",
-        price: 6,
-        imageUrl: "https://images.unsplash.com/photo-1581636625402-29b2a704ef13",
-        categoryId: bebidas.id,
-        active: true,
-        available: true
-      }
-    ],
-    skipDuplicates: true
-  });
+  if ((await prisma.product.count()) === 0) {
+    await prisma.product.createMany({
+      data: [
+        {
+          name: "X-Burger",
+          description: "Pao, carne, queijo e molho especial",
+          price: 15,
+          imageUrl: "https://images.unsplash.com/photo-1550547660-d9450f859349",
+          categoryId: hamb.id,
+          active: true,
+          available: true
+        },
+        {
+          name: "Refrigerante Lata",
+          description: "350ml, sabores variados",
+          price: 6,
+          imageUrl: "https://images.unsplash.com/photo-1581636625402-29b2a704ef13",
+          categoryId: bebidas.id,
+          active: true,
+          available: true
+        }
+      ]
+    });
+  }
 
   await prisma.setting.upsert({
     where: { id: "default" },
