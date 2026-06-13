@@ -1,17 +1,23 @@
 version: "3.9"
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: delivery-postgres
+  mysql:
+    image: mysql:8.4
+    container_name: delivery-mysql
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: delivery
+      MYSQL_DATABASE: delivery
+      MYSQL_USER: delivery
+      MYSQL_PASSWORD: delivery
+      MYSQL_ROOT_PASSWORD: root
     ports:
-      - "5432:5432"
+      - "3306:3306"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   api:
     build:
@@ -20,8 +26,11 @@ services:
     container_name: delivery-api
     env_file:
       - .env
+    environment:
+      DATABASE_URL: mysql://delivery:delivery@mysql:3306/delivery
     depends_on:
-      - postgres
+      mysql:
+        condition: service_healthy
     ports:
       - "3333:3333"
 
@@ -38,4 +47,4 @@ services:
       - "3000:3000"
 
 volumes:
-  postgres_data:
+  mysql_data:
