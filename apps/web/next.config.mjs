@@ -1,5 +1,9 @@
 import withPWA from "next-pwa";
 
+const apiServerUrl = process.env.API_SERVER_HOST
+  ? `http://${process.env.API_SERVER_HOST}`
+  : (process.env.API_SERVER_URL ?? "http://localhost:3333").replace(/\/$/, "");
+
 const nextConfig = {
   reactStrictMode: true,
   distDir: process.env.NODE_ENV === "development" ? ".next-dev" : ".next",
@@ -9,12 +13,12 @@ const nextConfig = {
   async rewrites() {
     return [
       {
-        source: '/api/:path*',
-        destination: 'http://localhost:3333/api/:path*'
+        source: "/api/:path*",
+        destination: `${apiServerUrl}/api/:path*`
       },
       {
-        source: '/ws-admin',
-        destination: 'http://localhost:3333/ws-admin'
+        source: "/ws-admin",
+        destination: `${apiServerUrl}/ws-admin`
       }
     ];
   }
