@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type RequestHandler } from "express";
 import { login } from "../controllers/auth-controller.js";
 import {
   createCategory,
@@ -57,66 +57,82 @@ import { getSettings, updateSettings } from "../controllers/settings-controller.
 import { auth } from "../middlewares/auth.js";
 import { customerAuth } from "../middlewares/customer-auth.js";
 import { imageUpload } from "../utils/upload.js";
+import { asyncHandler } from "../utils/async-handler.js";
 
 export const router = Router();
 
-router.post("/auth/login", login);
+const route = {
+  get(path: string, ...handlers: RequestHandler[]) {
+    return router.get(path, ...handlers.map(asyncHandler));
+  },
+  post(path: string, ...handlers: RequestHandler[]) {
+    return router.post(path, ...handlers.map(asyncHandler));
+  },
+  patch(path: string, ...handlers: RequestHandler[]) {
+    return router.patch(path, ...handlers.map(asyncHandler));
+  },
+  delete(path: string, ...handlers: RequestHandler[]) {
+    return router.delete(path, ...handlers.map(asyncHandler));
+  }
+};
+
+route.post("/auth/login", login);
 // Customer auth routes
-router.post("/customer/register", registerCustomer);
-router.post("/customer/login", loginCustomer);
-router.get("/customer/profile", customerAuth, getCustomerProfile);
-router.patch("/customer/profile", customerAuth, updateCustomerProfile);
-router.post("/customer/addresses", customerAuth, addCustomerAddress);
-router.patch("/customer/addresses/:id", customerAuth, updateCustomerAddress);
-router.delete("/customer/addresses/:id", customerAuth, deleteCustomerAddress);
+route.post("/customer/register", registerCustomer);
+route.post("/customer/login", loginCustomer);
+route.get("/customer/profile", customerAuth, getCustomerProfile);
+route.patch("/customer/profile", customerAuth, updateCustomerProfile);
+route.post("/customer/addresses", customerAuth, addCustomerAddress);
+route.patch("/customer/addresses/:id", customerAuth, updateCustomerAddress);
+route.delete("/customer/addresses/:id", customerAuth, deleteCustomerAddress);
 
 
-router.get("/settings", getSettings);
-router.get("/customers/lookup", lookupCustomer);
-router.get("/categories", listCategories);
-router.get("/products", listProducts);
-router.get("/coupons/validate", validateCoupon);
-router.post("/favorites/toggle", toggleFavorite);
-router.post("/orders", createOrder);
-router.get("/integrations/future", getFutureIntegrations);
+route.get("/settings", getSettings);
+route.get("/customers/lookup", lookupCustomer);
+route.get("/categories", listCategories);
+route.get("/products", listProducts);
+route.get("/coupons/validate", validateCoupon);
+route.post("/favorites/toggle", toggleFavorite);
+route.post("/orders", createOrder);
+route.get("/integrations/future", getFutureIntegrations);
 
 router.use(auth(["ADMIN", "ATTENDANT"]));
-router.get("/admin/orders", listOrders);
-router.patch("/admin/orders/:id/status", updateOrderStatus);
-router.patch("/admin/orders/:id/viewed", markOrderViewed);
-router.patch("/admin/orders/:id/paid", markOrderPaid);
-router.delete("/admin/orders/:id", deleteOrder);
-router.post("/admin/orders/:id/send-delivery", sendToDelivery);
-router.post("/admin/orders/:id/print", printOrderById);
-router.get("/admin/printers", listPrinters);
-router.get("/admin/dashboard", getDashboard);
-router.get("/admin/notifications/new-orders", listNewOrders);
-router.get("/admin/reports/orders.xlsx", exportOrdersExcel);
-router.get("/admin/reports/orders.pdf", exportOrdersPdf);
-router.get("/admin/customers", listCustomers);
-router.patch("/admin/customers/:id", updateCustomer);
-router.delete("/admin/customers/:id", deleteCustomer);
-router.get("/admin/finance/summary", getFinanceSummary);
-router.get("/admin/finance/sessions", listCashSessions);
-router.post("/admin/finance/open", openCashSession);
-router.post("/admin/finance/entry", createCashEntry);
-router.post("/admin/finance/close", closeCashSession);
+route.get("/admin/orders", listOrders);
+route.patch("/admin/orders/:id/status", updateOrderStatus);
+route.patch("/admin/orders/:id/viewed", markOrderViewed);
+route.patch("/admin/orders/:id/paid", markOrderPaid);
+route.delete("/admin/orders/:id", deleteOrder);
+route.post("/admin/orders/:id/send-delivery", sendToDelivery);
+route.post("/admin/orders/:id/print", printOrderById);
+route.get("/admin/printers", listPrinters);
+route.get("/admin/dashboard", getDashboard);
+route.get("/admin/notifications/new-orders", listNewOrders);
+route.get("/admin/reports/orders.xlsx", exportOrdersExcel);
+route.get("/admin/reports/orders.pdf", exportOrdersPdf);
+route.get("/admin/customers", listCustomers);
+route.patch("/admin/customers/:id", updateCustomer);
+route.delete("/admin/customers/:id", deleteCustomer);
+route.get("/admin/finance/summary", getFinanceSummary);
+route.get("/admin/finance/sessions", listCashSessions);
+route.post("/admin/finance/open", openCashSession);
+route.post("/admin/finance/entry", createCashEntry);
+route.post("/admin/finance/close", closeCashSession);
 
-router.get("/admin/categories", listCategories);
-router.post("/admin/categories", auth(["ADMIN"]), createCategory);
-router.patch("/admin/categories/:id", auth(["ADMIN"]), updateCategory);
-router.delete("/admin/categories/:id", auth(["ADMIN"]), deleteCategory);
+route.get("/admin/categories", listCategories);
+route.post("/admin/categories", auth(["ADMIN"]), createCategory);
+route.patch("/admin/categories/:id", auth(["ADMIN"]), updateCategory);
+route.delete("/admin/categories/:id", auth(["ADMIN"]), deleteCategory);
 
-router.get("/admin/products", listProducts);
-router.post("/admin/products", auth(["ADMIN"]), createProduct);
-router.post("/admin/uploads/image", auth(["ADMIN"]), imageUpload.single("image"), uploadImage);
-router.patch("/admin/products/:id", auth(["ADMIN"]), updateProduct);
-router.delete("/admin/products/:id", auth(["ADMIN"]), deleteProduct);
+route.get("/admin/products", listProducts);
+route.post("/admin/products", auth(["ADMIN"]), createProduct);
+route.post("/admin/uploads/image", auth(["ADMIN"]), imageUpload.single("image"), uploadImage);
+route.patch("/admin/products/:id", auth(["ADMIN"]), updateProduct);
+route.delete("/admin/products/:id", auth(["ADMIN"]), deleteProduct);
 
-router.get("/admin/coupons", listCoupons);
-router.post("/admin/coupons", auth(["ADMIN"]), createCoupon);
-router.patch("/admin/coupons/:id", auth(["ADMIN"]), updateCoupon);
-router.delete("/admin/coupons/:id", auth(["ADMIN"]), deleteCoupon);
+route.get("/admin/coupons", listCoupons);
+route.post("/admin/coupons", auth(["ADMIN"]), createCoupon);
+route.patch("/admin/coupons/:id", auth(["ADMIN"]), updateCoupon);
+route.delete("/admin/coupons/:id", auth(["ADMIN"]), deleteCoupon);
 
-router.patch("/admin/settings", auth(["ADMIN"]), updateSettings);
-router.post("/admin/integrations/menuia/test", testMenuiaIntegration);
+route.patch("/admin/settings", auth(["ADMIN"]), updateSettings);
+route.post("/admin/integrations/menuia/test", testMenuiaIntegration);
