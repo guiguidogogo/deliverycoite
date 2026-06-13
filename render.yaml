@@ -10,10 +10,6 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 20
-      - key: API_PORT
-        value: 3333
-      - key: API_SERVER_URL
-        value: http://127.0.0.1:3333
       - key: NEXT_PUBLIC_API_URL
         value: /api
       - key: DATABASE_URL
