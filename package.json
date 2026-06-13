@@ -11,7 +11,7 @@
     "build": "npm run build -w @delivery/api && npm run build -w @delivery/web",
     "start": "npm run start -w @delivery/api",
     "render:build": "npm run render:build -w @delivery/api && npm run build -w @delivery/web",
-    "render:start": "npm run render:prepare -w @delivery/api && concurrently \"npm run render:serve -w @delivery/api\" \"npm run start -w @delivery/web\"",
+    "render:start": "npm run render:prepare -w @delivery/api && node server.mjs",
     "render:migrate": "npm run render:migrate -w @delivery/api",
     "lint": "npm run lint -w @delivery/api && npm run lint -w @delivery/web"
   },
