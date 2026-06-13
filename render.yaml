@@ -1,15 +1,21 @@
 services:
   - type: web
-    name: delivery-api
+    name: deliverycoite-node
     runtime: node
     plan: free
     rootDir: .
-    buildCommand: npm ci && npm run render:build && npm run render:migrate
-    startCommand: npm start
-    healthCheckPath: /health
+    buildCommand: npm ci && npm run render:build
+    startCommand: npm run render:start
+    healthCheckPath: /
     envVars:
       - key: NODE_VERSION
         value: 20
+      - key: API_PORT
+        value: 3333
+      - key: API_SERVER_URL
+        value: http://127.0.0.1:3333
+      - key: NEXT_PUBLIC_API_URL
+        value: /api
       - key: DATABASE_URL
         sync: false
       - key: JWT_SECRET
@@ -26,22 +32,3 @@ services:
         value: https://chatbot.menuia.com
       - key: MENUIA_LICENSE
         value: hugocursos
-
-  - type: web
-    name: delivery-web
-    runtime: node
-    plan: free
-    rootDir: .
-    buildCommand: npm ci && npm run build -w @delivery/web
-    startCommand: npm run start -w @delivery/web
-    healthCheckPath: /
-    envVars:
-      - key: NODE_VERSION
-        value: 20
-      - key: NEXT_PUBLIC_API_URL
-        value: /api
-      - key: API_SERVER_HOST
-        fromService:
-          type: web
-          name: delivery-api
-          property: hostport
