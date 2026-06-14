@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { API_URL } from "../../../../lib/api";
@@ -31,6 +32,12 @@ export default function CouponsManagePage() {
     maxUsesPerDay: "",
     expiresAt: ""
   });
+  const [banner, setBanner] = useState({
+    imageUrl: "",
+    title: "PROMO DA NOITE",
+    text: "Confira nossos cupons e promocoes"
+  });
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
 
   async function load() {
     const token = localStorage.getItem("delivery:token");
@@ -50,7 +57,67 @@ export default function CouponsManagePage() {
 
   useEffect(() => {
     void load();
+    void fetch(`${API_URL}/settings`)
+      .then((response) => response.json())
+      .then((settings) =>
+        setBanner({
+          imageUrl: settings.promoBannerImageUrl ?? "",
+          title: settings.promoBannerTitle ?? "PROMO DA NOITE",
+          text: settings.promoBannerText ?? "Confira nossos cupons e promocoes"
+        })
+      );
   }, []);
+
+  async function saveBanner() {
+    const token = localStorage.getItem("delivery:token");
+    if (!token) return;
+
+    try {
+      let imageUrl = banner.imageUrl.trim();
+      if (bannerFile) {
+        const data = new FormData();
+        data.append("image", bannerFile);
+        const upload = await fetch(`${API_URL}/admin/uploads/image`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: data
+        });
+        const uploadPayload = await upload.json().catch(() => ({}));
+        if (!upload.ok) {
+          throw new Error(uploadPayload.message ?? "Falha ao enviar imagem");
+        }
+        imageUrl =
+          uploadPayload.absoluteUrl ??
+          `${window.location.origin}${uploadPayload.url}`;
+      }
+
+      const response = await fetch(`${API_URL}/admin/settings`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          promoBannerImageUrl: imageUrl || null,
+          promoBannerTitle: banner.title.trim(),
+          promoBannerText: banner.text.trim()
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message ?? "Falha ao salvar banner");
+      }
+
+      setBanner((value) => ({
+        ...value,
+        imageUrl: payload.promoBannerImageUrl ?? ""
+      }));
+      setBannerFile(null);
+      toast.success("Banner promocional atualizado");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao salvar banner");
+    }
+  }
 
   async function createCoupon() {
     const token = localStorage.getItem("delivery:token");
@@ -136,6 +203,64 @@ export default function CouponsManagePage() {
           Voltar
         </Link>
       </div>
+
+      <section className="mb-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
+        <h2 className="text-lg font-semibold">Imagem promocional do cliente</h2>
+        <p className="mt-1 text-sm opacity-70">
+          Edite a imagem e o texto que aparecem no topo do cardapio.
+        </p>
+        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="relative min-h-40 overflow-hidden rounded-xl bg-gradient-to-r from-ember to-lime">
+            {banner.imageUrl && (
+              <Image
+                src={banner.imageUrl}
+                alt="Banner promocional"
+                fill
+                unoptimized
+                className="object-cover"
+              />
+            )}
+            <div className="absolute inset-0 bg-gradient-to-r from-slate-950/80 to-slate-950/20" />
+            <div className="absolute inset-0 flex flex-col justify-end p-4 text-white">
+              <p className="font-display text-2xl">{banner.title || "PROMO"}</p>
+              <p className="text-sm">{banner.text}</p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <input
+              className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
+              placeholder="Titulo da promocao"
+              value={banner.title}
+              onChange={(event) => setBanner((value) => ({ ...value, title: event.target.value }))}
+            />
+            <textarea
+              className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
+              placeholder="Texto da promocao ou cupom"
+              value={banner.text}
+              onChange={(event) => setBanner((value) => ({ ...value, text: event.target.value }))}
+            />
+            <input
+              className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
+              type="url"
+              placeholder="URL da imagem"
+              value={banner.imageUrl}
+              onChange={(event) => setBanner((value) => ({ ...value, imageUrl: event.target.value }))}
+            />
+            <input
+              className="w-full rounded-xl border border-black/10 px-3 py-2 dark:border-white/20"
+              type="file"
+              accept="image/*"
+              onChange={(event) => setBannerFile(event.target.files?.[0] ?? null)}
+            />
+            <button
+              className="w-full rounded-xl bg-ink px-3 py-2 text-white dark:bg-ember"
+              onClick={() => void saveBanner()}
+            >
+              Salvar imagem promocional
+            </button>
+          </div>
+        </div>
+      </section>
 
       <section className="rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
         <h2 className="text-lg font-semibold">Novo cupom</h2>

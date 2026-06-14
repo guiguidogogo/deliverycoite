@@ -29,6 +29,7 @@ export default function CustomerAuthPage() {
   const [registerComplement, setRegisterComplement] = useState("");
   const [registerLat, setRegisterLat] = useState<number | undefined>();
   const [registerLng, setRegisterLng] = useState<number | undefined>();
+  const [addressMode, setAddressMode] = useState<"MANUAL" | "LOCATION">("MANUAL");
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -214,12 +215,26 @@ export default function CustomerAuthPage() {
             />
 
             <div className="rounded-xl border border-dashed border-ink/30 p-3 dark:border-ember/30">
+              <button
+                type="button"
+                className={`mb-2 w-full rounded-lg px-2 py-2 text-xs font-semibold ${addressMode === "MANUAL" ? "bg-ink text-white dark:bg-ember" : "border"}`}
+                onClick={() => {
+                  setAddressMode("MANUAL");
+                  setRegisterLat(undefined);
+                  setRegisterLng(undefined);
+                }}
+              >
+                Digitar endereco manualmente
+              </button>
               <div className="flex items-center justify-between">
                 <p className="text-sm font-semibold">Endereço (opcional)</p>
                 <button
                   type="button"
                   className="flex items-center gap-1 rounded-lg bg-emerald-500 px-2 py-1 text-xs text-white"
-                  onClick={getLocation}
+                  onClick={() => {
+                    setAddressMode("LOCATION");
+                    getLocation();
+                  }}
                 >
                   <MapPin size={14} />
                   Usar minha localização
@@ -251,7 +266,7 @@ export default function CustomerAuthPage() {
                   onChange={(e) => setRegisterComplement(e.target.value)}
                 />
               </div>
-              {registerLat !== undefined && registerLng !== undefined && (
+              {addressMode === "LOCATION" && registerLat !== undefined && registerLng !== undefined && (
                 <div className="mt-3">
                   <LocationPicker
                     value={{ latitude: registerLat, longitude: registerLng }}

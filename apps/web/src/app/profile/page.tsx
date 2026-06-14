@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { MapPin, Plus, Trash2, Home, Briefcase } from "lucide-react";
 import { api } from "../../lib/api";
 import { LocationPicker } from "../../components/location-picker";
+import { findAddressCoordinates } from "../../lib/geocoding";
 
 type Customer = {
   id: string;
@@ -42,6 +43,7 @@ export default function ProfilePage() {
   const [newLat, setNewLat] = useState<number | undefined>();
   const [newLng, setNewLng] = useState<number | undefined>();
   const [newIsDefault, setNewIsDefault] = useState(false);
+  const [addressMode, setAddressMode] = useState<"MANUAL" | "LOCATION">("MANUAL");
 
   useEffect(() => {
     const token = localStorage.getItem("delivery:customer-token");
@@ -85,6 +87,18 @@ export default function ProfilePage() {
     if (!token) return;
 
     try {
+      let latitude = newLat;
+      let longitude = newLng;
+      if (addressMode === "MANUAL" && latitude === undefined && longitude === undefined) {
+        try {
+          const location = await findAddressCoordinates(newAddress, newNumber, newDistrict);
+          latitude = location.latitude;
+          longitude = location.longitude;
+        } catch {
+          // O endereco manual continua podendo ser salvo sem coordenadas.
+        }
+      }
+
       const newAddr = await api<Address>("/customer/addresses", {
         method: "POST",
         headers: {
@@ -96,8 +110,8 @@ export default function ProfilePage() {
           number: newNumber,
           district: newDistrict,
           complement: newComplement || undefined,
-          latitude: newLat,
-          longitude: newLng,
+          latitude,
+          longitude,
           isDefault: newIsDefault
         })
       });
@@ -112,6 +126,7 @@ export default function ProfilePage() {
       setNewLat(undefined);
       setNewLng(undefined);
       setNewIsDefault(false);
+      setAddressMode("MANUAL");
       toast.success("Endereço adicionado!");
     } catch (error) {
       toast.error("Erro ao adicionar endereço");
@@ -307,14 +322,29 @@ export default function ProfilePage() {
 
               <button
                 type="button"
+                className={`w-full rounded-lg px-3 py-2 text-sm font-semibold ${addressMode === "MANUAL" ? "bg-ink text-white dark:bg-ember" : "border border-black/10 dark:border-white/20"}`}
+                onClick={() => {
+                  setAddressMode("MANUAL");
+                  setNewLat(undefined);
+                  setNewLng(undefined);
+                }}
+              >
+                Digitar endereco manualmente
+              </button>
+
+              <button
+                type="button"
                 className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-500 px-3 py-2 text-sm text-white"
-                onClick={getLocationForNew}
+                onClick={() => {
+                  setAddressMode("LOCATION");
+                  getLocationForNew();
+                }}
               >
                 <MapPin size={16} />
                 Usar minha localização
               </button>
 
-              {newLat !== undefined && newLng !== undefined && (
+              {addressMode === "LOCATION" && newLat !== undefined && newLng !== undefined && (
                 <LocationPicker
                   value={{ latitude: newLat, longitude: newLng }}
                   onChange={(location) => {

@@ -40,6 +40,9 @@ export type SelectedComplement = {
 export type Settings = {
   companyName: string;
   logoUrl?: string | null;
+  promoBannerImageUrl?: string | null;
+  promoBannerTitle?: string;
+  promoBannerText?: string;
   whatsappNumber: string;
   deliveryFee: number;
   storeLatitude?: number | null;

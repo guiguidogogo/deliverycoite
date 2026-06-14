@@ -11,6 +11,7 @@ import { api } from "../lib/api";
 import { money } from "../lib/format";
 import type { CartItem, Category, Product, SelectedComplement, Settings } from "../lib/types";
 import { LocationPicker } from "./location-picker";
+import { findAddressCoordinates } from "../lib/geocoding";
 
 const checkoutSchema = z
   .object({
@@ -108,6 +109,8 @@ export function Storefront() {
   const [quotedDeliveryFee, setQuotedDeliveryFee] = useState<number | null>(null);
   const [deliveryDistanceKm, setDeliveryDistanceKm] = useState<number | null>(null);
   const [deliveryQuoteError, setDeliveryQuoteError] = useState("");
+  const [addressMode, setAddressMode] = useState<"MANUAL" | "LOCATION">("MANUAL");
+  const [locatingAddress, setLocatingAddress] = useState(false);
   const {
     register,
     handleSubmit,
@@ -125,6 +128,9 @@ export function Storefront() {
   const couponCode = watch("couponCode") || "";
   const customerPhone = watch("phone") || "";
   const customerName = watch("name") || "";
+  const typedAddress = watch("address") || "";
+  const typedNumber = watch("number") || "";
+  const typedDistrict = watch("district") || "";
 
   useEffect(() => {
     api<Category[]>("/categories")
@@ -417,6 +423,29 @@ export function Storefront() {
     );
   }
 
+  async function calculateManualAddress() {
+    if (!typedAddress.trim() || !typedNumber.trim() || !typedDistrict.trim()) {
+      toast.error("Preencha rua, numero e bairro");
+      return;
+    }
+
+    setLocatingAddress(true);
+    try {
+      const location = await findAddressCoordinates(
+        typedAddress,
+        typedNumber,
+        typedDistrict
+      );
+      setDeliveryLocation(location);
+      setSelectedAddress("");
+      toast.success("Endereco localizado. Confira o ponto no mapa.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Endereco nao encontrado");
+    } finally {
+      setLocatingAddress(false);
+    }
+  }
+
   async function fillCustomerNameByPhone() {
     if (customer || customerName.trim() || customerPhone.replace(/\D/g, "").length < 8) return;
 
@@ -546,9 +575,20 @@ export function Storefront() {
           </div>
         </div>
 
-        <div className="mt-4 rounded-2xl bg-gradient-to-r from-ember/90 to-lime/80 p-4 text-white">
-          <p className="font-display text-2xl">PROMO DA NOITE</p>
-          <p>Combo burger + batata + refri com 10% OFF usando cupom PROMO10</p>
+        <div
+          className="relative mt-4 overflow-hidden rounded-2xl bg-gradient-to-r from-ember/90 to-lime/80 p-4 text-white"
+          style={
+            settings?.promoBannerImageUrl
+              ? {
+                  backgroundImage: `linear-gradient(90deg, rgba(15,23,42,.82), rgba(15,23,42,.28)), url("${settings.promoBannerImageUrl}")`,
+                  backgroundPosition: "center",
+                  backgroundSize: "cover"
+                }
+              : undefined
+          }
+        >
+          <p className="font-display text-2xl">{settings?.promoBannerTitle || "PROMO DA NOITE"}</p>
+          <p>{settings?.promoBannerText || "Confira nossos cupons e promocoes"}</p>
         </div>
       </section>
 
@@ -715,19 +755,49 @@ export function Storefront() {
 
               {fulfillmentType === "DELIVERY" && (
                 <>
+                  <div className="grid grid-cols-2 gap-2 md:col-span-2">
+                    <button
+                      type="button"
+                      className={`rounded-xl px-3 py-2 font-semibold ${
+                        addressMode === "MANUAL"
+                          ? "bg-ink text-white dark:bg-ember"
+                          : "border border-black/10 dark:border-white/20"
+                      }`}
+                      onClick={() => setAddressMode("MANUAL")}
+                    >
+                      Digitar endereco
+                    </button>
+                    <button
+                      type="button"
+                      className={`rounded-xl px-3 py-2 font-semibold ${
+                        addressMode === "LOCATION"
+                          ? "bg-ink text-white dark:bg-ember"
+                          : "border border-black/10 dark:border-white/20"
+                      }`}
+                      onClick={() => {
+                        setAddressMode("LOCATION");
+                        locateDeliveryAddress();
+                      }}
+                    >
+                      Usar localizacao
+                    </button>
+                  </div>
                   <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Endereco *" {...register("address")} />
                   <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Numero *" {...register("number")} />
                   <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Bairro *" {...register("district")} />
                   <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Complemento" {...register("complement")} />
                   <div className="md:col-span-2">
-                    <button
-                      type="button"
-                      className="mb-2 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-white"
-                      onClick={locateDeliveryAddress}
-                    >
-                      <MapPin size={16} />
-                      Localizar e conferir no mapa
-                    </button>
+                    {addressMode === "MANUAL" && (
+                      <button
+                        type="button"
+                        className="mb-2 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-white disabled:opacity-60"
+                        onClick={() => void calculateManualAddress()}
+                        disabled={locatingAddress}
+                      >
+                        <MapPin size={16} />
+                        {locatingAddress ? "Localizando..." : "Calcular frete deste endereco"}
+                      </button>
+                    )}
                     {deliveryLocation && (
                       <LocationPicker
                         value={deliveryLocation}
