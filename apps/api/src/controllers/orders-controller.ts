@@ -7,6 +7,7 @@ import { buildOrderStatusWhatsappMessage, buildWhatsappMessage, dispatchWhatsapp
 import { prisma } from "../utils/prisma.js";
 import { formatOrderCode } from "../utils/order-code.js";
 import { recordCashPayments } from "../utils/cash-register.js";
+import { calculateDeliveryFee } from "../utils/delivery-fee.js";
 
 function shouldSendStatusWhatsapp(
   settings: Awaited<ReturnType<typeof prisma.setting.findFirstOrThrow>>,
@@ -32,7 +33,9 @@ const checkoutSchema = z
       address: z.string(),
       number: z.string(),
       district: z.string(),
-      complement: z.string().optional()
+      complement: z.string().optional(),
+      latitude: z.number().min(-90).max(90).optional(),
+      longitude: z.number().min(-180).max(180).optional()
     }),
     fulfillmentType: z.nativeEnum(FulfillmentType).default(FulfillmentType.DELIVERY),
     paymentMethod: z.nativeEnum(PaymentMethod),
@@ -93,7 +96,9 @@ function isStoreOpen(openTime: string | null | undefined, closeTime: string | nu
 export async function createOrder(req: Request, res: Response) {
   const body = checkoutSchema.parse(req.body);
 
-  const settings = await prisma.setting.findFirstOrThrow();
+  const settings = await prisma.setting.findFirstOrThrow({
+    include: { deliveryFeeTiers: true }
+  });
 
   if (!isStoreOpen(settings.openTime ?? "00:00", settings.closeTime ?? "23:59")) {
     return res.status(400).json({
@@ -169,10 +174,15 @@ export async function createOrder(req: Request, res: Response) {
   const subtotalNumber = preparedItems.reduce((acc, item) => acc + item.total, 0);
 
   const pickup = body.fulfillmentType === FulfillmentType.PICKUP;
+  const {
+    latitude: _latitude,
+    longitude: _longitude,
+    ...customerData
+  } = body.customer;
   const customer = await prisma.customer.upsert({
     where: { phone: body.customer.phone },
     create: {
-      ...body.customer,
+      ...customerData,
       address: pickup ? "Retirada na loja" : body.customer.address,
       number: pickup ? "S/N" : body.customer.number,
       district: pickup ? "Retirada" : body.customer.district
@@ -181,7 +191,7 @@ export async function createOrder(req: Request, res: Response) {
       ? {
           name: body.customer.name
         }
-      : body.customer
+      : customerData
   });
 
   let discountNumber = 0;
@@ -242,10 +252,32 @@ export async function createOrder(req: Request, res: Response) {
   }
 
   const subtotal = toDecimal(subtotalNumber);
-  const deliveryFee =
+  const deliveryQuote =
     body.fulfillmentType === FulfillmentType.PICKUP
-      ? toDecimal(0)
-      : settings.deliveryFee;
+      ? { fee: 0, distanceKm: null, requiresLocation: false }
+      : calculateDeliveryFee(
+          settings,
+          body.customer.latitude !== undefined && body.customer.longitude !== undefined
+            ? {
+                latitude: body.customer.latitude,
+                longitude: body.customer.longitude
+              }
+            : undefined
+        );
+
+  if (deliveryQuote.requiresLocation) {
+    return res.status(400).json({
+      message: "Confirme sua localizacao no mapa para calcular o frete"
+    });
+  }
+  if (deliveryQuote.fee === null) {
+    return res.status(400).json({
+      message: "Seu endereco esta fora da area de entrega",
+      distanceKm: Number(deliveryQuote.distanceKm?.toFixed(2))
+    });
+  }
+
+  const deliveryFee = toDecimal(deliveryQuote.fee);
   const discount = toDecimal(Math.min(discountNumber, subtotalNumber));
   const totalNumber = subtotalNumber + Number(deliveryFee) - Number(discount);
   const total = toDecimal(totalNumber);
@@ -258,6 +290,9 @@ export async function createOrder(req: Request, res: Response) {
       changeFor: body.changeFor ? toDecimal(body.changeFor) : null,
       subtotal,
       deliveryFee,
+      deliveryLatitude: pickup ? null : body.customer.latitude,
+      deliveryLongitude: pickup ? null : body.customer.longitude,
+      deliveryDistanceKm: pickup ? null : deliveryQuote.distanceKm,
       discount,
       total,
       couponCode: normalizedCouponCode,
@@ -464,7 +499,11 @@ export async function sendToDelivery(req: Request, res: Response) {
 
   // Criar link do Google Maps
   const address = `${order.customer.address}, ${order.customer.number} - ${order.customer.district}`;
-  const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+  const mapQuery =
+    order.deliveryLatitude !== null && order.deliveryLongitude !== null
+      ? `${order.deliveryLatitude},${order.deliveryLongitude}`
+      : address;
+  const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`;
 
   // Criar mensagem para o motoboy
   const items = order.items.map((item) => {
@@ -482,6 +521,7 @@ export async function sendToDelivery(req: Request, res: Response) {
     `📍 *Endereço:*\n${order.customer.address}, ${order.customer.number}\n` +
     `${order.customer.district}\n` +
     `${order.customer.complement ? `Complemento: ${order.customer.complement}\n` : ''}` +
+    `${order.deliveryDistanceKm ? `Distancia aproximada: ${order.deliveryDistanceKm.toFixed(2)} km\n` : ""}` +
     `\n💰 *Total:* R$ ${Number(order.total).toFixed(2)}\n` +
     `💳 *Pagamento:* ${order.paymentMethod === 'CASH' ? 'Dinheiro' : order.paymentMethod === 'PIX' ? 'PIX' : 'Cartão'}\n` +
     `${order.changeFor ? `💵 *Troco para:* R$ ${Number(order.changeFor).toFixed(2)}\n` : ''}` +

@@ -200,6 +200,9 @@ model Order {
   changeFor      Decimal?      @db.Decimal(10, 2)
   subtotal       Decimal       @db.Decimal(10, 2)
   deliveryFee    Decimal       @db.Decimal(10, 2)
+  deliveryLatitude Float?
+  deliveryLongitude Float?
+  deliveryDistanceKm Float?
   discount       Decimal       @db.Decimal(10, 2) @default(0)
   total          Decimal       @db.Decimal(10, 2)
   couponCode     String?
@@ -268,6 +271,8 @@ model Setting {
   whatsappNumber      String
   deliveryPhoneNumber String?
   deliveryFee         Decimal  @db.Decimal(10, 2) @default(5)
+  storeLatitude       Float?
+  storeLongitude      Float?
   openTime            String   @default("18:00")
   closeTime           String   @default("23:59")
   autoMessage         String   @default("Obrigado pelo pedido!")
@@ -290,6 +295,20 @@ model Setting {
   printerAutoPrint    Boolean  @default(false)
   updatedAt           DateTime @updatedAt
   createdAt           DateTime @default(now())
+  deliveryFeeTiers    DeliveryFeeTier[]
+}
+
+model DeliveryFeeTier {
+  id            String   @id @default(cuid())
+  settingId     String
+  setting       Setting  @relation(fields: [settingId], references: [id], onDelete: Cascade)
+  maxDistanceKm Float
+  fee           Decimal  @db.Decimal(10, 2)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([settingId, sortOrder])
 }
 
 model Favorite {

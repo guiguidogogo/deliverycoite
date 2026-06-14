@@ -9,6 +9,12 @@ const settingsSchema = z.object({
   whatsappNumber: z.string().min(8).optional(),
   deliveryPhoneNumber: z.string().min(8).optional(),
   deliveryFee: z.coerce.number().min(0).optional(),
+  storeLatitude: z.number().min(-90).max(90).nullable().optional(),
+  storeLongitude: z.number().min(-180).max(180).nullable().optional(),
+  deliveryFeeTiers: z.array(z.object({
+    maxDistanceKm: z.coerce.number().positive(),
+    fee: z.coerce.number().min(0)
+  })).max(20).optional(),
   openTime: z.string().optional(),
   closeTime: z.string().optional(),
   autoMessage: z.string().optional(),
@@ -32,7 +38,9 @@ const settingsSchema = z.object({
 });
 
 async function ensureDefaultSettings() {
-  const existing = await prisma.setting.findFirst();
+  const existing = await prisma.setting.findFirst({
+    include: { deliveryFeeTiers: { orderBy: { sortOrder: "asc" } } }
+  });
 
   if (existing) {
     return existing;
@@ -46,7 +54,8 @@ async function ensureDefaultSettings() {
       openTime: "00:00",
       closeTime: "23:59",
       autoMessage: "Obrigado pelo pedido!"
-    }
+    },
+    include: { deliveryFeeTiers: { orderBy: { sortOrder: "asc" } } }
   });
 }
 
@@ -58,14 +67,39 @@ export async function getSettings(_req: Request, res: Response) {
 export async function updateSettings(req: Request, res: Response) {
   const body = settingsSchema.parse(req.body);
   const current = await ensureDefaultSettings();
+  const { deliveryFeeTiers, ...settingsData } = body;
 
-  const settings = await prisma.setting.update({
-    where: { id: current.id },
-    data: {
-      ...body,
-      ...(body.printerName !== undefined ? { printerName: body.printerName.trim() || null } : {}),
-      ...(body.deliveryFee !== undefined ? { deliveryFee: new Prisma.Decimal(body.deliveryFee) } : {})
+  const settings = await prisma.$transaction(async (transaction) => {
+    const updated = await transaction.setting.update({
+      where: { id: current.id },
+      data: {
+        ...settingsData,
+        ...(body.printerName !== undefined ? { printerName: body.printerName.trim() || null } : {}),
+        ...(body.deliveryFee !== undefined ? { deliveryFee: new Prisma.Decimal(body.deliveryFee) } : {})
+      }
+    });
+
+    if (deliveryFeeTiers !== undefined) {
+      await transaction.deliveryFeeTier.deleteMany({ where: { settingId: current.id } });
+      if (deliveryFeeTiers.length) {
+        const sortedTiers = [...deliveryFeeTiers].sort(
+          (left, right) => left.maxDistanceKm - right.maxDistanceKm
+        );
+        await transaction.deliveryFeeTier.createMany({
+          data: sortedTiers.map((tier, index) => ({
+            settingId: current.id,
+            maxDistanceKm: tier.maxDistanceKm,
+            fee: new Prisma.Decimal(tier.fee),
+            sortOrder: index
+          }))
+        });
+      }
     }
+
+    return transaction.setting.findUniqueOrThrow({
+      where: { id: updated.id },
+      include: { deliveryFeeTiers: { orderBy: { sortOrder: "asc" } } }
+    });
   });
 
   return res.json(settings);

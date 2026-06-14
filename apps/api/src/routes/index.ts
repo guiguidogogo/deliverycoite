@@ -30,6 +30,7 @@ import {
 } from "../controllers/customer-auth-controller.js";
 import { deleteCustomer, listCustomers, lookupCustomer, updateCustomer } from "../controllers/customers-controller.js";
 import { getDashboard } from "../controllers/dashboard-controller.js";
+import { quoteDelivery } from "../controllers/delivery-controller.js";
 import {
   closeCashSession,
   createCashEntry,
@@ -94,6 +95,7 @@ route.delete("/customer/addresses/:id", customerAuth, deleteCustomerAddress);
 
 
 route.get("/settings", getSettings);
+route.get("/delivery/quote", quoteDelivery);
 route.get("/customers/lookup", lookupCustomer);
 route.get("/categories", listCategories);
 route.get("/products", listProducts);

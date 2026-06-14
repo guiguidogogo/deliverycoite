@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Bebas_Neue, DM_Sans } from "next/font/google";
 import "./globals.css";
+import "leaflet/dist/leaflet.css";
 import { Toaster } from "sonner";
 
 const display = Bebas_Neue({ subsets: ["latin"], weight: "400", variable: "--font-display" });

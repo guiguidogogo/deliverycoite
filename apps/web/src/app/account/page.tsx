@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { MapPin } from "lucide-react";
 import { api } from "../../lib/api";
+import { LocationPicker } from "../../components/location-picker";
 
 type Tab = "login" | "register";
 
@@ -250,6 +251,17 @@ export default function CustomerAuthPage() {
                   onChange={(e) => setRegisterComplement(e.target.value)}
                 />
               </div>
+              {registerLat !== undefined && registerLng !== undefined && (
+                <div className="mt-3">
+                  <LocationPicker
+                    value={{ latitude: registerLat, longitude: registerLng }}
+                    onChange={(location) => {
+                      setRegisterLat(location.latitude);
+                      setRegisterLng(location.longitude);
+                    }}
+                  />
+                </div>
+              )}
             </div>
 
             <button

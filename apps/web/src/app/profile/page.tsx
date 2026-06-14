@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { MapPin, Plus, Trash2, Home, Briefcase } from "lucide-react";
 import { api } from "../../lib/api";
+import { LocationPicker } from "../../components/location-picker";
 
 type Customer = {
   id: string;
@@ -312,6 +313,17 @@ export default function ProfilePage() {
                 <MapPin size={16} />
                 Usar minha localização
               </button>
+
+              {newLat !== undefined && newLng !== undefined && (
+                <LocationPicker
+                  value={{ latitude: newLat, longitude: newLng }}
+                  onChange={(location) => {
+                    setNewLat(location.latitude);
+                    setNewLng(location.longitude);
+                  }}
+                  height={220}
+                />
+              )}
 
               <input
                 className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"

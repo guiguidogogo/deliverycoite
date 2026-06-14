@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { API_URL } from "../../../../lib/api";
+import { LocationPicker } from "../../../../components/location-picker";
 
 export default function SettingsManagePage() {
   const [form, setForm] = useState({
@@ -11,6 +12,9 @@ export default function SettingsManagePage() {
     whatsappNumber: "",
     deliveryPhoneNumber: "",
     deliveryFee: "5",
+    storeLatitude: null as number | null,
+    storeLongitude: null as number | null,
+    deliveryFeeTiers: [] as Array<{ maxDistanceKm: string; fee: string }>,
     openTime: "18:00",
     closeTime: "23:59",
     autoMessage: "",
@@ -45,6 +49,12 @@ export default function SettingsManagePage() {
           whatsappNumber: data.whatsappNumber ?? "",
           deliveryPhoneNumber: data.deliveryPhoneNumber ?? "",
           deliveryFee: String(Number(data.deliveryFee ?? 0)),
+          storeLatitude: data.storeLatitude ?? null,
+          storeLongitude: data.storeLongitude ?? null,
+          deliveryFeeTiers: (data.deliveryFeeTiers ?? []).map((tier: any) => ({
+            maxDistanceKm: String(tier.maxDistanceKm),
+            fee: String(Number(tier.fee))
+          })),
           openTime: data.openTime ?? "18:00",
           closeTime: data.closeTime ?? "23:59",
           autoMessage: data.autoMessage ?? "",
@@ -83,7 +93,11 @@ export default function SettingsManagePage() {
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({
         ...form,
-        deliveryFee: Number(form.deliveryFee)
+        deliveryFee: Number(form.deliveryFee),
+        deliveryFeeTiers: form.deliveryFeeTiers.map((tier) => ({
+          maxDistanceKm: Number(tier.maxDistanceKm),
+          fee: Number(tier.fee)
+        }))
       })
     });
 
@@ -114,6 +128,32 @@ export default function SettingsManagePage() {
     toast.success(payload.message ?? "Menuia conectado com sucesso");
   }
 
+  function locateStore() {
+    if (!navigator.geolocation) {
+      toast.error("Geolocalizacao nao suportada");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setForm((value) => ({
+          ...value,
+          storeLatitude: position.coords.latitude,
+          storeLongitude: position.coords.longitude
+        }));
+        toast.success("Localizacao da loja encontrada");
+      },
+      () => toast.error("Nao foi possivel obter a localizacao")
+    );
+  }
+
+  function addDeliveryTier() {
+    setForm((value) => ({
+      ...value,
+      deliveryFeeTiers: [...value.deliveryFeeTiers, { maxDistanceKm: "", fee: "" }]
+    }));
+  }
+
   return (
     <main className="mx-auto max-w-3xl p-4">
       <div className="mb-3 flex items-center justify-between">
@@ -135,6 +175,97 @@ export default function SettingsManagePage() {
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Chave PIX" value={form.pixKey} onChange={(e) => setForm((v) => ({ ...v, pixKey: e.target.value }))} />
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20 md:col-span-2" placeholder="URL QR Code PIX" value={form.pixQrCodeUrl} onChange={(e) => setForm((v) => ({ ...v, pixQrCodeUrl: e.target.value }))} />
           <textarea className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20 md:col-span-2" placeholder="Mensagem automatica" value={form.autoMessage} onChange={(e) => setForm((v) => ({ ...v, autoMessage: e.target.value }))} />
+        </div>
+      </section>
+
+      <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
+        <h2 className="text-xl font-bold">Frete por distancia</h2>
+        <p className="mt-1 text-sm opacity-70">
+          Informe o local da loja e crie faixas como: ate 3 km por R$ 3,00 e ate 5 km por R$ 10,00.
+        </p>
+
+        <button
+          type="button"
+          className="mt-3 rounded-xl bg-emerald-600 px-4 py-2 text-sm text-white"
+          onClick={locateStore}
+        >
+          Usar localizacao atual da loja
+        </button>
+
+        {form.storeLatitude !== null && form.storeLongitude !== null && (
+          <div className="mt-3">
+            <LocationPicker
+              value={{
+                latitude: form.storeLatitude,
+                longitude: form.storeLongitude
+              }}
+              onChange={(location) =>
+                setForm((value) => ({
+                  ...value,
+                  storeLatitude: location.latitude,
+                  storeLongitude: location.longitude
+                }))
+              }
+            />
+          </div>
+        )}
+
+        <div className="mt-4 space-y-2">
+          {form.deliveryFeeTiers.map((tier, index) => (
+            <div key={index} className="grid grid-cols-[1fr_1fr_auto] gap-2">
+              <input
+                className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
+                type="number"
+                min="0.1"
+                step="0.1"
+                placeholder="Ate quantos km"
+                value={tier.maxDistanceKm}
+                onChange={(event) =>
+                  setForm((value) => ({
+                    ...value,
+                    deliveryFeeTiers: value.deliveryFeeTiers.map((item, itemIndex) =>
+                      itemIndex === index ? { ...item, maxDistanceKm: event.target.value } : item
+                    )
+                  }))
+                }
+              />
+              <input
+                className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="Valor do frete"
+                value={tier.fee}
+                onChange={(event) =>
+                  setForm((value) => ({
+                    ...value,
+                    deliveryFeeTiers: value.deliveryFeeTiers.map((item, itemIndex) =>
+                      itemIndex === index ? { ...item, fee: event.target.value } : item
+                    )
+                  }))
+                }
+              />
+              <button
+                type="button"
+                className="rounded-xl bg-red-600 px-3 py-2 text-white"
+                onClick={() =>
+                  setForm((value) => ({
+                    ...value,
+                    deliveryFeeTiers: value.deliveryFeeTiers.filter((_, itemIndex) => itemIndex !== index)
+                  }))
+                }
+              >
+                Remover
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            className="rounded-xl border border-black/10 px-4 py-2 text-sm dark:border-white/20"
+            onClick={addDeliveryTier}
+          >
+            Adicionar faixa
+          </button>
         </div>
       </section>
 

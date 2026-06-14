@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import { Moon, Search, ShoppingCart, Sun, User } from "lucide-react";
+import { MapPin, Moon, Search, ShoppingCart, Sun, User } from "lucide-react";
 import { toast } from "sonner";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -10,6 +10,7 @@ import { z } from "zod";
 import { api } from "../lib/api";
 import { money } from "../lib/format";
 import type { CartItem, Category, Product, SelectedComplement, Settings } from "../lib/types";
+import { LocationPicker } from "./location-picker";
 
 const checkoutSchema = z
   .object({
@@ -56,6 +57,8 @@ type CheckoutPayload = {
     number: string;
     district: string;
     complement?: string;
+    latitude?: number;
+    longitude?: number;
   };
   fulfillmentType: "DELIVERY" | "PICKUP";
   paymentMethod: "CASH" | "PIX" | "CARD";
@@ -101,6 +104,10 @@ export function Storefront() {
   const [couponMessage, setCouponMessage] = useState("");
   const [configuringProduct, setConfiguringProduct] = useState<Product | null>(null);
   const [complementQuantities, setComplementQuantities] = useState<Record<string, number>>({});
+  const [deliveryLocation, setDeliveryLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [quotedDeliveryFee, setQuotedDeliveryFee] = useState<number | null>(null);
+  const [deliveryDistanceKm, setDeliveryDistanceKm] = useState<number | null>(null);
+  const [deliveryQuoteError, setDeliveryQuoteError] = useState("");
   const {
     register,
     handleSubmit,
@@ -112,6 +119,12 @@ export function Storefront() {
     resolver: zodResolver(checkoutSchema),
     defaultValues: initialForm
   });
+  const paymentMethod = watch("paymentMethod");
+  const fulfillmentType = watch("fulfillmentType");
+  const needChange = watch("needChange");
+  const couponCode = watch("couponCode") || "";
+  const customerPhone = watch("phone") || "";
+  const customerName = watch("name") || "";
 
   useEffect(() => {
     api<Category[]>("/categories")
@@ -144,7 +157,15 @@ export function Storefront() {
 
     api<Settings>("/settings")
       .then((s) => {
-        setSettings({ ...s, deliveryFee: Number((s as any).deliveryFee ?? 0) });
+        setSettings({
+          ...s,
+          deliveryFee: Number((s as any).deliveryFee ?? 0),
+          deliveryFeeTiers: ((s as any).deliveryFeeTiers ?? []).map((tier: any) => ({
+            ...tier,
+            fee: Number(tier.fee),
+            maxDistanceKm: Number(tier.maxDistanceKm)
+          }))
+        });
       })
       .catch(() => {
         setSettings(null);
@@ -184,6 +205,12 @@ export function Storefront() {
             setValue("district", defaultAddr.district);
             setValue("complement", defaultAddr.complement || "");
             setSelectedAddress(defaultAddr.id);
+            if (defaultAddr.latitude != null && defaultAddr.longitude != null) {
+              setDeliveryLocation({
+                latitude: defaultAddr.latitude,
+                longitude: defaultAddr.longitude
+              });
+            }
           }
         })
         .catch(() => {
@@ -202,6 +229,33 @@ export function Storefront() {
     document.documentElement.classList.toggle("dark", dark);
   }, [dark]);
 
+  useEffect(() => {
+    if (fulfillmentType !== "DELIVERY" || !deliveryLocation) {
+      setQuotedDeliveryFee(null);
+      setDeliveryDistanceKm(null);
+      setDeliveryQuoteError("");
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      api<{ fee: number; distanceKm: number | null }>(
+        `/delivery/quote?latitude=${deliveryLocation.latitude}&longitude=${deliveryLocation.longitude}`
+      )
+        .then((quote) => {
+          setQuotedDeliveryFee(Number(quote.fee));
+          setDeliveryDistanceKm(quote.distanceKm);
+          setDeliveryQuoteError("");
+        })
+        .catch((error) => {
+          setQuotedDeliveryFee(null);
+          setDeliveryDistanceKm(null);
+          setDeliveryQuoteError(error instanceof Error ? error.message : "Nao foi possivel calcular o frete");
+        });
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [deliveryLocation, fulfillmentType]);
+
   const filtered = useMemo(() => {
     return products.filter((product) => {
       const byCategory = selectedCategory === "all" || product.categoryId === selectedCategory;
@@ -218,16 +272,12 @@ export function Storefront() {
     const unit = (item.product.promoPrice ?? item.product.price) + extras;
     return acc + unit * item.quantity;
   }, 0);
-  const paymentMethod = watch("paymentMethod");
-  const fulfillmentType = watch("fulfillmentType");
-  const needChange = watch("needChange");
-  const couponCode = watch("couponCode") || "";
-  const customerPhone = watch("phone") || "";
-  const customerName = watch("name") || "";
   const deliveryFee =
     cart.length === 0 || fulfillmentType === "PICKUP"
       ? 0
-      : (settings?.deliveryFee ?? 0);
+      : settings?.deliveryFeeTiers?.length
+        ? (quotedDeliveryFee ?? 0)
+        : (settings?.deliveryFee ?? 0);
   const discount = couponDiscount;
   const total = subtotal + deliveryFee - discount;
 
@@ -323,7 +373,48 @@ export function Storefront() {
       setValue("district", addr.district);
       setValue("complement", addr.complement || "");
       setSelectedAddress(addressId);
+      setDeliveryLocation(
+        addr.latitude != null && addr.longitude != null
+          ? { latitude: addr.latitude, longitude: addr.longitude }
+          : null
+      );
     }
+  }
+
+  function locateDeliveryAddress() {
+    if (!navigator.geolocation) {
+      toast.error("Geolocalizacao nao suportada");
+      return;
+    }
+
+    toast.info("Obtendo sua localizacao...");
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const location = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude
+        };
+        setDeliveryLocation(location);
+        setSelectedAddress("");
+
+        try {
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${location.latitude}&lon=${location.longitude}`
+          );
+          const data = await response.json();
+          if (data.address) {
+            setValue("address", data.address.road || data.address.pedestrian || "");
+            setValue("number", data.address.house_number || "");
+            setValue("district", data.address.suburb || data.address.neighbourhood || "");
+          }
+        } catch {
+          // O mapa continua utilizavel mesmo se o endereco textual nao for encontrado.
+        }
+        toast.success("Confira o ponto no mapa");
+      },
+      () => toast.error("Nao foi possivel obter sua localizacao"),
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
   }
 
   async function fillCustomerNameByPhone() {
@@ -347,6 +438,14 @@ export function Storefront() {
       toast.error("Adicione itens antes de confirmar");
       return;
     }
+    if (
+      values.fulfillmentType === "DELIVERY" &&
+      settings.deliveryFeeTiers?.length &&
+      (!deliveryLocation || quotedDeliveryFee === null)
+    ) {
+      toast.error(deliveryQuoteError || "Confirme sua localizacao para calcular o frete");
+      return;
+    }
 
     const payload: CheckoutPayload = {
       customer: {
@@ -355,7 +454,9 @@ export function Storefront() {
         address: values.address || "",
         number: values.number || "",
         district: values.district || "",
-        complement: values.complement || undefined
+        complement: values.complement || undefined,
+        latitude: deliveryLocation?.latitude,
+        longitude: deliveryLocation?.longitude
       },
       fulfillmentType: values.fulfillmentType,
       paymentMethod: values.paymentMethod,
@@ -618,6 +719,32 @@ export function Storefront() {
                   <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Numero *" {...register("number")} />
                   <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Bairro *" {...register("district")} />
                   <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Complemento" {...register("complement")} />
+                  <div className="md:col-span-2">
+                    <button
+                      type="button"
+                      className="mb-2 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-white"
+                      onClick={locateDeliveryAddress}
+                    >
+                      <MapPin size={16} />
+                      Localizar e conferir no mapa
+                    </button>
+                    {deliveryLocation && (
+                      <LocationPicker
+                        value={deliveryLocation}
+                        onChange={setDeliveryLocation}
+                      />
+                    )}
+                    {deliveryDistanceKm !== null && !deliveryQuoteError && (
+                      <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
+                        Distancia aproximada: {deliveryDistanceKm.toFixed(2)} km
+                      </p>
+                    )}
+                    {deliveryQuoteError && (
+                      <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                        {deliveryQuoteError}
+                      </p>
+                    )}
+                  </div>
                 </>
               )}
 

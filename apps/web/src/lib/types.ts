@@ -42,6 +42,13 @@ export type Settings = {
   logoUrl?: string | null;
   whatsappNumber: string;
   deliveryFee: number;
+  storeLatitude?: number | null;
+  storeLongitude?: number | null;
+  deliveryFeeTiers?: Array<{
+    id: string;
+    maxDistanceKm: number;
+    fee: number;
+  }>;
   pixKey?: string | null;
   pixQrCodeUrl?: string | null;
   darkModeEnabled: boolean;
