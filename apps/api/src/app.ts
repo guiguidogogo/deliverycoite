@@ -10,7 +10,7 @@ import { env } from "./utils/env.js";
 
 export const app = express();
 
-app.use(helmet());
+app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({ 
   origin: true, // Permite todas as origens (necessário para ngrok)
   credentials: true 
