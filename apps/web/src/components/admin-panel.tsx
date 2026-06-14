@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { API_URL } from "../lib/api";
 
@@ -89,13 +89,13 @@ async function authApi<T>(path: string, token: string, init?: RequestInit): Prom
   return res.json();
 }
 
-function beep() {
-  const audio = new AudioContext();
+function beep(audio: AudioContext) {
   const oscillator = audio.createOscillator();
   const gain = audio.createGain();
   oscillator.connect(gain);
   gain.connect(audio.destination);
   oscillator.frequency.value = 840;
+  gain.gain.setValueAtTime(0.25, audio.currentTime);
   oscillator.start();
   gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.4);
   oscillator.stop(audio.currentTime + 0.4);
@@ -113,6 +113,11 @@ export function AdminPanel() {
   const [dateTo, setDateTo] = useState(() => toInputDate(new Date()));
   const [payingOrderId, setPayingOrderId] = useState<string | null>(null);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+  const [soundEnabled, setSoundEnabled] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const audioRef = useRef<AudioContext | null>(null);
+  const knownNewOrdersRef = useRef<Set<string>>(new Set());
+  const initializedOrdersRef = useRef(false);
 
   useEffect(() => {
     const storedToken = localStorage.getItem("delivery:token");
@@ -123,51 +128,70 @@ export function AdminPanel() {
     setToken(storedToken);
   }, [router]);
 
-  useEffect(() => {
+  const refreshPanel = useCallback(async (notifyNewOrders = false) => {
     if (!token) return;
 
-    const currentToken = token;
-    let active = true;
+    try {
+      const [dash, list, notify] = await Promise.all([
+        authApi<Dashboard>("/admin/dashboard", token),
+        authApi<Order[]>(
+          `/admin/orders?status=${filterStatus}&customer=${encodeURIComponent(search)}&dateFrom=${dateFrom}&dateTo=${dateTo}`,
+          token
+        ),
+        authApi<{ count: number; orders: Array<{ id: string; customer: { name: string } }> }>(
+          "/admin/notifications/new-orders",
+          token
+        )
+      ]);
 
-    async function load() {
-      try {
-        const [dash, list, notify] = await Promise.all([
-          authApi<Dashboard>("/admin/dashboard", currentToken),
-          authApi<Order[]>(
-            `/admin/orders?status=${filterStatus}&customer=${encodeURIComponent(search)}&dateFrom=${dateFrom}&dateTo=${dateTo}`,
-            currentToken
-          ),
-          authApi<{ count: number }>("/admin/notifications/new-orders", currentToken)
-        ]);
+      setDashboard(dash);
+      setOrders(list.map((order: any) => ({ ...order, total: Number(order.total) })));
 
-        if (!active) return;
+      const currentIds = new Set(notify.orders.map((order) => order.id));
+      const newOrders = notify.orders.filter((order) => !knownNewOrdersRef.current.has(order.id));
 
-        setDashboard(dash);
-        setOrders(list.map((order: any) => ({ ...order, total: Number(order.total) })));
-
-        if (notify.count > 0) {
-          toast.warning(`Voce tem ${notify.count} pedido(s) novo(s)`);
+      if (initializedOrdersRef.current && notifyNewOrders && newOrders.length > 0) {
+        if (audioRef.current && soundEnabled) {
+          void audioRef.current.resume().then(() => beep(audioRef.current!)).catch(() => undefined);
         }
-      } catch (error) {
-        if (!active) return;
-
-        const message = error instanceof Error ? error.message : "";
-        if (/401|403|token|expir/i.test(message)) {
-          localStorage.removeItem("delivery:token");
-          router.replace("/admin/login");
-          return;
-        }
-
-        toast.error(message || "Nao foi possivel conectar ao servidor.");
+        toast.success(
+          newOrders.length === 1
+            ? `Novo pedido de ${newOrders[0].customer.name}`
+            : `${newOrders.length} novos pedidos recebidos`
+        );
       }
-    }
 
-    void load();
+      knownNewOrdersRef.current = currentIds;
+      initializedOrdersRef.current = true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (/401|403|token|expir/i.test(message)) {
+        localStorage.removeItem("delivery:token");
+        router.replace("/admin/login");
+        return;
+      }
+      toast.error(message || "Nao foi possivel conectar ao servidor.");
+    }
+  }, [token, filterStatus, search, dateFrom, dateTo, router, soundEnabled]);
+
+  useEffect(() => {
+    if (!token) return;
+    void refreshPanel(false);
+
+    const timer = window.setInterval(() => void refreshPanel(true), 5000);
+    const onFocus = () => void refreshPanel(true);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void refreshPanel(true);
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
 
     return () => {
-      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [token, filterStatus, search, dateFrom, dateTo]);
+  }, [token, refreshPanel]);
 
   useEffect(() => {
     if (!token) return;
@@ -183,28 +207,49 @@ export function AdminPanel() {
       return `${wsProtocol}//${window.location.host}/ws-admin?token=${token}`;
     })();
 
-    const socket = new WebSocket(wsUrl);
-    const currentToken = token;
+    let socket: WebSocket | null = null;
+    let reconnectTimer: number | null = null;
+    let stopped = false;
 
-    socket.onmessage = (event) => {
-      const payload = JSON.parse(event.data);
-      if (payload.type === "new-order") {
-        beep();
-        toast.success(`Novo pedido de ${payload.payload.customer}`);
-        void authApi<Dashboard>("/admin/dashboard", currentToken)
-          .then((dash) => setDashboard(dash))
-          .catch(() => undefined);
-      }
-    };
+    function connect() {
+      if (stopped) return;
+      socket = new WebSocket(wsUrl);
+      socket.onopen = () => setConnected(true);
+      socket.onmessage = (event) => {
+        const payload = JSON.parse(event.data);
+        if (payload.type === "new-order") void refreshPanel(true);
+      };
+      socket.onerror = () => setConnected(false);
+      socket.onclose = () => {
+        setConnected(false);
+        if (!stopped) reconnectTimer = window.setTimeout(connect, 3000);
+      };
+    }
 
-    socket.onerror = () => {
-      // Falha de rede no WebSocket não deve quebrar o painel; o polling das rotas continua funcionando.
-    };
+    connect();
 
     return () => {
-      socket.close();
+      stopped = true;
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      socket?.close();
     };
-  }, [token]);
+  }, [token, refreshPanel]);
+
+  async function enableSound() {
+    const AudioContextClass = window.AudioContext
+      ?? (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextClass) {
+      toast.error("Este navegador nao permite aviso sonoro");
+      return;
+    }
+
+    const audio = audioRef.current ?? new AudioContextClass();
+    audioRef.current = audio;
+    await audio.resume();
+    beep(audio);
+    setSoundEnabled(true);
+    toast.success("Aviso sonoro ativado");
+  }
 
   const filteredOrders = useMemo(() => {
     if (!onlyNew) return orders;
@@ -217,7 +262,20 @@ export function AdminPanel() {
 
   return (
     <main className="mx-auto max-w-6xl p-4 md:p-8">
-      <h1 className="font-display text-4xl">Painel Administrativo</h1>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="font-display text-4xl">Painel Administrativo</h1>
+        <div className="flex items-center gap-2 text-xs">
+          <span className={`rounded-full px-3 py-2 ${connected ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+            {connected ? "Aguardando novos pedidos" : "Reconectando..."}
+          </span>
+          <button
+            className={`rounded-full px-3 py-2 ${soundEnabled ? "bg-emerald-600 text-white" : "bg-ink text-white"}`}
+            onClick={() => void enableSound()}
+          >
+            {soundEnabled ? "Som ativado" : "Ativar som"}
+          </button>
+        </div>
+      </div>
 
       <section className="mt-3 flex flex-wrap gap-2">
         <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/products">
@@ -315,7 +373,7 @@ export function AdminPanel() {
                       }>(`/admin/orders/${order.id}/status`, token, {
                         method: "PATCH",
                         body: JSON.stringify({ status })
-                      }).then((payload) => {
+                      }).then(async (payload) => {
                         setOrders((prev) =>
                           payload.status === "FINISHED" && filterStatus !== "FINISHED"
                             ? prev.filter((item) => item.id !== order.id)
@@ -327,6 +385,7 @@ export function AdminPanel() {
                         } else if (payload.statusWhatsappSent) {
                           toast.success("Status enviado ao cliente via Menuia");
                         }
+                        await refreshPanel(false);
                       }).catch((error) => {
                         toast.error(error instanceof Error ? error.message : "Falha ao atualizar pedido");
                       });
@@ -392,7 +451,7 @@ export function AdminPanel() {
                                 method: "PATCH",
                                 body: JSON.stringify({ method: method.value })
                               })
-                                .then((payload) => {
+                                .then(async (payload) => {
                                   setOrders((prev) =>
                                     prev.map((item) => (item.id === order.id ? { ...item, notes: payload.notes ?? item.notes } : item))
                                   );
@@ -404,6 +463,7 @@ export function AdminPanel() {
                                   window.dispatchEvent(new Event("delivery:payment-updated"));
                                   setPayingOrderId(null);
                                   toast.success("Pagamento registrado");
+                                  await refreshPanel(false);
                                 })
                                 .catch((error) => {
                                   toast.error(error instanceof Error ? error.message : "Falha ao registrar pagamento");
@@ -436,9 +496,10 @@ export function AdminPanel() {
                     onClick={() => {
                       if (!window.confirm("Deseja apagar este pedido?")) return;
                       void authApi(`/admin/orders/${order.id}`, token, { method: "DELETE" })
-                        .then(() => {
+                        .then(async () => {
                           setOrders((prev) => prev.filter((item) => item.id !== order.id));
                           toast.success("Pedido apagado");
+                          await refreshPanel(false);
                         })
                         .catch((error) => {
                           toast.error(error instanceof Error ? error.message : "Falha ao apagar pedido");

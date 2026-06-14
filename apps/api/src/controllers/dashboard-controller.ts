@@ -1,5 +1,4 @@
 import type { Request, Response } from "express";
-import { OrderStatus } from "@prisma/client";
 import dayjs from "dayjs";
 import { prisma } from "../utils/prisma.js";
 
@@ -7,27 +6,48 @@ export async function getDashboard(_req: Request, res: Response) {
   const startDay = dayjs().startOf("day").toDate();
   const endDay = dayjs().endOf("day").toDate();
   const startMonth = dayjs().startOf("month").toDate();
-  const paidStatuses: OrderStatus[] = ["DELIVERED", "FINISHED"];
+  const recognizedRevenue = {
+    status: { not: "CANCELED" as const },
+    OR: [
+      { paidAt: { not: null } },
+      { status: { in: ["DELIVERED" as const, "FINISHED" as const] } }
+    ]
+  };
 
-  const [ordersToday, salesToday, salesMonth, pendingOrders, deliveredOrders] = await Promise.all([
+  const [ordersToday, paidOrdersToday, salesToday, salesMonth, pendingOrders, soldOrders] = await Promise.all([
     prisma.order.count({ where: { createdAt: { gte: startDay, lte: endDay } } }),
+    prisma.order.count({
+      where: {
+        createdAt: { gte: startDay, lte: endDay },
+        ...recognizedRevenue
+      }
+    }),
     prisma.order.aggregate({
-      where: { createdAt: { gte: startDay, lte: endDay }, status: { in: paidStatuses } },
+      where: {
+        createdAt: { gte: startDay, lte: endDay },
+        ...recognizedRevenue
+      },
       _sum: { total: true }
     }),
     prisma.order.aggregate({
-      where: { createdAt: { gte: startMonth }, status: { in: paidStatuses } },
+      where: {
+        createdAt: { gte: startMonth },
+        ...recognizedRevenue
+      },
       _sum: { total: true }
     }),
     prisma.order.count({ where: { status: { in: ["RECEIVED", "PREPARING", "OUT_FOR_DELIVERY"] } } }),
     prisma.order.findMany({
-      where: { status: "DELIVERED", createdAt: { gte: startMonth } },
+      where: {
+        createdAt: { gte: startMonth },
+        ...recognizedRevenue
+      },
       include: { items: true }
     })
   ]);
 
   const soldMap = new Map<string, number>();
-  deliveredOrders.forEach((order) => {
+  soldOrders.forEach((order) => {
     order.items.forEach((item) => {
       soldMap.set(item.productId, (soldMap.get(item.productId) ?? 0) + item.quantity);
     });
@@ -41,7 +61,7 @@ export async function getDashboard(_req: Request, res: Response) {
     quantity: soldMap.get(id) ?? 0
   }));
 
-  const avgTicket = ordersToday > 0 ? Number(salesToday._sum.total ?? 0) / ordersToday : 0;
+  const avgTicket = paidOrdersToday > 0 ? Number(salesToday._sum.total ?? 0) / paidOrdersToday : 0;
 
   return res.json({
     ordersToday,
