@@ -42,7 +42,11 @@ const checkoutSchema = z
       .array(
         z.object({
           productId: z.string(),
-          quantity: z.coerce.number().int().positive()
+          quantity: z.coerce.number().int().positive(),
+          complements: z.array(z.object({
+            complementId: z.string(),
+            quantity: z.coerce.number().int().min(1).max(20)
+          })).default([])
         })
       )
       .min(1)
@@ -96,19 +100,72 @@ export async function createOrder(req: Request, res: Response) {
     });
   }
 
+  const productIds = [...new Set(body.items.map((item) => item.productId))];
   const products = await prisma.product.findMany({
-    where: { id: { in: body.items.map((item) => item.productId) }, active: true, available: true }
+    where: { id: { in: productIds }, active: true, available: true },
+    include: {
+      complements: {
+        include: { complement: true },
+        orderBy: { sortOrder: "asc" }
+      }
+    }
   });
 
-  if (products.length !== body.items.length) {
+  if (products.length !== productIds.length) {
     return res.status(400).json({ message: "Um ou mais produtos estao indisponiveis" });
   }
 
-  const subtotalNumber = body.items.reduce((acc, item) => {
-    const product = products.find((p) => p.id === item.productId)!;
-    const unit = Number(product.promoPrice ?? product.price);
-    return acc + unit * item.quantity;
-  }, 0);
+  const preparedItems = body.items.map((item) => {
+    const product = products.find((candidate) => candidate.id === item.productId)!;
+    const selectedById = new Map(item.complements.map((selected) => [selected.complementId, selected.quantity]));
+    const availableLinks = product.complements.filter((link) => link.complement.active);
+
+    for (const required of availableLinks.filter((link) => link.required)) {
+      if (!selectedById.has(required.complementId)) {
+        throw new z.ZodError([{
+          code: z.ZodIssueCode.custom,
+          path: ["items", item.productId, "complements"],
+          message: `O complemento ${required.complement.name} e obrigatorio para ${product.name}`
+        }]);
+      }
+    }
+
+    const selectedComplements = item.complements.map((selected) => {
+      const link = availableLinks.find((candidate) => candidate.complementId === selected.complementId);
+      if (!link) {
+        throw new z.ZodError([{
+          code: z.ZodIssueCode.custom,
+          path: ["items", item.productId, "complements"],
+          message: "Complemento indisponivel para este produto"
+        }]);
+      }
+
+      const price = Number(link.complement.price);
+      return {
+        id: link.complement.id,
+        name: link.complement.name,
+        quantity: selected.quantity,
+        price,
+        total: price * selected.quantity * item.quantity
+      };
+    });
+
+    const basePrice = Number(product.promoPrice ?? product.price);
+    const complementsPerUnit = selectedComplements.reduce(
+      (sum, complement) => sum + complement.price * complement.quantity,
+      0
+    );
+
+    return {
+      ...item,
+      product,
+      basePrice,
+      selectedComplements,
+      total: (basePrice + complementsPerUnit) * item.quantity
+    };
+  });
+
+  const subtotalNumber = preparedItems.reduce((acc, item) => acc + item.total, 0);
 
   const pickup = body.fulfillmentType === FulfillmentType.PICKUP;
   const customer = await prisma.customer.upsert({
@@ -205,21 +262,26 @@ export async function createOrder(req: Request, res: Response) {
       couponCode: normalizedCouponCode,
       customerNotes: body.notes,
       items: {
-        create: body.items.map((item) => {
-          const product = products.find((p) => p.id === item.productId)!;
-          const unit = Number(product.promoPrice ?? product.price);
-          return {
-            productId: item.productId,
-            quantity: item.quantity,
-            price: toDecimal(unit),
-            total: toDecimal(unit * item.quantity)
-          };
-        })
+        create: preparedItems.map((item) => ({
+          productId: item.productId,
+          quantity: item.quantity,
+          price: toDecimal(item.basePrice),
+          total: toDecimal(item.total),
+          complements: {
+            create: item.selectedComplements.map((complement) => ({
+              complementId: complement.id,
+              name: complement.name,
+              quantity: complement.quantity,
+              price: toDecimal(complement.price),
+              total: toDecimal(complement.total)
+            }))
+          }
+        }))
       }
     },
     include: {
       customer: true,
-      items: { include: { product: true } }
+      items: { include: { product: true, complements: true } }
     }
   });
 
@@ -301,7 +363,7 @@ export async function listOrders(req: Request, res: Response) {
         ...(phone ? { phone: { contains: phone } } : {})
       }
     },
-    include: { customer: true, items: { include: { product: true } } },
+    include: { customer: true, items: { include: { product: true, complements: true } } },
     orderBy: { createdAt: "desc" }
   });
 
@@ -387,7 +449,7 @@ export async function sendToDelivery(req: Request, res: Response) {
 
   const order = await prisma.order.findUnique({
     where: { id: req.params.id },
-    include: { customer: true, items: { include: { product: true } } }
+    include: { customer: true, items: { include: { product: true, complements: true } } }
   });
 
   if (!order) {
@@ -403,7 +465,12 @@ export async function sendToDelivery(req: Request, res: Response) {
   const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
 
   // Criar mensagem para o motoboy
-  const items = order.items.map(item => `${item.quantity}x ${item.product.name}`).join('\n');
+  const items = order.items.map((item) => {
+    const complements = item.complements
+      .map((complement) => `  + ${complement.quantity}x ${complement.name}`)
+      .join("\n");
+    return `${item.quantity}x ${item.product.name}${complements ? `\n${complements}` : ""}`;
+  }).join('\n');
   
   const message = `🛵 *NOVO PEDIDO PARA ENTREGA*\n\n` +
     `📋 *Pedido:* #${formatOrderCode(order.orderNumber)}\n` +
@@ -568,7 +635,7 @@ export async function printOrderById(req: Request, res: Response) {
     prisma.setting.findFirstOrThrow(),
     prisma.order.findUnique({
       where: { id: req.params.id },
-      include: { customer: true, items: { include: { product: true } } }
+      include: { customer: true, items: { include: { product: true, complements: true } } }
     })
   ]);
 

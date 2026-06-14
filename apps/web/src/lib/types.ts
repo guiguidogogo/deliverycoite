@@ -12,6 +12,29 @@ export type Product = {
   promoPrice?: number | null;
   imageUrl?: string | null;
   categoryId: string;
+  complements: ProductComplement[];
+};
+
+export type Complement = {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  imageUrl?: string | null;
+  active: boolean;
+};
+
+export type ProductComplement = {
+  id: string;
+  complementId: string;
+  required: boolean;
+  sortOrder: number;
+  complement: Complement;
+};
+
+export type SelectedComplement = {
+  complement: Complement;
+  quantity: number;
 };
 
 export type Settings = {
@@ -25,6 +48,8 @@ export type Settings = {
 };
 
 export type CartItem = {
+  id: string;
   product: Product;
   quantity: number;
+  complements: SelectedComplement[];
 };

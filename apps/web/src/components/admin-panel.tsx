@@ -33,7 +33,12 @@ type Order = {
   total: number;
   createdAt: string;
   customer: { name: string; phone: string; address: string; number: string; district: string };
-  items: Array<{ id: string; quantity: number; product: { name: string } }>;
+  items: Array<{
+    id: string;
+    quantity: number;
+    product: { name: string };
+    complements: Array<{ id: string; name: string; quantity: number; price: number; total: number }>;
+  }>;
   viewedByStaff: boolean;
   sentToDelivery: boolean;
   customerNotes?: string | null;
@@ -220,6 +225,9 @@ export function AdminPanel() {
         </a>
         <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/categories">
           Categorias
+        </a>
+        <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/complements">
+          Complementos
         </a>
         <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/settings">
           Configuracoes
@@ -449,7 +457,15 @@ export function AdminPanel() {
                   <p className="font-semibold">Itens do pedido</p>
                   <ul className="mt-1 space-y-1">
                     {order.items.map((item) => (
-                      <li key={item.id}>• {item.quantity}x {item.product.name}</li>
+                      <li key={item.id}>
+                        • {item.quantity}x {item.product.name}
+                        {item.complements?.map((complement) => (
+                          <span key={complement.id} className="block pl-4 text-xs opacity-75">
+                            + {complement.quantity}x {complement.name}
+                            {Number(complement.price) > 0 ? ` (R$ ${Number(complement.price).toFixed(2)})` : ""}
+                          </span>
+                        ))}
+                      </li>
                     ))}
                   </ul>
                   <p className="mt-2 text-xs opacity-80">

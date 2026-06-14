@@ -74,10 +74,40 @@ model Product {
   category    Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   orderItems  OrderItem[]
   favorites   Favorite[]
+  complements ProductComplement[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
   @@index([categoryId])
+}
+
+model Complement {
+  id           String                @id @default(cuid())
+  name         String
+  description  String
+  price        Decimal               @db.Decimal(10, 2) @default(0)
+  imageUrl     String?
+  active       Boolean               @default(true)
+  products     ProductComplement[]
+  orderItems   OrderItemComplement[]
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+}
+
+model ProductComplement {
+  id           String     @id @default(cuid())
+  productId    String
+  product      Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  complementId String
+  complement   Complement @relation(fields: [complementId], references: [id], onDelete: Cascade)
+  required     Boolean    @default(false)
+  sortOrder    Int        @default(0)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([productId, complementId])
+  @@index([productId, sortOrder])
+  @@index([complementId])
 }
 
 model Customer {
@@ -129,7 +159,7 @@ model CustomerAddress {
   id          String   @id @default(cuid())
   customerId  String
   customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  label       String
+  label       String   // Casa, Trabalho, etc
   address     String
   number      String
   district    String
@@ -213,6 +243,22 @@ model OrderItem {
   quantity  Int
   price     Decimal  @db.Decimal(10, 2)
   total     Decimal  @db.Decimal(10, 2)
+  complements OrderItemComplement[]
+}
+
+model OrderItemComplement {
+  id           String      @id @default(cuid())
+  orderItemId  String
+  orderItem    OrderItem   @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  complementId String?
+  complement   Complement? @relation(fields: [complementId], references: [id], onDelete: SetNull)
+  name         String
+  quantity     Int
+  price        Decimal     @db.Decimal(10, 2)
+  total        Decimal     @db.Decimal(10, 2)
+
+  @@index([orderItemId])
+  @@index([complementId])
 }
 
 model Setting {

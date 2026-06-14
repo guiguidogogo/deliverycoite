@@ -14,6 +14,12 @@ import {
   updateCoupon
 } from "../controllers/coupons-controller.js";
 import {
+  createComplement,
+  deleteComplement,
+  listComplements,
+  updateComplement
+} from "../controllers/complements-controller.js";
+import {
   registerCustomer,
   loginCustomer,
   getCustomerProfile,
@@ -91,6 +97,7 @@ route.get("/settings", getSettings);
 route.get("/customers/lookup", lookupCustomer);
 route.get("/categories", listCategories);
 route.get("/products", listProducts);
+route.get("/complements", listComplements);
 route.get("/coupons/validate", validateCoupon);
 route.post("/favorites/toggle", toggleFavorite);
 route.post("/orders", createOrder);
@@ -128,6 +135,11 @@ route.post("/admin/products", auth(["ADMIN"]), createProduct);
 route.post("/admin/uploads/image", auth(["ADMIN"]), imageUpload.single("image"), uploadImage);
 route.patch("/admin/products/:id", auth(["ADMIN"]), updateProduct);
 route.delete("/admin/products/:id", auth(["ADMIN"]), deleteProduct);
+
+route.get("/admin/complements", listComplements);
+route.post("/admin/complements", auth(["ADMIN"]), createComplement);
+route.patch("/admin/complements/:id", auth(["ADMIN"]), updateComplement);
+route.delete("/admin/complements/:id", auth(["ADMIN"]), deleteComplement);
 
 route.get("/admin/coupons", listCoupons);
 route.post("/admin/coupons", auth(["ADMIN"]), createCoupon);

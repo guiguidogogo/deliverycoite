@@ -1,9 +1,9 @@
-import type { Order, OrderItem, Product, Customer, Setting } from "@prisma/client";
+import type { Order, OrderItem, OrderItemComplement, Product, Customer, Setting } from "@prisma/client";
 import { formatOrderCode } from "../utils/order-code.js";
 
 type FullOrder = Order & {
   customer: Customer;
-  items: Array<OrderItem & { product: Product }>;
+  items: Array<OrderItem & { product: Product; complements: OrderItemComplement[] }>;
 };
 
 function money(value: number) {
@@ -12,7 +12,14 @@ function money(value: number) {
 
 export function buildWhatsappMessage(order: FullOrder, setting: Setting) {
   const itemsText = order.items
-    .map((item) => `${item.quantity}x ${item.product.name} - ${money(Number(item.total))}`)
+    .map((item) => {
+      const complements = item.complements
+        .map((complement) =>
+          `  + ${complement.quantity}x ${complement.name}${Number(complement.price) > 0 ? ` (${money(Number(complement.price))} cada)` : ""}`
+        )
+        .join("\n");
+      return `${item.quantity}x ${item.product.name} - ${money(Number(item.total))}${complements ? `\n${complements}` : ""}`;
+    })
     .join("\n");
 
   const lines = [

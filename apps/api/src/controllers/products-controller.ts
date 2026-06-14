@@ -8,10 +8,15 @@ const schema = z.object({
   description: z.string().min(2),
   price: z.coerce.number().positive(),
   promoPrice: z.coerce.number().positive().optional(),
-  imageUrl: z.string().url().optional(),
+  imageUrl: z.string().url().nullable().optional(),
   categoryId: z.string().min(1),
   active: z.boolean().optional(),
-  available: z.boolean().optional()
+  available: z.boolean().optional(),
+  complementLinks: z.array(z.object({
+    complementId: z.string().min(1),
+    required: z.boolean().default(false),
+    sortOrder: z.coerce.number().int().min(0).default(0)
+  })).optional()
 });
 
 export async function listProducts(req: Request, res: Response) {
@@ -32,7 +37,13 @@ export async function listProducts(req: Request, res: Response) {
 
   const products = await prisma.product.findMany({
     where,
-    include: { category: true },
+    include: {
+      category: true,
+      complements: {
+        include: { complement: true },
+        orderBy: { sortOrder: "asc" }
+      }
+    },
     orderBy: { createdAt: "desc" }
   });
 
@@ -41,11 +52,20 @@ export async function listProducts(req: Request, res: Response) {
 
 export async function createProduct(req: Request, res: Response) {
   const body = schema.parse(req.body);
+  const { complementLinks, ...productData } = body;
   const product = await prisma.product.create({
     data: {
-      ...body,
+      ...productData,
+      imageUrl: productData.imageUrl || null,
       price: new Prisma.Decimal(body.price),
-      promoPrice: body.promoPrice ? new Prisma.Decimal(body.promoPrice) : undefined
+      promoPrice: body.promoPrice ? new Prisma.Decimal(body.promoPrice) : undefined,
+      complements: complementLinks?.length ? {
+        create: complementLinks
+      } : undefined
+    },
+    include: {
+      category: true,
+      complements: { include: { complement: true }, orderBy: { sortOrder: "asc" } }
     }
   });
 
@@ -55,14 +75,29 @@ export async function createProduct(req: Request, res: Response) {
 export async function updateProduct(req: Request, res: Response) {
   const body = schema.partial().parse(req.body);
   const { id } = req.params;
+  const { complementLinks, ...productData } = body;
 
-  const product = await prisma.product.update({
-    where: { id },
-    data: {
-      ...body,
-      ...(body.price ? { price: new Prisma.Decimal(body.price) } : {}),
-      ...(body.promoPrice ? { promoPrice: new Prisma.Decimal(body.promoPrice) } : {})
+  const product = await prisma.$transaction(async (tx) => {
+    if (complementLinks !== undefined) {
+      await tx.productComplement.deleteMany({ where: { productId: id } });
     }
+
+    return tx.product.update({
+      where: { id },
+      data: {
+        ...productData,
+        ...(body.imageUrl !== undefined ? { imageUrl: body.imageUrl || null } : {}),
+        ...(body.price !== undefined ? { price: new Prisma.Decimal(body.price) } : {}),
+        ...(body.promoPrice !== undefined
+          ? { promoPrice: body.promoPrice ? new Prisma.Decimal(body.promoPrice) : null }
+          : {}),
+        ...(complementLinks?.length ? { complements: { create: complementLinks } } : {})
+      },
+      include: {
+        category: true,
+        complements: { include: { complement: true }, orderBy: { sortOrder: "asc" } }
+      }
+    });
   });
 
   return res.json(product);

@@ -32,6 +32,11 @@ type PrintableOrder = {
     quantity: number;
     total: unknown;
     product: { name: string };
+    complements: Array<{
+      name: string;
+      quantity: number;
+      price: unknown;
+    }>;
   }>;
 };
 
@@ -67,7 +72,12 @@ function receiptText(order: PrintableOrder, settings: Setting) {
         ]
       : []),
     separator(width),
-    ...order.items.map((item) => `${item.quantity}x ${item.product.name}  ${money(item.total)}`),
+    ...order.items.flatMap((item) => [
+      `${item.quantity}x ${item.product.name}  ${money(item.total)}`,
+      ...item.complements.map((complement) =>
+        `  + ${complement.quantity}x ${complement.name}${Number(complement.price) > 0 ? ` ${money(complement.price)}` : ""}`
+      )
+    ]),
     separator(width),
     `Subtotal: ${money(order.subtotal)}`,
     `Frete: ${money(order.deliveryFee)}`,

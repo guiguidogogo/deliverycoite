@@ -9,7 +9,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { api } from "../lib/api";
 import { money } from "../lib/format";
-import type { CartItem, Category, Product, Settings } from "../lib/types";
+import type { CartItem, Category, Product, SelectedComplement, Settings } from "../lib/types";
 
 const checkoutSchema = z
   .object({
@@ -62,7 +62,11 @@ type CheckoutPayload = {
   changeFor?: number;
   couponCode?: string;
   notes?: string;
-  items: Array<{ productId: string; quantity: number }>;
+  items: Array<{
+    productId: string;
+    quantity: number;
+    complements: Array<{ complementId: string; quantity: number }>;
+  }>;
 };
 
 const initialForm: CheckoutForm = {
@@ -95,6 +99,8 @@ export function Storefront() {
   const [selectedAddress, setSelectedAddress] = useState<string>("");
   const [couponDiscount, setCouponDiscount] = useState(0);
   const [couponMessage, setCouponMessage] = useState("");
+  const [configuringProduct, setConfiguringProduct] = useState<Product | null>(null);
+  const [complementQuantities, setComplementQuantities] = useState<Record<string, number>>({});
   const {
     register,
     handleSubmit,
@@ -108,18 +114,40 @@ export function Storefront() {
   });
 
   useEffect(() => {
-    Promise.all([api<Category[]>("/categories"), api<Product[]>("/products"), api<Settings>("/settings")])
-      .then(([c, p, s]) => {
+    api<Category[]>("/categories")
+      .then((c) => {
         setCategories(c.filter((item: any) => item.active !== false));
+      })
+      .catch(() => {
+        setCategories([]);
+      });
+
+    api<Product[]>("/products")
+      .then((p) => {
         setProducts(
           p
             .filter((item: any) => item.active !== false && item.available !== false)
-            .map((item: any) => ({ ...item, price: Number(item.price), promoPrice: item.promoPrice ? Number(item.promoPrice) : null }))
+            .map((item: any) => ({
+              ...item,
+              price: Number(item.price),
+              promoPrice: item.promoPrice ? Number(item.promoPrice) : null,
+              complements: (item.complements ?? []).map((link: any) => ({
+                ...link,
+                complement: { ...link.complement, price: Number(link.complement.price) }
+              }))
+            }))
         );
-        setSettings({ ...s, deliveryFee: Number((s as any).deliveryFee ?? 0) });
       })
       .catch((error) => {
         toast.error(error instanceof Error ? error.message : "Nao foi possivel carregar o cardapio");
+      });
+
+    api<Settings>("/settings")
+      .then((s) => {
+        setSettings({ ...s, deliveryFee: Number((s as any).deliveryFee ?? 0) });
+      })
+      .catch(() => {
+        setSettings(null);
       });
 
     const stored = localStorage.getItem("delivery:favorites");
@@ -183,7 +211,11 @@ export function Storefront() {
   }, [products, query, selectedCategory]);
 
   const subtotal = cart.reduce((acc, item) => {
-    const unit = item.product.promoPrice ?? item.product.price;
+    const extras = item.complements.reduce(
+      (sum, selected) => sum + selected.complement.price * selected.quantity,
+      0
+    );
+    const unit = (item.product.promoPrice ?? item.product.price) + extras;
     return acc + unit * item.quantity;
   }, 0);
   const paymentMethod = watch("paymentMethod");
@@ -220,24 +252,67 @@ export function Storefront() {
     }
   }
 
-  function addToCart(product: Product) {
+  function addConfiguredToCart(product: Product, complements: SelectedComplement[]) {
+    const selectionKey = complements
+      .map((item) => `${item.complement.id}:${item.quantity}`)
+      .sort()
+      .join("|");
+    const itemId = `${product.id}:${selectionKey}`;
+
     setCart((prev) => {
-      const found = prev.find((item) => item.product.id === product.id);
+      const found = prev.find((item) => item.id === itemId);
       if (found) {
         toast.success(`+1 ${product.name} adicionado!`);
-        return prev.map((item) => (item.product.id === product.id ? { ...item, quantity: item.quantity + 1 } : item));
+        return prev.map((item) => (item.id === itemId ? { ...item, quantity: item.quantity + 1 } : item));
       }
       toast.success(`${product.name} adicionado ao carrinho!`);
-      return [...prev, { product, quantity: 1 }];
+      return [...prev, { id: itemId, product, quantity: 1, complements }];
     });
   }
 
-  function setItemQuantity(productId: string, quantity: number) {
-    if (quantity <= 0) {
-      setCart((prev) => prev.filter((item) => item.product.id !== productId));
+  function beginProductConfiguration(product: Product) {
+    const activeLinks = (product.complements ?? []).filter((link) => link.complement.active);
+    if (!activeLinks.length) {
+      addConfiguredToCart(product, []);
       return;
     }
-    setCart((prev) => prev.map((item) => (item.product.id === productId ? { ...item, quantity } : item)));
+
+    setComplementQuantities(
+      Object.fromEntries(
+        activeLinks
+          .filter((link) => link.required)
+          .map((link) => [link.complementId, 1])
+      )
+    );
+    setConfiguringProduct(product);
+  }
+
+  function confirmProductConfiguration() {
+    if (!configuringProduct) return;
+    const selected = configuringProduct.complements
+      .filter((link) => (complementQuantities[link.complementId] ?? 0) > 0)
+      .map((link) => ({
+        complement: link.complement,
+        quantity: complementQuantities[link.complementId]
+      }));
+    const missing = configuringProduct.complements.find(
+      (link) => link.required && !selected.some((item) => item.complement.id === link.complementId)
+    );
+    if (missing) {
+      toast.error(`${missing.complement.name} e obrigatorio`);
+      return;
+    }
+    addConfiguredToCart(configuringProduct, selected);
+    setConfiguringProduct(null);
+    setComplementQuantities({});
+  }
+
+  function setItemQuantity(itemId: string, quantity: number) {
+    if (quantity <= 0) {
+      setCart((prev) => prev.filter((item) => item.id !== itemId));
+      return;
+    }
+    setCart((prev) => prev.map((item) => (item.id === itemId ? { ...item, quantity } : item)));
   }
 
   function selectAddress(addressId: string) {
@@ -290,7 +365,14 @@ export function Storefront() {
           : undefined,
       couponCode: values.couponCode || undefined,
       notes: values.notes || undefined,
-      items: cart.map((item) => ({ productId: item.product.id, quantity: item.quantity }))
+      items: cart.map((item) => ({
+        productId: item.product.id,
+        quantity: item.quantity,
+        complements: item.complements.map((selected) => ({
+          complementId: selected.complement.id,
+          quantity: selected.quantity
+        }))
+      }))
     };
 
     try {
@@ -433,8 +515,8 @@ export function Storefront() {
                 <p className="mt-1 text-sm opacity-70">{product.description}</p>
                 <div className="mt-3 flex items-center justify-between">
                   <p className="font-semibold text-ember">{money(unit)}</p>
-                  <button className="rounded-xl bg-ink px-3 py-2 text-xs font-semibold text-white dark:bg-ember" onClick={() => addToCart(product)}>
-                    Adicionar
+                  <button className="rounded-xl bg-ink px-3 py-2 text-xs font-semibold text-white dark:bg-ember" onClick={() => beginProductConfiguration(product)}>
+                    {product.complements?.length ? "Montar" : "Adicionar"}
                   </button>
                 </div>
               </div>
@@ -460,23 +542,33 @@ export function Storefront() {
             <h2 className="font-display text-3xl">Seu Pedido</h2>
 
             <div className="mt-3 space-y-2">
-              {cart.map((item) => (
-                <div key={item.product.id} className="flex items-center justify-between rounded-xl border border-black/10 p-2 dark:border-white/10">
+              {cart.map((item) => {
+                const extras = item.complements.reduce(
+                  (sum, selected) => sum + selected.complement.price * selected.quantity,
+                  0
+                );
+                return (
+                <div key={item.id} className="flex items-center justify-between rounded-xl border border-black/10 p-2 dark:border-white/10">
                   <div>
                     <p className="font-medium">{item.product.name}</p>
-                    <p className="text-sm opacity-70">{money((item.product.promoPrice ?? item.product.price) * item.quantity)}</p>
+                    {item.complements.map((selected) => (
+                      <p key={selected.complement.id} className="text-xs opacity-65">
+                        + {selected.quantity}x {selected.complement.name}
+                      </p>
+                    ))}
+                    <p className="text-sm opacity-70">{money(((item.product.promoPrice ?? item.product.price) + extras) * item.quantity)}</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button className="rounded-md bg-black/10 px-2 dark:bg-white/10" onClick={() => setItemQuantity(item.product.id, item.quantity - 1)}>
+                    <button className="rounded-md bg-black/10 px-2 dark:bg-white/10" onClick={() => setItemQuantity(item.id, item.quantity - 1)}>
                       -
                     </button>
                     <span>{item.quantity}</span>
-                    <button className="rounded-md bg-black/10 px-2 dark:bg-white/10" onClick={() => setItemQuantity(item.product.id, item.quantity + 1)}>
+                    <button className="rounded-md bg-black/10 px-2 dark:bg-white/10" onClick={() => setItemQuantity(item.id, item.quantity + 1)}>
                       +
                     </button>
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
 
             {fulfillmentType === "DELIVERY" && addresses.length > 0 && (
@@ -586,6 +678,77 @@ export function Storefront() {
               onClick={() => void handleSubmit(finishOrder)()}
             >
               {isSubmitting ? "Enviando pedido..." : "Confirmar Pedido"}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {configuringProduct && (
+        <section className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-3" onClick={() => setConfiguringProduct(null)}>
+          <div className="card-surface max-h-[90vh] w-full max-w-xl overflow-y-auto p-4" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="font-display text-3xl">Monte seu {configuringProduct.name}</h2>
+                <p className="text-sm opacity-70">Escolha os complementos e quantidades.</p>
+              </div>
+              <button className="rounded-lg border px-3 py-1" onClick={() => setConfiguringProduct(null)}>Fechar</button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {configuringProduct.complements
+                .filter((link) => link.complement.active)
+                .map((link) => {
+                  const quantity = complementQuantities[link.complementId] ?? 0;
+                  return (
+                    <article key={link.id} className={`flex gap-3 rounded-xl border p-3 ${quantity > 0 ? "border-ember" : "border-black/10 dark:border-white/10"}`}>
+                      <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-black/5">
+                        {link.complement.imageUrl ? (
+                          <Image src={link.complement.imageUrl} alt={link.complement.name} fill unoptimized className="object-cover" />
+                        ) : null}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <p className="font-semibold">{link.complement.name}</p>
+                            <p className="text-xs opacity-65">{link.complement.description}</p>
+                            <p className="text-sm text-ember">
+                              {link.complement.price > 0 ? `+ ${money(link.complement.price)}` : "Sem adicional"}
+                            </p>
+                          </div>
+                          <span className={`rounded-full px-2 py-1 text-xs ${link.required ? "bg-red-100 text-red-700" : "bg-black/5 dark:bg-white/10"}`}>
+                            {link.required ? "Obrigatorio" : "Opcional"}
+                          </span>
+                        </div>
+                        <div className="mt-2 flex items-center gap-2">
+                          <button
+                            className="rounded-lg bg-black/10 px-3 py-1 dark:bg-white/10 disabled:opacity-40"
+                            disabled={link.required && quantity <= 1}
+                            onClick={() => setComplementQuantities((current) => ({
+                              ...current,
+                              [link.complementId]: Math.max(link.required ? 1 : 0, quantity - 1)
+                            }))}
+                          >
+                            -
+                          </button>
+                          <span className="min-w-6 text-center">{quantity}</span>
+                          <button
+                            className="rounded-lg bg-black/10 px-3 py-1 dark:bg-white/10"
+                            onClick={() => setComplementQuantities((current) => ({
+                              ...current,
+                              [link.complementId]: quantity + 1
+                            }))}
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+            </div>
+
+            <button className="mt-4 w-full rounded-xl bg-ember px-4 py-3 font-semibold text-white" onClick={confirmProductConfiguration}>
+              Adicionar ao carrinho
             </button>
           </div>
         </section>

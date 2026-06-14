@@ -6,5 +6,8 @@ export async function uploadImage(req: Request, res: Response) {
   }
 
   const filePath = `/uploads/${req.file.filename}`;
-  return res.status(201).json({ url: filePath });
+  const forwardedProtocol = req.get("x-forwarded-proto")?.split(",")[0];
+  const protocol = forwardedProtocol || req.protocol;
+  const absoluteUrl = `${protocol}://${req.get("host")}${filePath}`;
+  return res.status(201).json({ url: filePath, absoluteUrl });
 }

@@ -71,6 +71,36 @@ async function main() {
     });
   }
 
+  if ((await prisma.complement.count()) === 0) {
+    await prisma.complement.createMany({
+      data: [
+        { name: "Pao", description: "Pao do lanche", price: 0, active: true },
+        { name: "Hamburguer", description: "Carne de hamburguer", price: 0, active: true },
+        { name: "Queijo Extra", description: "Fatia extra de queijo", price: 2, active: true },
+        { name: "Presunto", description: "Fatia de presunto", price: 2, active: true },
+        { name: "Tomate", description: "Rodelas de tomate", price: 1, active: true },
+        { name: "Alface", description: "Folhas de alface", price: 1, active: true }
+      ]
+    });
+  }
+
+  const burger = await prisma.product.findFirst({ where: { name: "X-Burger" } });
+  if (burger && (await prisma.productComplement.count({ where: { productId: burger.id } })) === 0) {
+    const complements = await prisma.complement.findMany({
+      where: { name: { in: ["Pao", "Hamburguer", "Queijo Extra", "Presunto", "Tomate", "Alface"] } },
+      orderBy: { name: "asc" }
+    });
+    const requiredNames = new Set(["Pao", "Hamburguer"]);
+    await prisma.productComplement.createMany({
+      data: complements.map((complement, index) => ({
+        productId: burger.id,
+        complementId: complement.id,
+        required: requiredNames.has(complement.name),
+        sortOrder: index
+      }))
+    });
+  }
+
   await prisma.setting.upsert({
     where: { id: "default" },
     update: {},
