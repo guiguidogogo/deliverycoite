@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MapPin, Moon, Search, ShoppingCart, Sun, User } from "lucide-react";
 import { toast } from "sonner";
 import { useForm } from "react-hook-form";
@@ -11,7 +11,7 @@ import { api } from "../lib/api";
 import { money } from "../lib/format";
 import type { CartItem, Category, Product, SelectedComplement, Settings } from "../lib/types";
 import { LocationPicker } from "./location-picker";
-import { findAddressCoordinates } from "../lib/geocoding";
+import { findAddressCoordinates, findAddressFromCoordinates } from "../lib/geocoding";
 
 const checkoutSchema = z
   .object({
@@ -111,6 +111,8 @@ export function Storefront() {
   const [deliveryQuoteError, setDeliveryQuoteError] = useState("");
   const [addressMode, setAddressMode] = useState<"MANUAL" | "LOCATION">("MANUAL");
   const [locatingAddress, setLocatingAddress] = useState(false);
+  const [updatingAddressFromMap, setUpdatingAddressFromMap] = useState(false);
+  const skipNextManualSearchRef = useRef(false);
   const {
     register,
     handleSubmit,
@@ -261,6 +263,37 @@ export function Storefront() {
 
     return () => window.clearTimeout(timer);
   }, [deliveryLocation, fulfillmentType]);
+
+  useEffect(() => {
+    if (
+      addressMode !== "MANUAL" ||
+      typedAddress.trim().length < 3 ||
+      !typedNumber.trim() ||
+      typedDistrict.trim().length < 2
+    ) {
+      return;
+    }
+    if (skipNextManualSearchRef.current) {
+      skipNextManualSearchRef.current = false;
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void findAddressCoordinates(typedAddress, typedNumber, typedDistrict)
+        .then((location) => {
+          setDeliveryLocation(location);
+          setSelectedAddress("");
+          setDeliveryQuoteError("");
+        })
+        .catch(() => {
+          setDeliveryLocation(null);
+          setDeliveryDistanceKm(null);
+          setQuotedDeliveryFee(null);
+        });
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [addressMode, typedAddress, typedNumber, typedDistrict]);
 
   const filtered = useMemo(() => {
     return products.filter((product) => {
@@ -443,6 +476,26 @@ export function Storefront() {
       toast.error(error instanceof Error ? error.message : "Endereco nao encontrado");
     } finally {
       setLocatingAddress(false);
+    }
+  }
+
+  async function updateLocationAndAddress(location: { latitude: number; longitude: number }) {
+    setDeliveryLocation(location);
+    setSelectedAddress("");
+    setUpdatingAddressFromMap(true);
+    try {
+      const located = await findAddressFromCoordinates(
+        location.latitude,
+        location.longitude
+      );
+      skipNextManualSearchRef.current = true;
+      if (located.address) setValue("address", located.address, { shouldValidate: true });
+      if (located.number) setValue("number", located.number, { shouldValidate: true });
+      if (located.district) setValue("district", located.district, { shouldValidate: true });
+    } catch {
+      toast.warning("Ponto alterado. Confira o endereco digitado.");
+    } finally {
+      setUpdatingAddressFromMap(false);
     }
   }
 
@@ -801,8 +854,11 @@ export function Storefront() {
                     {deliveryLocation && (
                       <LocationPicker
                         value={deliveryLocation}
-                        onChange={setDeliveryLocation}
+                        onChange={(location) => void updateLocationAndAddress(location)}
                       />
+                    )}
+                    {updatingAddressFromMap && (
+                      <p className="mt-1 text-xs opacity-65">Atualizando endereco pelo mapa...</p>
                     )}
                     {deliveryDistanceKm !== null && !deliveryQuoteError && (
                       <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
