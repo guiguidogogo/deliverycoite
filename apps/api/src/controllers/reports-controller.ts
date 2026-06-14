@@ -14,14 +14,18 @@ function getDateRange(req: Request) {
 
   return {
     createdAt: {
-      ...(dateFrom ? { gte: new Date(`${dateFrom}T00:00:00`) } : {}),
-      ...(dateTo ? { lte: new Date(`${dateTo}T23:59:59`) } : {})
+      ...(dateFrom ? { gte: new Date(`${dateFrom}T00:00:00-03:00`) } : {}),
+      ...(dateTo ? { lte: new Date(`${dateTo}T23:59:59.999-03:00`) } : {})
     }
   };
 }
 
 export async function exportOrdersExcel(req: Request, res: Response) {
-  const orders = await prisma.order.findMany({ where: getDateRange(req), include: { customer: true } });
+  const orders = await prisma.order.findMany({
+    where: getDateRange(req),
+    include: { customer: true },
+    orderBy: { createdAt: "desc" }
+  });
 
   const wb = new ExcelJS.Workbook();
   const sheet = wb.addWorksheet("Pedidos");
@@ -54,7 +58,11 @@ export async function exportOrdersExcel(req: Request, res: Response) {
 }
 
 export async function exportOrdersPdf(req: Request, res: Response) {
-  const orders = await prisma.order.findMany({ where: getDateRange(req), include: { customer: true } });
+  const orders = await prisma.order.findMany({
+    where: getDateRange(req),
+    include: { customer: true },
+    orderBy: { createdAt: "desc" }
+  });
 
   const doc = new PDFDocument({ margin: 40 });
   res.setHeader("Content-Type", "application/pdf");

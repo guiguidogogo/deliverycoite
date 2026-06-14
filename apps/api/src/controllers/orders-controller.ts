@@ -344,17 +344,18 @@ export async function listOrders(req: Request, res: Response) {
   const phone = req.query.phone?.toString();
   const dateFrom = req.query.dateFrom?.toString();
   const dateTo = req.query.dateTo?.toString();
+  const includeFinished = req.query.includeFinished === "true";
 
   const now = new Date();
   const defaultStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
   const defaultEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
 
-  const startDate = dateFrom ? new Date(`${dateFrom}T00:00:00`) : defaultStart;
-  const endDate = dateTo ? new Date(`${dateTo}T23:59:59`) : defaultEnd;
+  const startDate = dateFrom ? new Date(`${dateFrom}T00:00:00-03:00`) : defaultStart;
+  const endDate = dateTo ? new Date(`${dateTo}T23:59:59.999-03:00`) : defaultEnd;
 
   const orders = await prisma.order.findMany({
     where: {
-      status: status ?? { not: "FINISHED" },
+      status: status ?? (includeFinished ? undefined : { not: "FINISHED" }),
       createdAt: {
         gte: startDate,
         lte: endDate
