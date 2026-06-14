@@ -6,6 +6,51 @@ import { formatOrderCode } from "../utils/order-code.js";
 
 const money = (value: number) => new Prisma.Decimal(value.toFixed(2));
 
+async function syncPaidOrders(sessionId: string) {
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const lastClosedSession = await prisma.cashSession.findFirst({
+    where: { closedAt: { not: null } },
+    orderBy: { closedAt: "desc" },
+    select: { closedAt: true }
+  });
+  const paidSince =
+    lastClosedSession?.closedAt && lastClosedSession.closedAt > startOfToday
+      ? lastClosedSession.closedAt
+      : startOfToday;
+
+  const paidOrders = await prisma.order.findMany({
+    where: {
+      paidAt: { gte: paidSince },
+      status: { not: "CANCELED" }
+    },
+    select: {
+      id: true,
+      orderNumber: true,
+      total: true,
+      paymentMethod: true,
+      paidMethodDetail: true
+    }
+  });
+
+  if (!paidOrders.length) return;
+
+  await prisma.cashEntry.createMany({
+    data: paidOrders.map((order) => ({
+      sessionId,
+      type: CashEntryType.MANUAL_INCOME,
+      amount: order.total,
+      paymentMethod: order.paymentMethod,
+      orderId: order.id,
+      description: `Pagamento pedido #${formatOrderCode(order.orderNumber)} via ${
+        order.paidMethodDetail ?? order.paymentMethod
+      }`
+    })),
+    skipDuplicates: true
+  });
+}
+
 const openSchema = z.object({
   openingAmount: z.coerce.number().min(0),
   notes: z.string().optional()
@@ -44,7 +89,14 @@ async function buildSummary() {
     };
   }
 
-  const paymentEntries = currentSession.entries.filter(
+  await syncPaidOrders(currentSession.id);
+
+  const entries = await prisma.cashEntry.findMany({
+    where: { sessionId: currentSession.id },
+    orderBy: { createdAt: "asc" }
+  });
+
+  const paymentEntries = entries.filter(
     (entry) => entry.type === CashEntryType.MANUAL_INCOME && entry.paymentMethod
   );
   const cashOrders = paymentEntries
@@ -57,22 +109,22 @@ async function buildSummary() {
     .filter((item) => item.paymentMethod === PaymentMethod.CARD)
     .reduce((acc, item) => acc + Number(item.amount), 0);
 
-  const withdrawals = currentSession.entries
+  const withdrawals = entries
     .filter((entry) => entry.type === CashEntryType.WITHDRAWAL)
     .reduce((acc, entry) => acc + Number(entry.amount), 0);
 
-  const expenses = currentSession.entries
+  const expenses = entries
     .filter((entry) => entry.type === CashEntryType.EXPENSE)
     .reduce((acc, entry) => acc + Number(entry.amount), 0);
 
-  const manualIncome = currentSession.entries
-    .filter((entry) => entry.type === CashEntryType.MANUAL_INCOME)
+  const manualIncome = entries
+    .filter((entry) => entry.type === CashEntryType.MANUAL_INCOME && !entry.paymentMethod)
     .reduce((acc, entry) => acc + Number(entry.amount), 0);
 
   const expectedCash =
     Number(currentSession.openingAmount) + cashOrders + manualIncome - withdrawals - expenses;
 
-  const orderIds = currentSession.entries
+  const orderIds = entries
     .map((entry) => entry.orderId)
     .filter((orderId): orderId is string => Boolean(orderId));
   const orders = orderIds.length
@@ -94,7 +146,7 @@ async function buildSummary() {
       manualIncome,
       expectedCash
     },
-    history: currentSession.entries.map((entry) => ({
+    history: entries.map((entry) => ({
       id: entry.id,
       type: entry.type,
       amount: Number(entry.amount),
@@ -137,6 +189,8 @@ export async function openCashSession(req: Request, res: Response) {
     },
     include: { entries: true }
   });
+
+  await syncPaidOrders(session.id);
 
   return res.status(201).json(session);
 }

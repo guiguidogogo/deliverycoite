@@ -583,15 +583,16 @@ export async function markOrderPaid(req: Request, res: Response) {
 
   const session = await prisma.cashSession.findFirst({ where: { closedAt: null } });
   if (session) {
-    await prisma.cashEntry.create({
-      data: {
+    await prisma.cashEntry.createMany({
+      data: [{
         sessionId: session.id,
         type: "MANUAL_INCOME",
         amount: toDecimal(Number(updated.total)),
         paymentMethod,
         orderId: updated.id,
         description: `Pagamento pedido #${formatOrderCode(updated.orderNumber)} via ${paymentDetail}`
-      }
+      }],
+      skipDuplicates: true
     });
   }
 

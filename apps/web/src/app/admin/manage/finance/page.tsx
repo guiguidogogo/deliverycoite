@@ -88,7 +88,7 @@ export default function FinanceManagePage() {
     window.addEventListener("delivery:payment-updated", onPayment);
     const timer = window.setInterval(() => {
       void load();
-    }, 10000);
+    }, 5000);
 
     return () => {
       window.removeEventListener("delivery:payment-updated", onPayment);

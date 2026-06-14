@@ -153,6 +153,7 @@ model CashEntry {
   createdAt   DateTime      @default(now())
 
   @@index([sessionId, createdAt])
+  @@unique([orderId, paymentMethod])
 }
 
 model CustomerAddress {
