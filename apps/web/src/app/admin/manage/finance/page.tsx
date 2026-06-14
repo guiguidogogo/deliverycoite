@@ -209,7 +209,7 @@ export default function FinanceManagePage() {
               {(summary.history ?? []).map((entry) => (
                 <article key={entry.id} className="rounded-lg border border-black/10 p-2 text-sm dark:border-white/10">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="font-semibold">{labelEntry(entry.type)}</p>
+                    <p className="font-semibold">{labelEntry(entry.type, Boolean(entry.paymentMethod))}</p>
                     <p>R$ {Number(entry.amount).toFixed(2)}</p>
                   </div>
                   {entry.paymentMethod && (
@@ -230,10 +230,14 @@ export default function FinanceManagePage() {
   );
 }
 
-function labelEntry(type: "OPENING" | "WITHDRAWAL" | "EXPENSE" | "MANUAL_INCOME" | "CLOSING") {
+function labelEntry(
+  type: "OPENING" | "WITHDRAWAL" | "EXPENSE" | "MANUAL_INCOME" | "CLOSING",
+  isOrderPayment = false
+) {
   if (type === "OPENING") return "Abertura";
   if (type === "WITHDRAWAL") return "Sangria";
   if (type === "EXPENSE") return "Despesa";
+  if (isOrderPayment) return "Pagamento de pedido";
   if (type === "MANUAL_INCOME") return "Entrada manual";
   return "Fechamento";
 }
