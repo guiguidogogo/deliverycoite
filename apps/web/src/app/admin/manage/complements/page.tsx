@@ -25,8 +25,15 @@ const emptyForm = {
 
 async function responseJson(res: Response) {
   const payload = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(payload.message ?? "Erro na requisicao");
+  if (!res.ok) {
+    const issue = Array.isArray(payload.issues) ? payload.issues[0] : null;
+    throw new Error(issue?.message ?? payload.message ?? "Erro na requisicao");
+  }
   return payload;
+}
+
+function parsePrice(value: string) {
+  return Number(value.trim().replace(",", "."));
 }
 
 export default function ComplementsManagePage() {
@@ -88,6 +95,18 @@ export default function ComplementsManagePage() {
     if (!token || saving) return;
     setSaving(true);
     try {
+      const name = form.name.trim();
+      const description = form.description.trim();
+      const price = parsePrice(form.price);
+      const typedImageUrl = form.imageUrl.trim();
+
+      if (name.length < 2) throw new Error("Informe o nome do complemento");
+      if (description.length < 2) throw new Error("Informe a descricao do complemento");
+      if (!Number.isFinite(price) || price < 0) throw new Error("Informe um preco valido, por exemplo 2,00");
+      if (typedImageUrl && !/^https?:\/\//i.test(typedImageUrl)) {
+        throw new Error("A URL da imagem deve comecar com http:// ou https://");
+      }
+
       const imageUrl = await upload(token);
       const res = await fetch(
         editingId ? `${API_URL}/admin/complements/${editingId}` : `${API_URL}/admin/complements`,
@@ -96,7 +115,9 @@ export default function ComplementsManagePage() {
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({
             ...form,
-            price: Number(form.price),
+            name,
+            description,
+            price,
             imageUrl
           })
         }
@@ -140,7 +161,7 @@ export default function ComplementsManagePage() {
         <h2 className="font-semibold">{editingId ? "Editar complemento" : "Novo complemento"}</h2>
         <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
           <input className="rounded-xl border px-3 py-2 dark:bg-slate-900" placeholder="Nome" value={form.name} onChange={(e) => setForm((v) => ({ ...v, name: e.target.value }))} />
-          <input className="rounded-xl border px-3 py-2 dark:bg-slate-900" type="number" min="0" step="0.01" placeholder="Preco adicional" value={form.price} onChange={(e) => setForm((v) => ({ ...v, price: e.target.value }))} />
+          <input className="rounded-xl border px-3 py-2 dark:bg-slate-900" type="text" inputMode="decimal" placeholder="Preco adicional (ex: 2,00)" value={form.price} onChange={(e) => setForm((v) => ({ ...v, price: e.target.value }))} />
           <input className="rounded-xl border px-3 py-2 dark:bg-slate-900 md:col-span-2" placeholder="Descricao" value={form.description} onChange={(e) => setForm((v) => ({ ...v, description: e.target.value }))} />
           <input className="rounded-xl border px-3 py-2 dark:bg-slate-900 md:col-span-2" placeholder="URL da imagem" value={form.imageUrl} onChange={(e) => setForm((v) => ({ ...v, imageUrl: e.target.value }))} />
           <input className="rounded-xl border px-3 py-2 md:col-span-2" type="file" accept="image/*" onChange={(e) => setImageFile(e.target.files?.[0] ?? null)} />

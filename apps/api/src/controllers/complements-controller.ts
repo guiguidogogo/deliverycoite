@@ -4,10 +4,16 @@ import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 
 const complementSchema = z.object({
-  name: z.string().min(2),
-  description: z.string().min(2),
-  price: z.coerce.number().min(0),
-  imageUrl: z.string().url().nullable().optional(),
+  name: z.string().trim().min(2, "Informe um nome com pelo menos 2 caracteres"),
+  description: z.string().trim().min(2, "Informe uma descricao com pelo menos 2 caracteres"),
+  price: z.preprocess(
+    (value) => typeof value === "string" ? value.replace(",", ".") : value,
+    z.coerce.number({ invalid_type_error: "Informe um preco valido" }).min(0, "O preco nao pode ser negativo")
+  ),
+  imageUrl: z.preprocess(
+    (value) => typeof value === "string" && !value.trim() ? null : value,
+    z.string().url("Informe uma URL de imagem valida").nullable().optional()
+  ),
   active: z.boolean().optional()
 });
 
