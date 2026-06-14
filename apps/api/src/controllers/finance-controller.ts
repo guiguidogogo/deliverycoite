@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { formatOrderCode } from "../utils/order-code.js";
+import { recordCashPayments } from "../utils/cash-register.js";
 
 const money = (value: number) => new Prisma.Decimal(value.toFixed(2));
 
@@ -36,19 +37,17 @@ async function syncPaidOrders(sessionId: string) {
 
   if (!paidOrders.length) return;
 
-  await prisma.cashEntry.createMany({
-    data: paidOrders.map((order) => ({
-      sessionId,
-      type: CashEntryType.MANUAL_INCOME,
+  await recordCashPayments(
+    sessionId,
+    paidOrders.map((order) => ({
       amount: order.total,
       paymentMethod: order.paymentMethod,
       orderId: order.id,
       description: `Pagamento pedido #${formatOrderCode(order.orderNumber)} via ${
         order.paidMethodDetail ?? order.paymentMethod
       }`
-    })),
-    skipDuplicates: true
-  });
+    }))
+  );
 }
 
 const openSchema = z.object({

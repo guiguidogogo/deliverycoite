@@ -6,6 +6,7 @@ import { printOrder } from "../services/thermal-printer.js";
 import { buildOrderStatusWhatsappMessage, buildWhatsappMessage, dispatchWhatsappMessage } from "../services/whatsapp.js";
 import { prisma } from "../utils/prisma.js";
 import { formatOrderCode } from "../utils/order-code.js";
+import { recordCashPayments } from "../utils/cash-register.js";
 
 function shouldSendStatusWhatsapp(
   settings: Awaited<ReturnType<typeof prisma.setting.findFirstOrThrow>>,
@@ -583,17 +584,12 @@ export async function markOrderPaid(req: Request, res: Response) {
 
   const session = await prisma.cashSession.findFirst({ where: { closedAt: null } });
   if (session) {
-    await prisma.cashEntry.createMany({
-      data: [{
-        sessionId: session.id,
-        type: "MANUAL_INCOME",
+    await recordCashPayments(session.id, [{
         amount: toDecimal(Number(updated.total)),
         paymentMethod,
         orderId: updated.id,
         description: `Pagamento pedido #${formatOrderCode(updated.orderNumber)} via ${paymentDetail}`
-      }],
-      skipDuplicates: true
-    });
+    }]);
   }
 
   const orderWithCustomer = await prisma.order.findUnique({
