@@ -3,7 +3,11 @@ const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "/api").replace(/\/$/, "");
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${API_URL}${path}`, {
+    const method = init?.method?.toUpperCase() ?? "GET";
+    const separator = path.includes("?") ? "&" : "?";
+    const requestPath = method === "GET" ? `${path}${separator}_=${Date.now()}` : path;
+
+    res = await fetch(`${API_URL}${requestPath}`, {
       ...init,
       headers: {
         "Content-Type": "application/json",
