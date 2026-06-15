@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import type { Request, Response } from "express";
 import { z } from "zod";
@@ -104,19 +105,33 @@ export async function createStaffUser(req: Request, res: Response) {
   if (body.role !== "ADMIN" && !body.staffRoleId) {
     return res.status(400).json({ message: "Escolha um perfil de acesso para este usuario" });
   }
-  const user = await prisma.user.create({
-    data: {
-      name: body.name,
-      email: body.email.toLowerCase(),
-      phone: body.phone,
-      passwordHash: await bcrypt.hash(body.password, 10),
-      role: body.role,
-      staffRoleId: body.role === "ADMIN" ? null : body.staffRoleId,
-      active: body.active ?? true
-    },
-    include: { staffRole: true }
-  });
-  return res.status(201).json(user);
+  try {
+    const user = await prisma.user.create({
+      data: {
+        name: body.name,
+        email: body.email.toLowerCase(),
+        phone: body.phone,
+        passwordHash: await bcrypt.hash(body.password, 10),
+        role: body.role,
+        staffRoleId: body.role === "ADMIN" ? null : body.staffRoleId,
+        active: body.active ?? true
+      },
+      include: { staffRole: true }
+    });
+    return res.status(201).json(user);
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      const fields = Array.isArray(error.meta?.target) ? error.meta.target : [];
+      if (fields.includes("phone")) {
+        return res.status(409).json({ message: "Este WhatsApp ja esta cadastrado em outro usuario" });
+      }
+      if (fields.includes("email")) {
+        return res.status(409).json({ message: "Este email ja esta cadastrado em outro usuario" });
+      }
+      return res.status(409).json({ message: "Ja existe um usuario com estes dados" });
+    }
+    throw error;
+  }
 }
 
 export async function updateStaffUser(req: Request, res: Response) {

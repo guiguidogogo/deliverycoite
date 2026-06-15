@@ -34,6 +34,7 @@ export default function UsersManagePage() {
   const [users, setUsers] = useState<StaffUser[]>([]);
   const [roleName, setRoleName] = useState("");
   const [rolePermissions, setRolePermissions] = useState<string[]>([]);
+  const [creatingUser, setCreatingUser] = useState(false);
   const [user, setUser] = useState({
     name: "", email: "", phone: "", password: "", role: "ATTENDANT", staffRoleId: ""
   });
@@ -84,6 +85,8 @@ export default function UsersManagePage() {
   }
 
   async function createUser() {
+    if (creatingUser) return;
+    setCreatingUser(true);
     try {
       await request("/admin/staff/users", {
         method: "POST",
@@ -98,6 +101,8 @@ export default function UsersManagePage() {
       await load();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao criar usuario");
+    } finally {
+      setCreatingUser(false);
     }
   }
 
@@ -161,8 +166,12 @@ export default function UsersManagePage() {
             </select>
           )}
         </div>
-        <button className="mt-3 w-full rounded-xl bg-ink px-3 py-2 text-white" onClick={() => void createUser()}>
-          Criar usuario
+        <button
+          className="mt-3 w-full rounded-xl bg-ink px-3 py-2 text-white disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={creatingUser}
+          onClick={() => void createUser()}
+        >
+          {creatingUser ? "Criando usuario..." : "Criar usuario"}
         </button>
       </section>
 
