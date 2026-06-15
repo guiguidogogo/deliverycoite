@@ -7,7 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/src/server.js",
-    "render:prepare": "prisma db push && npm run prisma:seed",
+    "render:prepare": "prisma db push --accept-data-loss && npm run prisma:seed",
     "render:serve": "node dist/src/server.js",
     "render:build": "prisma generate && tsc -p tsconfig.json",
     "render:migrate": "prisma db push",
