@@ -627,6 +627,11 @@ export function Storefront() {
             </button>
           </div>
         </div>
+        {settings?.ordersPaused && (
+          <div className="mt-4 rounded-xl bg-red-600 p-3 text-center font-semibold text-white">
+            {settings.ordersPausedReason || "Loja temporariamente pausada para novos pedidos"}
+          </div>
+        )}
 
         <div
           className="relative mt-4 overflow-hidden rounded-2xl bg-gradient-to-r from-ember/90 to-lime/80 p-4 text-white"
@@ -927,10 +932,10 @@ export function Storefront() {
 
             <button
               className="mt-4 w-full rounded-xl bg-ember px-4 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={isSubmitting}
+              disabled={isSubmitting || settings?.ordersPaused}
               onClick={() => void handleSubmit(finishOrder)()}
             >
-              {isSubmitting ? "Enviando pedido..." : "Confirmar Pedido"}
+              {settings?.ordersPaused ? "Loja pausada" : isSubmitting ? "Enviando pedido..." : "Confirmar Pedido"}
             </button>
           </div>
         </section>

@@ -24,10 +24,29 @@ import {
   loginCustomer,
   getCustomerProfile,
   updateCustomerProfile,
+  changeCustomerPassword,
   addCustomerAddress,
   updateCustomerAddress,
   deleteCustomerAddress
 } from "../controllers/customer-auth-controller.js";
+import {
+  requestCustomerPasswordReset,
+  requestStaffPasswordReset,
+  resetCustomerPassword,
+  resetStaffPassword
+} from "../controllers/password-controller.js";
+import {
+  changeStaffPassword,
+  createStaffRole,
+  createStaffUser,
+  deleteStaffRole,
+  getCurrentStaff,
+  listStaffRoles,
+  listStaffUsers,
+  updateCurrentStaff,
+  updateStaffRole,
+  updateStaffUser
+} from "../controllers/staff-controller.js";
 import { deleteCustomer, listCustomers, lookupCustomer, updateCustomer } from "../controllers/customers-controller.js";
 import { getDashboard } from "../controllers/dashboard-controller.js";
 import { quoteDelivery } from "../controllers/delivery-controller.js";
@@ -61,7 +80,7 @@ import {
 import { exportOrdersExcel, exportOrdersPdf } from "../controllers/reports-controller.js";
 import { listPrinters } from "../controllers/printer-controller.js";
 import { getSettings, updateSettings } from "../controllers/settings-controller.js";
-import { auth } from "../middlewares/auth.js";
+import { auth, requireAnyPermission, requirePermission } from "../middlewares/auth.js";
 import { customerAuth } from "../middlewares/customer-auth.js";
 import { imageUpload } from "../utils/upload.js";
 import { asyncHandler } from "../utils/async-handler.js";
@@ -84,11 +103,16 @@ const route = {
 };
 
 route.post("/auth/login", login);
+route.post("/auth/password/request", requestStaffPasswordReset);
+route.post("/auth/password/reset", resetStaffPassword);
 // Customer auth routes
 route.post("/customer/register", registerCustomer);
 route.post("/customer/login", loginCustomer);
+route.post("/customer/password/request", requestCustomerPasswordReset);
+route.post("/customer/password/reset", resetCustomerPassword);
 route.get("/customer/profile", customerAuth, getCustomerProfile);
 route.patch("/customer/profile", customerAuth, updateCustomerProfile);
+route.patch("/customer/password", customerAuth, changeCustomerPassword);
 route.post("/customer/addresses", customerAuth, addCustomerAddress);
 route.patch("/customer/addresses/:id", customerAuth, updateCustomerAddress);
 route.delete("/customer/addresses/:id", customerAuth, deleteCustomerAddress);
@@ -105,48 +129,59 @@ route.post("/favorites/toggle", toggleFavorite);
 route.post("/orders", createOrder);
 route.get("/integrations/future", getFutureIntegrations);
 
-router.use(auth(["ADMIN", "ATTENDANT"]));
-route.get("/admin/orders", listOrders);
-route.patch("/admin/orders/:id/status", updateOrderStatus);
-route.patch("/admin/orders/:id/viewed", markOrderViewed);
-route.patch("/admin/orders/:id/paid", markOrderPaid);
-route.delete("/admin/orders/:id", deleteOrder);
-route.post("/admin/orders/:id/send-delivery", sendToDelivery);
-route.post("/admin/orders/:id/print", printOrderById);
-route.get("/admin/printers", listPrinters);
-route.get("/admin/dashboard", getDashboard);
-route.get("/admin/notifications/new-orders", listNewOrders);
-route.get("/admin/reports/orders.xlsx", exportOrdersExcel);
-route.get("/admin/reports/orders.pdf", exportOrdersPdf);
-route.get("/admin/customers", listCustomers);
-route.patch("/admin/customers/:id", updateCustomer);
-route.delete("/admin/customers/:id", deleteCustomer);
-route.get("/admin/finance/summary", getFinanceSummary);
-route.get("/admin/finance/sessions", listCashSessions);
-route.post("/admin/finance/open", openCashSession);
-route.post("/admin/finance/entry", createCashEntry);
-route.post("/admin/finance/close", closeCashSession);
+router.use(auth());
+route.get("/admin/me", getCurrentStaff);
+route.patch("/admin/me", updateCurrentStaff);
+route.patch("/admin/password", changeStaffPassword);
+route.get("/admin/orders", requirePermission("ORDERS"), listOrders);
+route.patch("/admin/orders/:id/status", requirePermission("ORDERS"), updateOrderStatus);
+route.patch("/admin/orders/:id/viewed", requirePermission("ORDERS"), markOrderViewed);
+route.patch("/admin/orders/:id/paid", requirePermission("ORDERS"), markOrderPaid);
+route.delete("/admin/orders/:id", requirePermission("ORDERS"), deleteOrder);
+route.post("/admin/orders/:id/send-delivery", requirePermission("ORDERS"), sendToDelivery);
+route.post("/admin/orders/:id/print", requirePermission("ORDERS"), printOrderById);
+route.get("/admin/printers", requirePermission("SETTINGS"), listPrinters);
+route.get("/admin/dashboard", requirePermission("ORDERS"), getDashboard);
+route.get("/admin/notifications/new-orders", requirePermission("ORDERS"), listNewOrders);
+route.get("/admin/reports/orders.xlsx", requirePermission("REPORTS"), exportOrdersExcel);
+route.get("/admin/reports/orders.pdf", requirePermission("REPORTS"), exportOrdersPdf);
+route.get("/admin/customers", requirePermission("CUSTOMERS"), listCustomers);
+route.patch("/admin/customers/:id", requirePermission("CUSTOMERS"), updateCustomer);
+route.delete("/admin/customers/:id", requirePermission("CUSTOMERS"), deleteCustomer);
+route.get("/admin/finance/summary", requirePermission("FINANCE"), getFinanceSummary);
+route.get("/admin/finance/sessions", requirePermission("FINANCE"), listCashSessions);
+route.post("/admin/finance/open", requirePermission("CASH_MANAGE"), openCashSession);
+route.post("/admin/finance/entry", requirePermission("CASH_MANAGE"), createCashEntry);
+route.post("/admin/finance/close", requirePermission("CASH_MANAGE"), closeCashSession);
 
-route.get("/admin/categories", listCategories);
-route.post("/admin/categories", auth(["ADMIN"]), createCategory);
-route.patch("/admin/categories/:id", auth(["ADMIN"]), updateCategory);
-route.delete("/admin/categories/:id", auth(["ADMIN"]), deleteCategory);
+route.get("/admin/categories", requirePermission("CATALOG"), listCategories);
+route.post("/admin/categories", requirePermission("CATALOG"), createCategory);
+route.patch("/admin/categories/:id", requirePermission("CATALOG"), updateCategory);
+route.delete("/admin/categories/:id", requirePermission("CATALOG"), deleteCategory);
 
-route.get("/admin/products", listProducts);
-route.post("/admin/products", auth(["ADMIN"]), createProduct);
-route.post("/admin/uploads/image", auth(["ADMIN"]), imageUpload.single("image"), uploadImage);
-route.patch("/admin/products/:id", auth(["ADMIN"]), updateProduct);
-route.delete("/admin/products/:id", auth(["ADMIN"]), deleteProduct);
+route.get("/admin/products", requirePermission("CATALOG"), listProducts);
+route.post("/admin/products", requirePermission("CATALOG"), createProduct);
+route.post("/admin/uploads/image", requireAnyPermission(["CATALOG", "COUPONS", "SETTINGS"]), imageUpload.single("image"), uploadImage);
+route.patch("/admin/products/:id", requirePermission("CATALOG"), updateProduct);
+route.delete("/admin/products/:id", requirePermission("CATALOG"), deleteProduct);
 
-route.get("/admin/complements", listComplements);
-route.post("/admin/complements", auth(["ADMIN"]), createComplement);
-route.patch("/admin/complements/:id", auth(["ADMIN"]), updateComplement);
-route.delete("/admin/complements/:id", auth(["ADMIN"]), deleteComplement);
+route.get("/admin/complements", requirePermission("CATALOG"), listComplements);
+route.post("/admin/complements", requirePermission("CATALOG"), createComplement);
+route.patch("/admin/complements/:id", requirePermission("CATALOG"), updateComplement);
+route.delete("/admin/complements/:id", requirePermission("CATALOG"), deleteComplement);
 
-route.get("/admin/coupons", listCoupons);
-route.post("/admin/coupons", auth(["ADMIN"]), createCoupon);
-route.patch("/admin/coupons/:id", auth(["ADMIN"]), updateCoupon);
-route.delete("/admin/coupons/:id", auth(["ADMIN"]), deleteCoupon);
+route.get("/admin/coupons", requirePermission("COUPONS"), listCoupons);
+route.post("/admin/coupons", requirePermission("COUPONS"), createCoupon);
+route.patch("/admin/coupons/:id", requirePermission("COUPONS"), updateCoupon);
+route.delete("/admin/coupons/:id", requirePermission("COUPONS"), deleteCoupon);
 
-route.patch("/admin/settings", auth(["ADMIN"]), updateSettings);
-route.post("/admin/integrations/menuia/test", testMenuiaIntegration);
+route.patch("/admin/settings", requirePermission("SETTINGS"), updateSettings);
+route.patch("/admin/store/pause", requirePermission("STORE_PAUSE"), updateSettings);
+route.post("/admin/integrations/menuia/test", requirePermission("SETTINGS"), testMenuiaIntegration);
+route.get("/admin/staff/roles", requirePermission("USERS"), listStaffRoles);
+route.post("/admin/staff/roles", requirePermission("USERS"), createStaffRole);
+route.patch("/admin/staff/roles/:id", requirePermission("USERS"), updateStaffRole);
+route.delete("/admin/staff/roles/:id", requirePermission("USERS"), deleteStaffRole);
+route.get("/admin/staff/users", requirePermission("USERS"), listStaffUsers);
+route.post("/admin/staff/users", requirePermission("USERS"), createStaffUser);
+route.patch("/admin/staff/users/:id", requirePermission("USERS"), updateStaffUser);

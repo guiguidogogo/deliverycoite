@@ -7,8 +7,11 @@ import { API_URL } from "../../../lib/api";
 
 export default function AdminLoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("admin@delivery.com");
-  const [password, setPassword] = useState("123456");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [recovering, setRecovering] = useState(false);
+  const [code, setCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -26,7 +29,34 @@ export default function AdminLoginPage() {
 
     const payload = await res.json();
     localStorage.setItem("delivery:token", payload.token);
+    localStorage.setItem("delivery:admin-user", JSON.stringify(payload.user));
     router.push("/admin");
+  }
+
+  async function requestReset() {
+    const res = await fetch(`${API_URL}/auth/password/request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email })
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) return toast.error(payload.message ?? "Falha ao enviar codigo");
+    setRecovering(true);
+    toast.success(payload.message);
+  }
+
+  async function resetPassword() {
+    const res = await fetch(`${API_URL}/auth/password/reset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, code, newPassword })
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) return toast.error(payload.message ?? "Falha ao redefinir senha");
+    setRecovering(false);
+    setCode("");
+    setPassword("");
+    toast.success("Senha alterada. Entre com a nova senha.");
   }
 
   return (
@@ -41,6 +71,20 @@ export default function AdminLoginPage() {
           <button className="w-full rounded-xl bg-ink px-4 py-2 font-semibold text-white dark:bg-ember" type="submit">
             Entrar
           </button>
+          {!recovering ? (
+            <button type="button" className="w-full text-sm underline" onClick={() => void requestReset()}>
+              Esqueci minha senha
+            </button>
+          ) : (
+            <div className="space-y-2 rounded-xl border border-black/10 p-3 dark:border-white/20">
+              <p className="text-sm font-semibold">Codigo enviado ao WhatsApp cadastrado</p>
+              <input className="w-full rounded-xl border px-3 py-2" placeholder="Codigo de 6 digitos" value={code} onChange={(e) => setCode(e.target.value)} />
+              <input className="w-full rounded-xl border px-3 py-2" type="password" placeholder="Nova senha" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+              <button type="button" className="w-full rounded-xl bg-ember px-3 py-2 text-white" onClick={() => void resetPassword()}>
+                Redefinir senha
+              </button>
+            </div>
+          )}
         </div>
       </form>
     </main>

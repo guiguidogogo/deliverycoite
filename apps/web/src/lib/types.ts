@@ -45,6 +45,8 @@ export type Settings = {
   promoBannerText?: string;
   whatsappNumber: string;
   deliveryFee: number;
+  ordersPaused?: boolean;
+  ordersPausedReason?: string | null;
   storeLatitude?: number | null;
   storeLongitude?: number | null;
   deliveryFeeTiers?: Array<{

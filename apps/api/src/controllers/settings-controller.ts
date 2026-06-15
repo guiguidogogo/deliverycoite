@@ -12,6 +12,8 @@ const settingsSchema = z.object({
   whatsappNumber: z.string().min(8).optional(),
   deliveryPhoneNumber: z.string().min(8).optional(),
   deliveryFee: z.coerce.number().min(0).optional(),
+  ordersPaused: z.boolean().optional(),
+  ordersPausedReason: z.string().max(180).nullable().optional(),
   storeLatitude: z.number().min(-90).max(90).nullable().optional(),
   storeLongitude: z.number().min(-180).max(180).nullable().optional(),
   deliveryFeeTiers: z.array(z.object({

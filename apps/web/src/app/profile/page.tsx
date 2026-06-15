@@ -44,6 +44,8 @@ export default function ProfilePage() {
   const [newLng, setNewLng] = useState<number | undefined>();
   const [newIsDefault, setNewIsDefault] = useState(false);
   const [addressMode, setAddressMode] = useState<"MANUAL" | "LOCATION">("MANUAL");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
 
   useEffect(() => {
     const token = localStorage.getItem("delivery:customer-token");
@@ -214,6 +216,23 @@ export default function ProfilePage() {
     router.push("/");
   }
 
+  async function changePassword() {
+    const token = localStorage.getItem("delivery:customer-token");
+    if (!token) return;
+    try {
+      await api("/customer/password", {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ currentPassword, newPassword })
+      });
+      setCurrentPassword("");
+      setNewPassword("");
+      toast.success("Senha alterada");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao alterar senha");
+    }
+  }
+
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center">
@@ -253,6 +272,17 @@ export default function ProfilePage() {
               <strong>Email:</strong> {customer.email}
             </p>
           )}
+        </div>
+      </section>
+
+      <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
+        <h2 className="text-xl font-bold">Alterar senha</h2>
+        <div className="mt-3 grid gap-2 md:grid-cols-2">
+          <input className="rounded-xl border px-3 py-2" type="password" placeholder="Senha atual" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
+          <input className="rounded-xl border px-3 py-2" type="password" placeholder="Nova senha" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+          <button className="rounded-xl bg-ink px-3 py-2 text-white md:col-span-2" onClick={() => void changePassword()}>
+            Alterar senha
+          </button>
         </div>
       </section>
 

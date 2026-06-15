@@ -13,8 +13,8 @@ const loginSchema = z.object({
 export async function login(req: Request, res: Response) {
   const body = loginSchema.parse(req.body);
 
-  const user = await prisma.user.findUnique({ where: { email: body.email } });
-  if (!user) {
+  const user = await prisma.user.findUnique({ where: { email: body.email.toLowerCase() } });
+  if (!user || !user.active) {
     return res.status(401).json({ message: "Credenciais invalidas" });
   }
 
@@ -23,7 +23,12 @@ export async function login(req: Request, res: Response) {
     return res.status(401).json({ message: "Credenciais invalidas" });
   }
 
-  const token = jwt.sign({ role: user.role }, env.jwtSecret, {
+  const fullUser = await prisma.user.findUniqueOrThrow({
+    where: { id: user.id },
+    include: { staffRole: true }
+  });
+  const permissions = user.role === "ADMIN" ? ["*"] : (fullUser.staffRole?.permissions ?? []);
+  const token = jwt.sign({}, env.jwtSecret, {
     subject: user.id,
     expiresIn: "1d"
   });
@@ -34,7 +39,9 @@ export async function login(req: Request, res: Response) {
       id: user.id,
       name: user.name,
       email: user.email,
-      role: user.role
+      phone: user.phone,
+      role: user.role,
+      permissions
     }
   });
 }

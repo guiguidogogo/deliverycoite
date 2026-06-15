@@ -18,16 +18,16 @@ async function main() {
 
   const passwordHash = await bcrypt.hash(adminPassword, 10);
 
-  await prisma.user.upsert({
-    where: { email: adminEmail },
-    update: {},
-    create: {
-      name: "Administrador",
-      email: adminEmail,
-      passwordHash,
-      role: UserRole.ADMIN
-    }
-  });
+  if ((await prisma.user.count({ where: { role: UserRole.ADMIN } })) === 0) {
+    await prisma.user.create({
+      data: {
+        name: "Administrador",
+        email: adminEmail.toLowerCase(),
+        passwordHash,
+        role: UserRole.ADMIN
+      }
+    });
+  }
 
   const categories = ["Hamburgueres", "Pizzas", "Bebidas", "Combos", "Sobremesas"];
 

@@ -100,6 +100,12 @@ export async function createOrder(req: Request, res: Response) {
     include: { deliveryFeeTiers: true }
   });
 
+  if (settings.ordersPaused) {
+    return res.status(400).json({
+      message: settings.ordersPausedReason || "A loja pausou temporariamente o recebimento de pedidos"
+    });
+  }
+
   if (!isStoreOpen(settings.openTime ?? "00:00", settings.closeTime ?? "23:59")) {
     return res.status(400).json({
       message: `Loja fechada no momento. Funcionamento: ${settings.openTime} ate ${settings.closeTime}`

@@ -115,6 +115,8 @@ export function AdminPanel() {
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [connected, setConnected] = useState(false);
+  const [permissions, setPermissions] = useState<string[]>([]);
+  const [ordersPaused, setOrdersPaused] = useState(false);
   const audioRef = useRef<AudioContext | null>(null);
   const knownNewOrdersRef = useRef<Set<string>>(new Set());
   const initializedOrdersRef = useRef(false);
@@ -126,7 +128,39 @@ export function AdminPanel() {
       return;
     }
     setToken(storedToken);
+    void authApi<{ permissions: string[] }>("/admin/me", storedToken)
+      .then((me) => setPermissions(me.permissions))
+      .catch(() => undefined);
+    void fetch(`${API_URL}/settings`, { cache: "no-store" })
+      .then((response) => response.json())
+      .then((settings) => setOrdersPaused(Boolean(settings.ordersPaused)));
   }, [router]);
+
+  const can = useCallback(
+    (permission: string) => permissions.includes("*") || permissions.includes(permission),
+    [permissions]
+  );
+
+  async function toggleStorePause() {
+    if (!token) return;
+    const reason = ordersPaused
+      ? null
+      : window.prompt("Motivo da pausa para mostrar aos clientes:", "Pausamos temporariamente devido ao excesso de pedidos.");
+    if (!ordersPaused && reason === null) return;
+    try {
+      const settings = await authApi<{ ordersPaused: boolean }>("/admin/store/pause", token, {
+        method: "PATCH",
+        body: JSON.stringify({
+          ordersPaused: !ordersPaused,
+          ordersPausedReason: ordersPaused ? null : reason
+        })
+      });
+      setOrdersPaused(settings.ordersPaused);
+      toast.success(settings.ordersPaused ? "Loja pausada para novos pedidos" : "Loja reaberta");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao alterar loja");
+    }
+  }
 
   const refreshPanel = useCallback(async (notifyNewOrders = false) => {
     if (!token) return;
@@ -278,30 +312,44 @@ export function AdminPanel() {
       </div>
 
       <section className="mt-3 flex flex-wrap gap-2">
-        <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/products">
+        <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/account">
+          Minha conta
+        </a>
+        {can("CATALOG") && <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/products">
           Produtos
-        </a>
-        <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/categories">
+        </a>}
+        {can("CATALOG") && <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/categories">
           Categorias
-        </a>
-        <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/complements">
+        </a>}
+        {can("CATALOG") && <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/complements">
           Complementos
-        </a>
-        <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/settings">
+        </a>}
+        {can("SETTINGS") && <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/settings">
           Configuracoes
-        </a>
-        <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/customers">
+        </a>}
+        {can("CUSTOMERS") && <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/customers">
           Clientes
-        </a>
-        <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/coupons">
+        </a>}
+        {can("COUPONS") && <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/coupons">
           Cupons
-        </a>
-        <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/reports">
+        </a>}
+        {can("REPORTS") && <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/reports">
           Relatorios
-        </a>
-        <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/finance">
+        </a>}
+        {can("FINANCE") && <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/finance">
           Financeiro / Caixa
-        </a>
+        </a>}
+        {can("USERS") && <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/users">
+          Usuarios e Acessos
+        </a>}
+        {can("STORE_PAUSE") && (
+          <button
+            className={`rounded-lg px-3 py-2 text-sm text-white ${ordersPaused ? "bg-emerald-600" : "bg-red-600"}`}
+            onClick={() => void toggleStorePause()}
+          >
+            {ordersPaused ? "Reabrir loja" : "Pausar novos pedidos"}
+          </button>
+        )}
       </section>
 
       <section className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-6">
@@ -331,12 +379,12 @@ export function AdminPanel() {
             <input type="checkbox" checked={onlyNew} onChange={(e) => setOnlyNew(e.target.checked)} />
             Somente novos
           </label>
-          <a className="rounded-xl bg-ink px-3 py-2 text-sm text-white" href={`${API_URL}/admin/reports/orders.xlsx?dateFrom=${dateFrom}&dateTo=${dateTo}&token=${token}`} target="_blank" rel="noreferrer">
+          {can("REPORTS") && <a className="rounded-xl bg-ink px-3 py-2 text-sm text-white" href={`${API_URL}/admin/reports/orders.xlsx?dateFrom=${dateFrom}&dateTo=${dateTo}&token=${token}`} target="_blank" rel="noreferrer">
             Exportar Excel
-          </a>
-          <a className="rounded-xl bg-ember px-3 py-2 text-sm text-white" href={`${API_URL}/admin/reports/orders.pdf?dateFrom=${dateFrom}&dateTo=${dateTo}&token=${token}`} target="_blank" rel="noreferrer">
+          </a>}
+          {can("REPORTS") && <a className="rounded-xl bg-ember px-3 py-2 text-sm text-white" href={`${API_URL}/admin/reports/orders.pdf?dateFrom=${dateFrom}&dateTo=${dateTo}&token=${token}`} target="_blank" rel="noreferrer">
             Exportar PDF
-          </a>
+          </a>}
         </div>
 
         <div className="mt-4 space-y-2">

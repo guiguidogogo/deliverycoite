@@ -4,9 +4,7 @@ import jwt from "jsonwebtoken";
 import { WebSocketServer } from "ws";
 import { env } from "../utils/env.js";
 
-type AdminPayload = {
-  role: "ADMIN" | "ATTENDANT";
-};
+type AdminPayload = { sub?: string };
 
 let broadcastFn: ((payload: unknown) => void) | null = null;
 
@@ -36,7 +34,7 @@ export function attachRealtimeServer(server: http.Server) {
 
     try {
       const decoded = jwt.verify(token, env.jwtSecret) as AdminPayload;
-      if (!["ADMIN", "ATTENDANT"].includes(decoded.role)) {
+      if (!decoded.sub) {
         socket.close(1008, "Sem permissao");
         return;
       }

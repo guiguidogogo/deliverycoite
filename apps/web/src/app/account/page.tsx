@@ -17,6 +17,9 @@ export default function CustomerAuthPage() {
   // Login form
   const [loginPhone, setLoginPhone] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+  const [recovering, setRecovering] = useState(false);
+  const [resetCode, setResetCode] = useState("");
+  const [resetPassword, setResetPassword] = useState("");
 
   // Register form
   const [registerName, setRegisterName] = useState("");
@@ -84,6 +87,38 @@ export default function CustomerAuthPage() {
       toast.error(error instanceof Error ? error.message : "Erro ao criar conta");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function requestPasswordReset() {
+    try {
+      const response = await api<{ message: string }>("/customer/password/request", {
+        method: "POST",
+        body: JSON.stringify({ phone: loginPhone })
+      });
+      setRecovering(true);
+      toast.success(response.message);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao enviar codigo");
+    }
+  }
+
+  async function confirmPasswordReset() {
+    try {
+      await api("/customer/password/reset", {
+        method: "POST",
+        body: JSON.stringify({
+          phone: loginPhone,
+          code: resetCode,
+          newPassword: resetPassword
+        })
+      });
+      setRecovering(false);
+      setResetCode("");
+      setResetPassword("");
+      toast.success("Senha alterada");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao redefinir senha");
     }
   }
 
@@ -177,6 +212,20 @@ export default function CustomerAuthPage() {
             >
               {loading ? "Entrando..." : "Entrar"}
             </button>
+            {!recovering ? (
+              <button type="button" className="w-full text-sm underline" onClick={() => void requestPasswordReset()}>
+                Esqueci minha senha
+              </button>
+            ) : (
+              <div className="space-y-2 rounded-xl border border-black/10 p-3 dark:border-white/20">
+                <p className="text-sm">Digite o codigo recebido no WhatsApp.</p>
+                <input className="w-full rounded-xl border px-3 py-2" placeholder="Codigo" value={resetCode} onChange={(e) => setResetCode(e.target.value)} />
+                <input className="w-full rounded-xl border px-3 py-2" type="password" placeholder="Nova senha" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} />
+                <button type="button" className="w-full rounded-xl bg-ember px-3 py-2 text-white" onClick={() => void confirmPasswordReset()}>
+                  Alterar senha
+                </button>
+              </div>
+            )}
             <a href="/" className="block text-center text-sm text-ink dark:text-ember">
               Voltar para o cardápio
             </a>

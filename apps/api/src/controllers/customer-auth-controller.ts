@@ -176,6 +176,23 @@ export async function updateCustomerProfile(req: Request, res: Response) {
   });
 }
 
+export async function changeCustomerPassword(req: Request, res: Response) {
+  const customerId = (req as any).customerId;
+  const body = z.object({
+    currentPassword: z.string().min(6),
+    newPassword: z.string().min(6)
+  }).parse(req.body);
+  const customer = await prisma.customer.findUniqueOrThrow({ where: { id: customerId } });
+  if (!customer.passwordHash || !(await bcrypt.compare(body.currentPassword, customer.passwordHash))) {
+    return res.status(400).json({ message: "Senha atual incorreta" });
+  }
+  await prisma.customer.update({
+    where: { id: customerId },
+    data: { passwordHash: await bcrypt.hash(body.newPassword, 10) }
+  });
+  return res.json({ message: "Senha alterada" });
+}
+
 export async function addCustomerAddress(req: Request, res: Response) {
   const customerId = (req as any).customerId;
   const body = addressSchema.parse(req.body);
