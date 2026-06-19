@@ -1,0 +1,39 @@
+import { API_URL } from "./api";
+
+export type AdminUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: "SUPER_ADMIN" | "ADMIN" | "MANAGER" | "ATTENDANT";
+  permissions: string[];
+};
+
+export function getAdminToken() {
+  return typeof window === "undefined" ? null : localStorage.getItem("delivery:token");
+}
+
+export async function adminApi<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getAdminToken();
+  if (!token) throw new Error("Sessao expirada");
+  const response = await fetch(`${API_URL}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...(init?.headers ?? {})
+    },
+    cache: "no-store"
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.message ?? "Erro na requisicao");
+  }
+  if (response.status === 204) return undefined as T;
+  return response.json();
+}
+
+export async function requireMaster() {
+  const me = await adminApi<AdminUser>("/admin/me");
+  if (me.role !== "SUPER_ADMIN") throw new Error("Acesso exclusivo do administrador master");
+  return me;
+}

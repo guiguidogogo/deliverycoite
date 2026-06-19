@@ -91,3 +91,10 @@ export function requireAnyPermission(permissions: Permission[]) {
     return res.status(403).json({ message: "Sem permissao para esta area" });
   };
 }
+
+export function requireSuperAdmin(req: Request, res: Response, next: NextFunction) {
+  if (req.user?.role !== "SUPER_ADMIN") {
+    return res.status(403).json({ message: "Acesso exclusivo do administrador master" });
+  }
+  return next();
+}

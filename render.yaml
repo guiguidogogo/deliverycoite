@@ -24,6 +24,10 @@ services:
         sync: false
       - key: SEED_ADMIN_PASSWORD
         sync: false
+      - key: SEED_MASTER_EMAIL
+        sync: false
+      - key: SEED_MASTER_PASSWORD
+        sync: false
       - key: MENUIA_API_BASE_URL
         value: https://chatbot.menuia.com
       - key: MENUIA_LICENSE

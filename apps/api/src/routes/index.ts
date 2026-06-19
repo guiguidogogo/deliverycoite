@@ -2,6 +2,14 @@ import { Router, type RequestHandler } from "express";
 import { login } from "../controllers/auth-controller.js";
 import { getPublicCompany } from "../controllers/company-controller.js";
 import {
+  createCompany,
+  generateCompanySubdomain,
+  getCompany,
+  listCompanies,
+  updateCompany,
+  updateCompanyStatus
+} from "../controllers/companies-controller.js";
+import {
   createCategory,
   deleteCategory,
   listCategories,
@@ -81,7 +89,7 @@ import {
 import { exportOrdersExcel, exportOrdersPdf } from "../controllers/reports-controller.js";
 import { listPrinters } from "../controllers/printer-controller.js";
 import { getSettings, updateSettings } from "../controllers/settings-controller.js";
-import { auth, requireAnyPermission, requirePermission } from "../middlewares/auth.js";
+import { auth, requireAnyPermission, requirePermission, requireSuperAdmin } from "../middlewares/auth.js";
 import { customerAuth } from "../middlewares/customer-auth.js";
 import { imageUpload } from "../utils/upload.js";
 import { asyncHandler } from "../utils/async-handler.js";
@@ -135,6 +143,12 @@ route.get("/integrations/future", getFutureIntegrations);
 
 router.use(auth());
 route.get("/admin/me", getCurrentStaff);
+route.get("/admin/companies/subdomain", requireSuperAdmin, generateCompanySubdomain);
+route.get("/admin/companies", requireSuperAdmin, listCompanies);
+route.post("/admin/companies", requireSuperAdmin, createCompany);
+route.get("/admin/companies/:id", requireSuperAdmin, getCompany);
+route.patch("/admin/companies/:id", requireSuperAdmin, updateCompany);
+route.patch("/admin/companies/:id/status", requireSuperAdmin, updateCompanyStatus);
 route.patch("/admin/me", updateCurrentStaff);
 route.patch("/admin/password", changeStaffPassword);
 route.get("/admin/orders", requirePermission("ORDERS"), listOrders);

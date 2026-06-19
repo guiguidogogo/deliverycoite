@@ -33,7 +33,10 @@ export async function login(req: Request, res: Response) {
     where: { id: user.id },
     include: { staffRole: true }
   });
-  const permissions = user.role === "ADMIN" ? ["*"] : (fullUser.staffRole?.permissions ?? []);
+  const permissions =
+    user.role === "SUPER_ADMIN" || user.role === "ADMIN"
+      ? ["*"]
+      : (fullUser.staffRole?.permissions ?? []);
   const token = jwt.sign({ companyId: user.companyId }, env.jwtSecret, {
     subject: user.id,
     expiresIn: "1d"

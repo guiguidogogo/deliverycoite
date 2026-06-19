@@ -116,6 +116,7 @@ export function AdminPanel() {
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [connected, setConnected] = useState(false);
   const [permissions, setPermissions] = useState<string[]>([]);
+  const [userRole, setUserRole] = useState<string>("");
   const [ordersPaused, setOrdersPaused] = useState(false);
   const audioRef = useRef<AudioContext | null>(null);
   const knownNewOrdersRef = useRef<Set<string>>(new Set());
@@ -128,8 +129,11 @@ export function AdminPanel() {
       return;
     }
     setToken(storedToken);
-    void authApi<{ permissions: string[] }>("/admin/me", storedToken)
-      .then((me) => setPermissions(me.permissions))
+    void authApi<{ permissions: string[]; role: string }>("/admin/me", storedToken)
+      .then((me) => {
+        setPermissions(me.permissions);
+        setUserRole(me.role);
+      })
       .catch(() => undefined);
     void fetch(`${API_URL}/settings`, { cache: "no-store" })
       .then((response) => response.json())
@@ -315,6 +319,9 @@ export function AdminPanel() {
         <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/account">
           Minha conta
         </a>
+        {userRole === "SUPER_ADMIN" && <a className="rounded-lg bg-violet-700 px-3 py-2 text-sm text-white" href="/admin/companies">
+          Empresas
+        </a>}
         {can("CATALOG") && <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/products">
           Produtos
         </a>}

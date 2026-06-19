@@ -16,6 +16,8 @@ function slugify(value: string) {
 async function main() {
   const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@delivery.com";
   const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "123456";
+  const masterEmail = process.env.SEED_MASTER_EMAIL?.trim().toLowerCase();
+  const masterPassword = process.env.SEED_MASTER_PASSWORD;
 
   const passwordHash = await bcrypt.hash(adminPassword, 10);
 
@@ -42,6 +44,30 @@ async function main() {
         passwordHash,
         role: UserRole.ADMIN,
         companyId: DEFAULT_COMPANY_ID
+      }
+    });
+  }
+
+  if (masterEmail && masterPassword) {
+    await prisma.user.upsert({
+      where: {
+        companyId_email: {
+          companyId: DEFAULT_COMPANY_ID,
+          email: masterEmail
+        }
+      },
+      update: {
+        role: UserRole.SUPER_ADMIN,
+        active: true,
+        passwordHash: await bcrypt.hash(masterPassword, 10)
+      },
+      create: {
+        name: "Administrador Master",
+        email: masterEmail,
+        passwordHash: await bcrypt.hash(masterPassword, 10),
+        role: UserRole.SUPER_ADMIN,
+        companyId: DEFAULT_COMPANY_ID,
+        active: true
       }
     });
   }
