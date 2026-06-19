@@ -137,6 +137,7 @@ export function AdminPanel() {
   const knownNewOrdersRef = useRef<Set<string>>(new Set());
   const initializedOrdersRef = useRef(false);
   const autoPrintedOrdersRef = useRef<Set<string>>(new Set());
+  const autoPrintOrderRef = useRef<(orderId: string) => Promise<void>>(async () => undefined);
 
   useEffect(() => {
     const storedToken = localStorage.getItem("delivery:token");
@@ -225,6 +226,7 @@ export function AdminPanel() {
             ? `Novo pedido de ${newOrders[0].customer.name}`
             : `${newOrders.length} novos pedidos recebidos`
         );
+        await Promise.all(newOrders.map((order) => autoPrintOrderRef.current(order.id)));
       }
 
       knownNewOrdersRef.current = currentIds;
@@ -284,6 +286,10 @@ export function AdminPanel() {
       toast.error("Impressao automatica falhou. Verifique se o QZ Tray esta aberto.");
     }
   }, [printSettings, token]);
+
+  useEffect(() => {
+    autoPrintOrderRef.current = autoPrintOrder;
+  }, [autoPrintOrder]);
 
   useEffect(() => {
     if (!token) return;
