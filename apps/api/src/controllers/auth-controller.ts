@@ -24,7 +24,12 @@ export async function login(req: Request, res: Response) {
         ...(body.subdomain ? { subdomain: body.subdomain.toLowerCase() } : {})
       }
     },
-    include: { staffRole: true },
+    include: {
+      staffRole: true,
+      company: {
+        select: { id: true, tradeName: true, subdomain: true }
+      }
+    },
     take: 10
   });
 
@@ -67,6 +72,7 @@ export async function login(req: Request, res: Response) {
       phone: user.phone,
       role: user.role,
       companyId: user.companyId,
+      company: user.company,
       permissions
     }
   });

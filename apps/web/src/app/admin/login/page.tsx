@@ -36,6 +36,9 @@ export default function AdminLoginPage() {
     const payload = await res.json();
     localStorage.setItem("delivery:token", payload.token);
     localStorage.setItem("delivery:admin-user", JSON.stringify(payload.user));
+    if (payload.user.company?.subdomain) {
+      localStorage.setItem("delivery:subdomain", payload.user.company.subdomain);
+    }
     router.push("/admin");
   }
 

@@ -137,6 +137,10 @@ export default function ProductsManagePage() {
   async function save() {
     const token = localStorage.getItem("delivery:token");
     if (!token || saving) return;
+    if (!form.categoryId) {
+      toast.error("Crie ou selecione uma categoria antes de cadastrar o produto");
+      return;
+    }
     setSaving(true);
     try {
       const imageUrl = await upload(token);
@@ -162,6 +166,24 @@ export default function ProductsManagePage() {
       toast.error(error instanceof Error ? error.message : "Falha ao salvar produto");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function createInitialCategory() {
+    const token = localStorage.getItem("delivery:token");
+    if (!token) return;
+    try {
+      const response = await fetch(`${API_URL}/admin/categories`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: "Geral", description: "Categoria inicial", active: true })
+      });
+      const category = await responseJson(response);
+      await load();
+      setForm((value) => ({ ...value, categoryId: category.id }));
+      toast.success("Categoria Geral criada");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao criar categoria");
     }
   }
 
@@ -194,6 +216,20 @@ export default function ProductsManagePage() {
 
       <section className="rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
         <h2 className="font-semibold">{editingId ? "Editar produto" : "Novo produto"}</h2>
+        {categories.length === 0 && (
+          <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+            <p className="font-semibold">Esta empresa ainda nao possui categorias.</p>
+            <p>Crie a categoria inicial para liberar o cadastro de produtos.</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button className="rounded-lg bg-amber-600 px-3 py-2 text-white" onClick={() => void createInitialCategory()}>
+                Criar categoria Geral
+              </button>
+              <Link className="rounded-lg border border-amber-500 px-3 py-2" href="/admin/manage/categories">
+                Gerenciar categorias
+              </Link>
+            </div>
+          </div>
+        )}
         <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
           <input className="rounded-xl border px-3 py-2 dark:bg-slate-900" placeholder="Nome" value={form.name} onChange={(e) => setForm((v) => ({ ...v, name: e.target.value }))} />
           <select className="rounded-xl border px-3 py-2 dark:bg-slate-900" value={form.categoryId} onChange={(e) => setForm((v) => ({ ...v, categoryId: e.target.value }))}>
@@ -233,7 +269,7 @@ export default function ProductsManagePage() {
         </div>
 
         <div className="mt-4 flex gap-2">
-          <button className="rounded-xl bg-ember px-5 py-2 text-white disabled:opacity-60" disabled={saving} onClick={() => void save()}>
+          <button className="rounded-xl bg-ember px-5 py-2 text-white disabled:opacity-60" disabled={saving || categories.length === 0} onClick={() => void save()}>
             {saving ? "Salvando..." : editingId ? "Atualizar produto" : "Criar produto"}
           </button>
           {editingId && <button className="rounded-xl border px-4 py-2" onClick={reset}>Cancelar</button>}

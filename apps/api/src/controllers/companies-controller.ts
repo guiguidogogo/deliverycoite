@@ -222,6 +222,16 @@ export async function createCompany(req: Request, res: Response) {
         }
       });
 
+      await transaction.category.create({
+        data: {
+          companyId: created.id,
+          name: "Geral",
+          slug: "geral",
+          description: "Categoria inicial",
+          active: true
+        }
+      });
+
       await transaction.user.create({
         data: {
           companyId: created.id,

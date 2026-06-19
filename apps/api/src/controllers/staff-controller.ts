@@ -39,7 +39,12 @@ async function ensureDefaultRoles(req: Request) {
 export async function getCurrentStaff(req: Request, res: Response) {
   const user = await prisma.user.findUniqueOrThrow({
     where: { id: req.user!.sub },
-    include: { staffRole: true }
+    include: {
+      staffRole: true,
+      company: {
+        select: { id: true, tradeName: true, subdomain: true, active: true }
+      }
+    }
   });
   return res.json({
     id: user.id,
@@ -48,7 +53,8 @@ export async function getCurrentStaff(req: Request, res: Response) {
     phone: user.phone,
     role: user.role,
     permissions: req.user!.permissions,
-    staffRole: user.staffRole
+    staffRole: user.staffRole,
+    company: user.company
   });
 }
 

@@ -7,10 +7,20 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     const separator = path.includes("?") ? "&" : "?";
     const requestPath = method === "GET" ? `${path}${separator}_=${Date.now()}` : path;
 
+    const browserSubdomain =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("subdomain")
+          || localStorage.getItem("delivery:subdomain")
+        : null;
+    if (browserSubdomain && typeof window !== "undefined") {
+      localStorage.setItem("delivery:subdomain", browserSubdomain);
+    }
+
     res = await fetch(`${API_URL}${requestPath}`, {
       ...init,
       headers: {
         "Content-Type": "application/json",
+        ...(browserSubdomain ? { "x-company-subdomain": browserSubdomain } : {}),
         ...(init?.headers ?? {})
       },
       cache: "no-store"
