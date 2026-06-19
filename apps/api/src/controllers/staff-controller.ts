@@ -4,6 +4,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { DEFAULT_STAFF_ROLES, PERMISSIONS } from "../utils/permissions.js";
+import { companyWhere, getCompanyId } from "../utils/tenant.js";
 
 const roleSchema = z.object({
   name: z.string().min(2),
@@ -20,12 +21,17 @@ const userSchema = z.object({
   active: z.boolean().optional()
 });
 
-async function ensureDefaultRoles() {
+async function ensureDefaultRoles(req: Request) {
   for (const role of DEFAULT_STAFF_ROLES) {
     await prisma.staffRole.upsert({
-      where: { name: role.name },
+      where: {
+        companyId_name: {
+          companyId: getCompanyId(req),
+          name: role.name
+        }
+      },
       update: {},
-      create: role
+      create: { ...role, companyId: getCompanyId(req) }
     });
   }
 }
@@ -71,30 +77,37 @@ export async function updateCurrentStaff(req: Request, res: Response) {
   });
 }
 
-export async function listStaffRoles(_req: Request, res: Response) {
-  await ensureDefaultRoles();
-  return res.json(await prisma.staffRole.findMany({ orderBy: { name: "asc" } }));
+export async function listStaffRoles(req: Request, res: Response) {
+  await ensureDefaultRoles(req);
+  return res.json(await prisma.staffRole.findMany({ where: companyWhere(req), orderBy: { name: "asc" } }));
 }
 
 export async function createStaffRole(req: Request, res: Response) {
   const body = roleSchema.parse(req.body);
-  return res.status(201).json(await prisma.staffRole.create({ data: body }));
+  return res.status(201).json(await prisma.staffRole.create({
+    data: { ...body, companyId: getCompanyId(req) }
+  }));
 }
 
 export async function updateStaffRole(req: Request, res: Response) {
   const body = roleSchema.partial().parse(req.body);
-  return res.json(await prisma.staffRole.update({ where: { id: req.params.id }, data: body }));
+  const role = await prisma.staffRole.findFirst({ where: { id: req.params.id, ...companyWhere(req) } });
+  if (!role) return res.status(404).json({ message: "Perfil nao encontrado" });
+  return res.json(await prisma.staffRole.update({ where: { id: role.id }, data: body }));
 }
 
 export async function deleteStaffRole(req: Request, res: Response) {
-  const users = await prisma.user.count({ where: { staffRoleId: req.params.id } });
+  const role = await prisma.staffRole.findFirst({ where: { id: req.params.id, ...companyWhere(req) } });
+  if (!role) return res.status(404).json({ message: "Perfil nao encontrado" });
+  const users = await prisma.user.count({ where: { ...companyWhere(req), staffRoleId: role.id } });
   if (users) return res.status(400).json({ message: "Este perfil esta vinculado a usuarios" });
-  await prisma.staffRole.delete({ where: { id: req.params.id } });
+  await prisma.staffRole.delete({ where: { id: role.id } });
   return res.status(204).send();
 }
 
-export async function listStaffUsers(_req: Request, res: Response) {
+export async function listStaffUsers(req: Request, res: Response) {
   return res.json(await prisma.user.findMany({
+    where: companyWhere(req),
     include: { staffRole: true },
     orderBy: { name: "asc" }
   }));
@@ -105,6 +118,10 @@ export async function createStaffUser(req: Request, res: Response) {
   if (body.role !== "ADMIN" && !body.staffRoleId) {
     return res.status(400).json({ message: "Escolha um perfil de acesso para este usuario" });
   }
+  if (body.staffRoleId) {
+    const role = await prisma.staffRole.findFirst({ where: { id: body.staffRoleId, ...companyWhere(req) } });
+    if (!role) return res.status(400).json({ message: "Perfil de acesso invalido" });
+  }
   try {
     const user = await prisma.user.create({
       data: {
@@ -113,6 +130,7 @@ export async function createStaffUser(req: Request, res: Response) {
         phone: body.phone,
         passwordHash: await bcrypt.hash(body.password, 10),
         role: body.role,
+        companyId: getCompanyId(req),
         staffRoleId: body.role === "ADMIN" ? null : body.staffRoleId,
         active: body.active ?? true
       },
@@ -136,7 +154,8 @@ export async function createStaffUser(req: Request, res: Response) {
 
 export async function updateStaffUser(req: Request, res: Response) {
   const body = userSchema.partial().parse(req.body);
-  const existing = await prisma.user.findUniqueOrThrow({ where: { id: req.params.id } });
+  const existing = await prisma.user.findFirst({ where: { id: req.params.id, ...companyWhere(req) } });
+  if (!existing) return res.status(404).json({ message: "Usuario nao encontrado" });
   if (req.params.id === req.user!.sub && (body.active === false || (body.role && body.role !== "ADMIN"))) {
     return res.status(400).json({ message: "Voce nao pode remover seu proprio acesso administrativo" });
   }
@@ -144,7 +163,7 @@ export async function updateStaffUser(req: Request, res: Response) {
     && existing.active
     && (body.active === false || (body.role !== undefined && body.role !== "ADMIN"));
   if (removesActiveAdmin) {
-    const activeAdmins = await prisma.user.count({ where: { role: "ADMIN", active: true } });
+    const activeAdmins = await prisma.user.count({ where: { ...companyWhere(req), role: "ADMIN", active: true } });
     if (activeAdmins <= 1) {
       return res.status(400).json({ message: "Cadastre outro administrador antes de remover este acesso" });
     }
@@ -153,6 +172,10 @@ export async function updateStaffUser(req: Request, res: Response) {
   const nextStaffRoleId = body.staffRoleId !== undefined ? body.staffRoleId : existing.staffRoleId;
   if (nextRole !== "ADMIN" && !nextStaffRoleId) {
     return res.status(400).json({ message: "Escolha um perfil de acesso para este usuario" });
+  }
+  if (nextStaffRoleId) {
+    const role = await prisma.staffRole.findFirst({ where: { id: nextStaffRoleId, ...companyWhere(req) } });
+    if (!role) return res.status(400).json({ message: "Perfil de acesso invalido" });
   }
   const { password, ...userData } = body;
   const user = await prisma.user.update({

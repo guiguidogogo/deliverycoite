@@ -4,6 +4,7 @@ import { prisma } from "./prisma.js";
 import { dispatchWhatsappMessage } from "../services/whatsapp.js";
 
 export async function createPasswordReset(params: {
+  companyId: string;
   userId?: string;
   customerId?: string;
   phone: string;
@@ -15,6 +16,7 @@ export async function createPasswordReset(params: {
 
   await prisma.passwordReset.updateMany({
     where: {
+      companyId: params.companyId,
       usedAt: null,
       ...(params.userId ? { userId: params.userId } : { customerId: params.customerId })
     },
@@ -22,6 +24,7 @@ export async function createPasswordReset(params: {
   });
   await prisma.passwordReset.create({
     data: {
+      companyId: params.companyId,
       codeHash,
       expiresAt,
       userId: params.userId,
@@ -29,7 +32,9 @@ export async function createPasswordReset(params: {
     }
   });
 
-  const settings = await prisma.setting.findFirstOrThrow();
+  const settings = await prisma.setting.findFirstOrThrow({
+    where: { companyId: params.companyId }
+  });
   const message = [
     `Ola, ${params.name}!`,
     `Seu codigo para redefinir a senha e: ${code}`,
@@ -44,12 +49,14 @@ export async function createPasswordReset(params: {
 }
 
 export async function validatePasswordReset(params: {
+  companyId: string;
   code: string;
   userId?: string;
   customerId?: string;
 }) {
   const resets = await prisma.passwordReset.findMany({
     where: {
+      companyId: params.companyId,
       usedAt: null,
       expiresAt: { gt: new Date() },
       ...(params.userId ? { userId: params.userId } : { customerId: params.customerId })

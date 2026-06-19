@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import { PrismaClient, UserRole } from "@prisma/client";
 
 const prisma = new PrismaClient();
+const DEFAULT_COMPANY_ID = "default-company";
 
 function slugify(value: string) {
   return value
@@ -18,13 +19,29 @@ async function main() {
 
   const passwordHash = await bcrypt.hash(adminPassword, 10);
 
-  if ((await prisma.user.count({ where: { role: UserRole.ADMIN } })) === 0) {
+  await prisma.company.upsert({
+    where: { id: DEFAULT_COMPANY_ID },
+    update: {},
+    create: {
+      id: DEFAULT_COMPANY_ID,
+      companyName: "Delivery Coité",
+      tradeName: "Delivery Coité",
+      phone: process.env.WHATSAPP_NUMBER ?? "5575999999999",
+      whatsapp: process.env.WHATSAPP_NUMBER ?? "5575999999999",
+      email: adminEmail.toLowerCase(),
+      subdomain: "deliverycoite",
+      active: true
+    }
+  });
+
+  if ((await prisma.user.count({ where: { role: UserRole.ADMIN, companyId: DEFAULT_COMPANY_ID } })) === 0) {
     await prisma.user.create({
       data: {
         name: "Administrador",
         email: adminEmail.toLowerCase(),
         passwordHash,
-        role: UserRole.ADMIN
+        role: UserRole.ADMIN,
+        companyId: DEFAULT_COMPANY_ID
       }
     });
   }
@@ -32,24 +49,28 @@ async function main() {
   const categories = ["Hamburgueres", "Pizzas", "Bebidas", "Combos", "Sobremesas"];
 
   for (const name of categories) {
-    await prisma.category.upsert({
-      where: { slug: slugify(name) },
-      update: {},
-      create: {
+    const slug = slugify(name);
+    const existing = await prisma.category.findFirst({ where: { companyId: DEFAULT_COMPANY_ID, slug } });
+    if (!existing) {
+      await prisma.category.create({
+        data: {
+        companyId: DEFAULT_COMPANY_ID,
         name,
-        slug: slugify(name),
+        slug,
         active: true
       }
-    });
+      });
+    }
   }
 
-  const hamb = await prisma.category.findUniqueOrThrow({ where: { slug: "hamburgueres" } });
-  const bebidas = await prisma.category.findUniqueOrThrow({ where: { slug: "bebidas" } });
+  const hamb = await prisma.category.findFirstOrThrow({ where: { companyId: DEFAULT_COMPANY_ID, slug: "hamburgueres" } });
+  const bebidas = await prisma.category.findFirstOrThrow({ where: { companyId: DEFAULT_COMPANY_ID, slug: "bebidas" } });
 
-  if ((await prisma.product.count()) === 0) {
+  if ((await prisma.product.count({ where: { companyId: DEFAULT_COMPANY_ID } })) === 0) {
     await prisma.product.createMany({
       data: [
         {
+          companyId: DEFAULT_COMPANY_ID,
           name: "X-Burger",
           description: "Pao, carne, queijo e molho especial",
           price: 15,
@@ -59,6 +80,7 @@ async function main() {
           available: true
         },
         {
+          companyId: DEFAULT_COMPANY_ID,
           name: "Refrigerante Lata",
           description: "350ml, sabores variados",
           price: 6,
@@ -71,28 +93,29 @@ async function main() {
     });
   }
 
-  if ((await prisma.complement.count()) === 0) {
+  if ((await prisma.complement.count({ where: { companyId: DEFAULT_COMPANY_ID } })) === 0) {
     await prisma.complement.createMany({
       data: [
-        { name: "Pao", description: "Pao do lanche", price: 0, active: true },
-        { name: "Hamburguer", description: "Carne de hamburguer", price: 0, active: true },
-        { name: "Queijo Extra", description: "Fatia extra de queijo", price: 2, active: true },
-        { name: "Presunto", description: "Fatia de presunto", price: 2, active: true },
-        { name: "Tomate", description: "Rodelas de tomate", price: 1, active: true },
-        { name: "Alface", description: "Folhas de alface", price: 1, active: true }
+        { companyId: DEFAULT_COMPANY_ID, name: "Pao", description: "Pao do lanche", price: 0, active: true },
+        { companyId: DEFAULT_COMPANY_ID, name: "Hamburguer", description: "Carne de hamburguer", price: 0, active: true },
+        { companyId: DEFAULT_COMPANY_ID, name: "Queijo Extra", description: "Fatia extra de queijo", price: 2, active: true },
+        { companyId: DEFAULT_COMPANY_ID, name: "Presunto", description: "Fatia de presunto", price: 2, active: true },
+        { companyId: DEFAULT_COMPANY_ID, name: "Tomate", description: "Rodelas de tomate", price: 1, active: true },
+        { companyId: DEFAULT_COMPANY_ID, name: "Alface", description: "Folhas de alface", price: 1, active: true }
       ]
     });
   }
 
-  const burger = await prisma.product.findFirst({ where: { name: "X-Burger" } });
+  const burger = await prisma.product.findFirst({ where: { companyId: DEFAULT_COMPANY_ID, name: "X-Burger" } });
   if (burger && (await prisma.productComplement.count({ where: { productId: burger.id } })) === 0) {
     const complements = await prisma.complement.findMany({
-      where: { name: { in: ["Pao", "Hamburguer", "Queijo Extra", "Presunto", "Tomate", "Alface"] } },
+      where: { companyId: DEFAULT_COMPANY_ID, name: { in: ["Pao", "Hamburguer", "Queijo Extra", "Presunto", "Tomate", "Alface"] } },
       orderBy: { name: "asc" }
     });
     const requiredNames = new Set(["Pao", "Hamburguer"]);
     await prisma.productComplement.createMany({
       data: complements.map((complement, index) => ({
+        companyId: DEFAULT_COMPANY_ID,
         productId: burger.id,
         complementId: complement.id,
         required: requiredNames.has(complement.name),
@@ -103,9 +126,10 @@ async function main() {
 
   await prisma.setting.upsert({
     where: { id: "default" },
-    update: {},
+    update: { companyId: DEFAULT_COMPANY_ID },
     create: {
       id: "default",
+      companyId: DEFAULT_COMPANY_ID,
       companyName: "Lanchonete Delivery",
       whatsappNumber: process.env.WHATSAPP_NUMBER ?? "5575999999999",
       deliveryFee: 5,

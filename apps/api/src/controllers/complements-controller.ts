@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
+import { companyWhere, getCompanyId } from "../utils/tenant.js";
 
 const complementSchema = z.object({
   name: z.string().trim().min(2, "Informe um nome com pelo menos 2 caracteres"),
@@ -17,8 +18,9 @@ const complementSchema = z.object({
   active: z.boolean().optional()
 });
 
-export async function listComplements(_req: Request, res: Response) {
+export async function listComplements(req: Request, res: Response) {
   const complements = await prisma.complement.findMany({
+    where: companyWhere(req),
     orderBy: [{ active: "desc" }, { name: "asc" }]
   });
 
@@ -30,6 +32,7 @@ export async function createComplement(req: Request, res: Response) {
   const complement = await prisma.complement.create({
     data: {
       ...body,
+      companyId: getCompanyId(req),
       imageUrl: body.imageUrl || null,
       price: new Prisma.Decimal(body.price)
     }
@@ -40,8 +43,10 @@ export async function createComplement(req: Request, res: Response) {
 
 export async function updateComplement(req: Request, res: Response) {
   const body = complementSchema.partial().parse(req.body);
+  const existing = await prisma.complement.findFirst({ where: { id: req.params.id, ...companyWhere(req) } });
+  if (!existing) return res.status(404).json({ message: "Complemento nao encontrado" });
   const complement = await prisma.complement.update({
-    where: { id: req.params.id },
+    where: { id: existing.id },
     data: {
       ...body,
       ...(body.price !== undefined ? { price: new Prisma.Decimal(body.price) } : {}),
@@ -53,6 +58,8 @@ export async function updateComplement(req: Request, res: Response) {
 }
 
 export async function deleteComplement(req: Request, res: Response) {
-  await prisma.complement.delete({ where: { id: req.params.id } });
+  const existing = await prisma.complement.findFirst({ where: { id: req.params.id, ...companyWhere(req) } });
+  if (!existing) return res.status(404).json({ message: "Complemento nao encontrado" });
+  await prisma.complement.delete({ where: { id: existing.id } });
   return res.status(204).send();
 }

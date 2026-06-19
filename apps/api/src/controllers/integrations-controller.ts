@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { dispatchWhatsappMessage } from "../services/whatsapp.js";
 import { prisma } from "../utils/prisma.js";
+import { companyWhere } from "../utils/tenant.js";
 
 export async function getFutureIntegrations(_req: Request, res: Response) {
   return res.json({
@@ -11,8 +12,8 @@ export async function getFutureIntegrations(_req: Request, res: Response) {
   });
 }
 
-export async function testMenuiaIntegration(_req: Request, res: Response) {
-  const settings = await prisma.setting.findFirst();
+export async function testMenuiaIntegration(req: Request, res: Response) {
+  const settings = await prisma.setting.findFirst({ where: companyWhere(req) });
 
   if (!settings) {
     return res.status(404).json({ message: "Configuracoes nao encontradas" });

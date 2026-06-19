@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
+import { companyWhere, getCompanyId } from "../utils/tenant.js";
 
 const couponSchema = z.object({
   code: z.string().min(3).toUpperCase(),
@@ -19,17 +20,17 @@ function normalizeCode(value: string) {
   return value.trim().toUpperCase();
 }
 
-async function checkCouponUsageLimits(couponId: string, customerId?: string) {
-  const coupon = await prisma.coupon.findUnique({ where: { id: couponId } });
+async function checkCouponUsageLimits(couponId: string, companyId: string, customerId?: string) {
+  const coupon = await prisma.coupon.findFirst({ where: { id: couponId, companyId } });
   if (!coupon) return { ok: false, message: "Cupom invalido" };
 
-  const totalUses = await prisma.couponRedemption.count({ where: { couponId } });
+  const totalUses = await prisma.couponRedemption.count({ where: { couponId, companyId } });
   if (coupon.maxUses && totalUses >= coupon.maxUses) {
     return { ok: false, message: "Cupom atingiu o limite total de uso" };
   }
 
   if (customerId) {
-    const customerUses = await prisma.couponRedemption.count({ where: { couponId, customerId } });
+    const customerUses = await prisma.couponRedemption.count({ where: { couponId, customerId, companyId } });
     if (coupon.maxUsesPerCustomer && customerUses >= coupon.maxUsesPerCustomer) {
       return { ok: false, message: "Este cliente atingiu o limite de uso do cupom" };
     }
@@ -42,6 +43,7 @@ async function checkCouponUsageLimits(couponId: string, customerId?: string) {
     const usesToday = await prisma.couponRedemption.count({
       where: {
         couponId,
+        companyId,
         customerId,
         usedAt: { gte: startDay, lte: endDay }
       }
@@ -64,7 +66,7 @@ export async function validateCoupon(req: Request, res: Response) {
     return res.status(400).json({ message: "Informe o cupom" });
   }
 
-  const coupon = await prisma.coupon.findUnique({ where: { code } });
+  const coupon = await prisma.coupon.findFirst({ where: { code, ...companyWhere(req) } });
   if (!coupon || !coupon.active) {
     return res.status(400).json({ message: "Cupom invalido" });
   }
@@ -80,9 +82,9 @@ export async function validateCoupon(req: Request, res: Response) {
   }
 
   if (phone) {
-    const customer = await prisma.customer.findUnique({ where: { phone } });
+    const customer = await prisma.customer.findFirst({ where: { phone, ...companyWhere(req) } });
     if (customer) {
-      const usage = await checkCouponUsageLimits(coupon.id, customer.id);
+      const usage = await checkCouponUsageLimits(coupon.id, getCompanyId(req), customer.id);
       if (!usage.ok) {
         return res.status(400).json({ message: usage.message });
       }
@@ -105,8 +107,9 @@ export async function validateCoupon(req: Request, res: Response) {
   });
 }
 
-export async function listCoupons(_req: Request, res: Response) {
+export async function listCoupons(req: Request, res: Response) {
   const coupons = await prisma.coupon.findMany({
+    where: companyWhere(req),
     include: {
       _count: {
         select: { redemptions: true }
@@ -123,6 +126,7 @@ export async function createCoupon(req: Request, res: Response) {
   const coupon = await prisma.coupon.create({
     data: {
       code: normalizeCode(body.code),
+      companyId: getCompanyId(req),
       type: body.type,
       value: new Prisma.Decimal(body.value),
       minOrder: body.minOrder ? new Prisma.Decimal(body.minOrder) : null,
@@ -139,9 +143,11 @@ export async function createCoupon(req: Request, res: Response) {
 
 export async function updateCoupon(req: Request, res: Response) {
   const body = couponSchema.partial().parse(req.body);
+  const existing = await prisma.coupon.findFirst({ where: { id: req.params.id, ...companyWhere(req) } });
+  if (!existing) return res.status(404).json({ message: "Cupom nao encontrado" });
 
   const coupon = await prisma.coupon.update({
-    where: { id: req.params.id },
+    where: { id: existing.id },
     data: {
       ...body,
       ...(body.code !== undefined ? { code: normalizeCode(body.code) } : {}),
@@ -158,6 +164,8 @@ export async function updateCoupon(req: Request, res: Response) {
 }
 
 export async function deleteCoupon(req: Request, res: Response) {
-  await prisma.coupon.delete({ where: { id: req.params.id } });
+  const existing = await prisma.coupon.findFirst({ where: { id: req.params.id, ...companyWhere(req) } });
+  if (!existing) return res.status(404).json({ message: "Cupom nao encontrado" });
+  await prisma.coupon.delete({ where: { id: existing.id } });
   return res.status(204).send();
 }

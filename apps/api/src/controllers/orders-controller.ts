@@ -8,6 +8,7 @@ import { prisma } from "../utils/prisma.js";
 import { formatOrderCode } from "../utils/order-code.js";
 import { recordCashPayments } from "../utils/cash-register.js";
 import { calculateDeliveryFee } from "../utils/delivery-fee.js";
+import { companyWhere, getCompanyId } from "../utils/tenant.js";
 
 function shouldSendStatusWhatsapp(
   settings: Awaited<ReturnType<typeof prisma.setting.findFirstOrThrow>>,
@@ -97,6 +98,7 @@ export async function createOrder(req: Request, res: Response) {
   const body = checkoutSchema.parse(req.body);
 
   const settings = await prisma.setting.findFirstOrThrow({
+    where: companyWhere(req),
     include: { deliveryFeeTiers: true }
   });
 
@@ -114,7 +116,7 @@ export async function createOrder(req: Request, res: Response) {
 
   const productIds = [...new Set(body.items.map((item) => item.productId))];
   const products = await prisma.product.findMany({
-    where: { id: { in: productIds }, active: true, available: true },
+    where: { ...companyWhere(req), id: { in: productIds }, active: true, available: true },
     include: {
       complements: {
         include: { complement: true },
@@ -186,8 +188,14 @@ export async function createOrder(req: Request, res: Response) {
     ...customerData
   } = body.customer;
   const customer = await prisma.customer.upsert({
-    where: { phone: body.customer.phone },
+    where: {
+      companyId_phone: {
+        companyId: getCompanyId(req),
+        phone: body.customer.phone
+      }
+    },
     create: {
+      companyId: getCompanyId(req),
       ...customerData,
       address: pickup ? "Retirada na loja" : body.customer.address,
       number: pickup ? "S/N" : body.customer.number,
@@ -206,7 +214,7 @@ export async function createOrder(req: Request, res: Response) {
   if (body.couponCode) {
     const code = body.couponCode.trim().toUpperCase();
     normalizedCouponCode = code;
-    const coupon = await prisma.coupon.findUnique({ where: { code } });
+    const coupon = await prisma.coupon.findFirst({ where: { code, ...companyWhere(req) } });
 
     if (!coupon || !coupon.active) {
       return res.status(400).json({ message: "Cupom invalido" });
@@ -222,13 +230,15 @@ export async function createOrder(req: Request, res: Response) {
       });
     }
 
-    const totalUses = await prisma.couponRedemption.count({ where: { couponId: coupon.id } });
+    const totalUses = await prisma.couponRedemption.count({
+      where: { couponId: coupon.id, ...companyWhere(req) }
+    });
     if (coupon.maxUses && totalUses >= coupon.maxUses) {
       return res.status(400).json({ message: "Cupom atingiu o limite total de uso" });
     }
 
     const customerUses = await prisma.couponRedemption.count({
-      where: { couponId: coupon.id, customerId: customer.id }
+      where: { couponId: coupon.id, customerId: customer.id, ...companyWhere(req) }
     });
     if (coupon.maxUsesPerCustomer && customerUses >= coupon.maxUsesPerCustomer) {
       return res.status(400).json({ message: "Voce atingiu o limite deste cupom" });
@@ -242,6 +252,7 @@ export async function createOrder(req: Request, res: Response) {
     const usesToday = await prisma.couponRedemption.count({
       where: {
         couponId: coupon.id,
+        ...companyWhere(req),
         customerId: customer.id,
         usedAt: { gte: startDay, lte: endDay }
       }
@@ -290,6 +301,7 @@ export async function createOrder(req: Request, res: Response) {
 
   const order = await prisma.order.create({
     data: {
+      companyId: getCompanyId(req),
       customerId: customer.id,
       paymentMethod: body.paymentMethod,
       fulfillmentType: body.fulfillmentType,
@@ -305,12 +317,14 @@ export async function createOrder(req: Request, res: Response) {
       customerNotes: body.notes,
       items: {
         create: preparedItems.map((item) => ({
+          companyId: getCompanyId(req),
           productId: item.productId,
           quantity: item.quantity,
           price: toDecimal(item.basePrice),
           total: toDecimal(item.total),
           complements: {
             create: item.selectedComplements.map((complement) => ({
+              companyId: getCompanyId(req),
               complementId: complement.id,
               name: complement.name,
               quantity: complement.quantity,
@@ -330,6 +344,7 @@ export async function createOrder(req: Request, res: Response) {
   if (couponIdUsed) {
     await prisma.couponRedemption.create({
       data: {
+        companyId: getCompanyId(req),
         couponId: couponIdUsed,
         customerId: customer.id,
         orderId: order.id
@@ -360,6 +375,7 @@ export async function createOrder(req: Request, res: Response) {
   }
 
   publishNewOrder({
+    companyId: getCompanyId(req),
     orderId: updatedOrder.id,
     customer: order.customer.name,
     total: Number(updatedOrder.total)
@@ -396,6 +412,7 @@ export async function listOrders(req: Request, res: Response) {
 
   const orders = await prisma.order.findMany({
     where: {
+      ...companyWhere(req),
       status: status ?? (includeFinished ? undefined : { not: "FINISHED" }),
       createdAt: {
         gte: startDate,
@@ -417,8 +434,8 @@ export async function updateOrderStatus(req: Request, res: Response) {
   const schema = z.object({ status: z.nativeEnum(OrderStatus) });
   const body = schema.parse(req.body);
 
-  const current = await prisma.order.findUnique({
-    where: { id: req.params.id },
+  const current = await prisma.order.findFirst({
+    where: { id: req.params.id, ...companyWhere(req) },
     include: { customer: true }
   });
 
@@ -440,10 +457,11 @@ export async function updateOrderStatus(req: Request, res: Response) {
   });
 
   if (body.status === "CANCELED" && current.paidAt) {
-    const session = await prisma.cashSession.findFirst({ where: { closedAt: null } });
+    const session = await prisma.cashSession.findFirst({ where: { ...companyWhere(req), closedAt: null } });
     if (session) {
       await prisma.cashEntry.create({
         data: {
+          companyId: getCompanyId(req),
           sessionId: session.id,
           type: "EXPENSE",
           amount: toDecimal(Number(current.total)),
@@ -454,7 +472,7 @@ export async function updateOrderStatus(req: Request, res: Response) {
     }
   }
 
-  const settings = await prisma.setting.findFirst();
+  const settings = await prisma.setting.findFirst({ where: companyWhere(req) });
   const statusWhatsapp =
     settings && shouldSendStatusWhatsapp(settings, body.status)
       ? buildOrderStatusWhatsappMessage(current.customer.phone, current.customer.name, body.status, settings)
@@ -475,8 +493,10 @@ export async function updateOrderStatus(req: Request, res: Response) {
 }
 
 export async function markOrderViewed(req: Request, res: Response) {
+  const existing = await prisma.order.findFirst({ where: { id: req.params.id, ...companyWhere(req) } });
+  if (!existing) return res.status(404).json({ message: "Pedido nao encontrado" });
   const order = await prisma.order.update({
-    where: { id: req.params.id },
+    where: { id: existing.id },
     data: { viewedByStaff: true }
   });
 
@@ -484,14 +504,14 @@ export async function markOrderViewed(req: Request, res: Response) {
 }
 
 export async function sendToDelivery(req: Request, res: Response) {
-  const settings = await prisma.setting.findFirstOrThrow();
+  const settings = await prisma.setting.findFirstOrThrow({ where: companyWhere(req) });
   
   if (!settings.deliveryPhoneNumber) {
     return res.status(400).json({ message: "Numero do motoboy nao configurado" });
   }
 
-  const order = await prisma.order.findUnique({
-    where: { id: req.params.id },
+  const order = await prisma.order.findFirst({
+    where: { id: req.params.id, ...companyWhere(req) },
     include: { customer: true, items: { include: { product: true, complements: true } } }
   });
 
@@ -557,7 +577,7 @@ export async function sendToDelivery(req: Request, res: Response) {
 }
 
 export async function deleteOrder(req: Request, res: Response) {
-  const order = await prisma.order.findUnique({ where: { id: req.params.id } });
+  const order = await prisma.order.findFirst({ where: { id: req.params.id, ...companyWhere(req) } });
 
   if (!order) {
     return res.status(404).json({ message: "Pedido nao encontrado" });
@@ -568,10 +588,11 @@ export async function deleteOrder(req: Request, res: Response) {
   }
 
   if (order.paidAt) {
-    const session = await prisma.cashSession.findFirst({ where: { closedAt: null } });
+    const session = await prisma.cashSession.findFirst({ where: { ...companyWhere(req), closedAt: null } });
     if (session) {
       await prisma.cashEntry.create({
         data: {
+          companyId: getCompanyId(req),
           sessionId: session.id,
           type: "EXPENSE",
           amount: toDecimal(Number(order.total)),
@@ -592,7 +613,7 @@ export async function markOrderPaid(req: Request, res: Response) {
   });
 
   const body = schema.parse(req.body);
-  const order = await prisma.order.findUnique({ where: { id: req.params.id } });
+  const order = await prisma.order.findFirst({ where: { id: req.params.id, ...companyWhere(req) } });
 
   if (!order) {
     return res.status(404).json({ message: "Pedido nao encontrado" });
@@ -629,9 +650,9 @@ export async function markOrderPaid(req: Request, res: Response) {
     }
   });
 
-  const session = await prisma.cashSession.findFirst({ where: { closedAt: null } });
+  const session = await prisma.cashSession.findFirst({ where: { ...companyWhere(req), closedAt: null } });
   if (session) {
-    await recordCashPayments(session.id, [{
+    await recordCashPayments(session.id, getCompanyId(req), [{
         amount: toDecimal(Number(updated.total)),
         paymentMethod,
         orderId: updated.id,
@@ -639,11 +660,11 @@ export async function markOrderPaid(req: Request, res: Response) {
     }]);
   }
 
-  const orderWithCustomer = await prisma.order.findUnique({
-    where: { id: req.params.id },
+  const orderWithCustomer = await prisma.order.findFirst({
+    where: { id: req.params.id, ...companyWhere(req) },
     include: { customer: true }
   });
-  const settings = await prisma.setting.findFirst();
+  const settings = await prisma.setting.findFirst({ where: companyWhere(req) });
   const paymentWhatsapp =
     settings && settings.menuiaEnabled && settings.whatsappOnPaymentConfirmed && orderWithCustomer
       ? buildOrderStatusWhatsappMessage(
@@ -676,9 +697,9 @@ export async function markOrderPaid(req: Request, res: Response) {
 
 export async function printOrderById(req: Request, res: Response) {
   const [settings, order] = await Promise.all([
-    prisma.setting.findFirstOrThrow(),
-    prisma.order.findUnique({
-      where: { id: req.params.id },
+    prisma.setting.findFirstOrThrow({ where: companyWhere(req) }),
+    prisma.order.findFirst({
+      where: { id: req.params.id, ...companyWhere(req) },
       include: { customer: true, items: { include: { product: true, complements: true } } }
     })
   ]);

@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { env } from "../utils/env.js";
+import { companyWhere, getCompanyId } from "../utils/tenant.js";
 
 const registerSchema = z.object({
   name: z.string().min(2),
@@ -38,8 +39,8 @@ export async function registerCustomer(req: Request, res: Response) {
   const body = registerSchema.parse(req.body);
 
   // Verificar se já existe
-  const existing = await prisma.customer.findUnique({
-    where: { phone: body.phone }
+  const existing = await prisma.customer.findFirst({
+    where: { phone: body.phone, ...companyWhere(req) }
   });
 
   if (existing) {
@@ -47,8 +48,8 @@ export async function registerCustomer(req: Request, res: Response) {
   }
 
   if (body.email) {
-    const existingEmail = await prisma.customer.findUnique({
-      where: { email: body.email }
+    const existingEmail = await prisma.customer.findFirst({
+      where: { email: body.email, ...companyWhere(req) }
     });
     if (existingEmail) {
       return res.status(400).json({ message: "Email ja cadastrado" });
@@ -60,6 +61,7 @@ export async function registerCustomer(req: Request, res: Response) {
   const customer = await prisma.customer.create({
     data: {
       name: body.name,
+      companyId: getCompanyId(req),
       phone: body.phone,
       email: body.email,
       passwordHash,
@@ -75,6 +77,7 @@ export async function registerCustomer(req: Request, res: Response) {
     await prisma.customerAddress.create({
       data: {
         customerId: customer.id,
+        companyId: getCompanyId(req),
         label: "Principal",
         address: body.address,
         number: body.number,
@@ -87,7 +90,7 @@ export async function registerCustomer(req: Request, res: Response) {
     });
   }
 
-  const token = jwt.sign({ customerId: customer.id, phone: customer.phone }, env.jwtSecret, {
+  const token = jwt.sign({ customerId: customer.id, phone: customer.phone, companyId: getCompanyId(req) }, env.jwtSecret, {
     expiresIn: "30d"
   });
 
@@ -105,8 +108,8 @@ export async function registerCustomer(req: Request, res: Response) {
 export async function loginCustomer(req: Request, res: Response) {
   const body = loginSchema.parse(req.body);
 
-  const customer = await prisma.customer.findUnique({
-    where: { phone: body.phone }
+  const customer = await prisma.customer.findFirst({
+    where: { phone: body.phone, ...companyWhere(req) }
   });
 
   if (!customer || !customer.passwordHash) {
@@ -118,7 +121,7 @@ export async function loginCustomer(req: Request, res: Response) {
     return res.status(401).json({ message: "Credenciais invalidas" });
   }
 
-  const token = jwt.sign({ customerId: customer.id, phone: customer.phone }, env.jwtSecret, {
+  const token = jwt.sign({ customerId: customer.id, phone: customer.phone, companyId: customer.companyId }, env.jwtSecret, {
     expiresIn: "30d"
   });
 
@@ -136,8 +139,8 @@ export async function loginCustomer(req: Request, res: Response) {
 export async function getCustomerProfile(req: Request, res: Response) {
   const customerId = (req as any).customerId;
 
-  const customer = await prisma.customer.findUnique({
-    where: { id: customerId },
+  const customer = await prisma.customer.findFirst({
+    where: { id: customerId, ...companyWhere(req) },
     include: { addresses: { orderBy: { isDefault: "desc" } } }
   });
 
@@ -163,8 +166,10 @@ export async function updateCustomerProfile(req: Request, res: Response) {
 
   const body = schema.parse(req.body);
 
+  const existing = await prisma.customer.findFirst({ where: { id: customerId, ...companyWhere(req) } });
+  if (!existing) return res.status(404).json({ message: "Cliente nao encontrado" });
   const customer = await prisma.customer.update({
-    where: { id: customerId },
+    where: { id: existing.id },
     data: body
   });
 
@@ -182,7 +187,7 @@ export async function changeCustomerPassword(req: Request, res: Response) {
     currentPassword: z.string().min(6),
     newPassword: z.string().min(6)
   }).parse(req.body);
-  const customer = await prisma.customer.findUniqueOrThrow({ where: { id: customerId } });
+  const customer = await prisma.customer.findFirstOrThrow({ where: { id: customerId, ...companyWhere(req) } });
   if (!customer.passwordHash || !(await bcrypt.compare(body.currentPassword, customer.passwordHash))) {
     return res.status(400).json({ message: "Senha atual incorreta" });
   }
@@ -200,15 +205,16 @@ export async function addCustomerAddress(req: Request, res: Response) {
   // Se for padrão, desmarcar outros
   if (body.isDefault) {
     await prisma.customerAddress.updateMany({
-      where: { customerId },
+      where: { customerId, ...companyWhere(req) },
       data: { isDefault: false }
     });
   }
 
   const address = await prisma.customerAddress.create({
     data: {
-      customerId,
-      ...body
+        customerId,
+        companyId: getCompanyId(req),
+        ...body
     }
   });
 
@@ -222,7 +228,7 @@ export async function updateCustomerAddress(req: Request, res: Response) {
 
   // Verificar se o endereço pertence ao cliente
   const existing = await prisma.customerAddress.findFirst({
-    where: { id: addressId, customerId }
+    where: { id: addressId, customerId, ...companyWhere(req) }
   });
 
   if (!existing) {
@@ -232,7 +238,7 @@ export async function updateCustomerAddress(req: Request, res: Response) {
   // Se for padrão, desmarcar outros
   if (body.isDefault) {
     await prisma.customerAddress.updateMany({
-      where: { customerId, id: { not: addressId } },
+      where: { customerId, id: { not: addressId }, ...companyWhere(req) },
       data: { isDefault: false }
     });
   }
@@ -251,7 +257,7 @@ export async function deleteCustomerAddress(req: Request, res: Response) {
 
   // Verificar se o endereço pertence ao cliente
   const existing = await prisma.customerAddress.findFirst({
-    where: { id: addressId, customerId }
+    where: { id: addressId, customerId, ...companyWhere(req) }
   });
 
   if (!existing) {

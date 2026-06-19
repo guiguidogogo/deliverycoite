@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
+import { getCompanyId } from "../utils/tenant.js";
 
 const settingsSchema = z.object({
   companyName: z.string().min(2).optional(),
@@ -42,8 +43,10 @@ const settingsSchema = z.object({
   printerAutoPrint: z.boolean().optional()
 });
 
-async function ensureDefaultSettings() {
+async function ensureDefaultSettings(req: Request) {
+  const companyId = getCompanyId(req);
   const existing = await prisma.setting.findFirst({
+    where: { companyId },
     include: { deliveryFeeTiers: { orderBy: { sortOrder: "asc" } } }
   });
 
@@ -53,6 +56,7 @@ async function ensureDefaultSettings() {
 
   return prisma.setting.create({
     data: {
+      companyId,
       companyName: "Lanchonete Delivery",
       whatsappNumber: process.env.WHATSAPP_NUMBER ?? "5575999999999",
       deliveryFee: new Prisma.Decimal(5),
@@ -64,14 +68,14 @@ async function ensureDefaultSettings() {
   });
 }
 
-export async function getSettings(_req: Request, res: Response) {
-  const settings = await ensureDefaultSettings();
+export async function getSettings(req: Request, res: Response) {
+  const settings = await ensureDefaultSettings(req);
   return res.json(settings);
 }
 
 export async function updateSettings(req: Request, res: Response) {
   const body = settingsSchema.parse(req.body);
-  const current = await ensureDefaultSettings();
+  const current = await ensureDefaultSettings(req);
   const { deliveryFeeTiers, ...settingsData } = body;
 
   const settings = await prisma.$transaction(async (transaction) => {
@@ -84,6 +88,25 @@ export async function updateSettings(req: Request, res: Response) {
       }
     });
 
+    if (
+      settingsData.companyName !== undefined ||
+      settingsData.logoUrl !== undefined ||
+      settingsData.whatsappNumber !== undefined
+    ) {
+      await transaction.company.update({
+        where: { id: getCompanyId(req) },
+        data: {
+          ...(settingsData.companyName !== undefined
+            ? { tradeName: settingsData.companyName }
+            : {}),
+          ...(settingsData.logoUrl !== undefined ? { logoUrl: settingsData.logoUrl } : {}),
+          ...(settingsData.whatsappNumber !== undefined
+            ? { whatsapp: settingsData.whatsappNumber }
+            : {})
+        }
+      });
+    }
+
     if (deliveryFeeTiers !== undefined) {
       await transaction.deliveryFeeTier.deleteMany({ where: { settingId: current.id } });
       if (deliveryFeeTiers.length) {
@@ -92,6 +115,7 @@ export async function updateSettings(req: Request, res: Response) {
         );
         await transaction.deliveryFeeTier.createMany({
           data: sortedTiers.map((tier, index) => ({
+            companyId: getCompanyId(req),
             settingId: current.id,
             maxDistanceKm: tier.maxDistanceKm,
             fee: new Prisma.Decimal(tier.fee),

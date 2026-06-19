@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 import PDFDocument from "pdfkit";
 import { prisma } from "../utils/prisma.js";
 import { formatOrderCode } from "../utils/order-code.js";
+import { companyWhere } from "../utils/tenant.js";
 
 function getDateRange(req: Request) {
   const dateFrom = req.query.dateFrom?.toString();
@@ -22,7 +23,7 @@ function getDateRange(req: Request) {
 
 export async function exportOrdersExcel(req: Request, res: Response) {
   const orders = await prisma.order.findMany({
-    where: getDateRange(req),
+    where: { ...companyWhere(req), ...getDateRange(req) },
     include: { customer: true },
     orderBy: { createdAt: "desc" }
   });
@@ -59,7 +60,7 @@ export async function exportOrdersExcel(req: Request, res: Response) {
 
 export async function exportOrdersPdf(req: Request, res: Response) {
   const orders = await prisma.order.findMany({
-    where: getDateRange(req),
+    where: { ...companyWhere(req), ...getDateRange(req) },
     include: { customer: true },
     orderBy: { createdAt: "desc" }
   });

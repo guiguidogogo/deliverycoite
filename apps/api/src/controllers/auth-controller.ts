@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { env } from "../utils/env.js";
+import { getCompanyId } from "../utils/tenant.js";
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -13,7 +14,12 @@ const loginSchema = z.object({
 export async function login(req: Request, res: Response) {
   const body = loginSchema.parse(req.body);
 
-  const user = await prisma.user.findUnique({ where: { email: body.email.toLowerCase() } });
+  const user = await prisma.user.findFirst({
+    where: {
+      email: body.email.toLowerCase(),
+      OR: [{ role: "SUPER_ADMIN" }, { companyId: getCompanyId(req) }]
+    }
+  });
   if (!user || !user.active) {
     return res.status(401).json({ message: "Credenciais invalidas" });
   }
@@ -28,7 +34,7 @@ export async function login(req: Request, res: Response) {
     include: { staffRole: true }
   });
   const permissions = user.role === "ADMIN" ? ["*"] : (fullUser.staffRole?.permissions ?? []);
-  const token = jwt.sign({}, env.jwtSecret, {
+  const token = jwt.sign({ companyId: user.companyId }, env.jwtSecret, {
     subject: user.id,
     expiresIn: "1d"
   });
@@ -41,6 +47,7 @@ export async function login(req: Request, res: Response) {
       email: user.email,
       phone: user.phone,
       role: user.role,
+      companyId: user.companyId,
       permissions
     }
   });

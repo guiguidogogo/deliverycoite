@@ -1,5 +1,6 @@
 import { Router, type RequestHandler } from "express";
 import { login } from "../controllers/auth-controller.js";
+import { getPublicCompany } from "../controllers/company-controller.js";
 import {
   createCategory,
   deleteCategory,
@@ -84,8 +85,10 @@ import { auth, requireAnyPermission, requirePermission } from "../middlewares/au
 import { customerAuth } from "../middlewares/customer-auth.js";
 import { imageUpload } from "../utils/upload.js";
 import { asyncHandler } from "../utils/async-handler.js";
+import { resolveCompany } from "../utils/tenant.js";
 
 export const router = Router();
+router.use(asyncHandler(resolveCompany));
 
 const route = {
   get(path: string, ...handlers: RequestHandler[]) {
@@ -103,6 +106,7 @@ const route = {
 };
 
 route.post("/auth/login", login);
+route.get("/company", getPublicCompany);
 route.post("/auth/password/request", requestStaffPasswordReset);
 route.post("/auth/password/reset", resetStaffPassword);
 // Customer auth routes

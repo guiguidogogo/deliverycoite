@@ -8,6 +8,7 @@ datasource db {
 }
 
 enum UserRole {
+  SUPER_ADMIN
   ADMIN
   MANAGER
   ATTENDANT
@@ -42,75 +43,144 @@ enum CashEntryType {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  name         String
-  email        String   @unique
-  phone        String?  @unique
-  passwordHash String
-  role         UserRole @default(ATTENDANT)
-  active       Boolean  @default(true)
-  staffRoleId  String?
-  staffRole    StaffRole? @relation(fields: [staffRoleId], references: [id], onDelete: SetNull)
+  id             String          @id @default(cuid())
+  name           String
+  email          String
+  phone          String?
+  passwordHash   String
+  role           UserRole        @default(ATTENDANT)
+  active         Boolean         @default(true)
+  companyId      String
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  staffRoleId    String?
+  staffRole      StaffRole?      @relation(fields: [staffRoleId], references: [id], onDelete: SetNull)
   passwordResets PasswordReset[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@unique([companyId, email])
+  @@unique([companyId, phone])
+  @@index([companyId])
+}
+
+model Company {
+  id                     String                @id @default(cuid())
+  companyName            String
+  tradeName              String
+  cnpj                   String?               @unique
+  phone                  String?
+  whatsapp               String?
+  instagram              String?
+  email                  String?
+  subdomain              String                @unique
+  logoUrl                String?
+  active                 Boolean               @default(true)
+  customDomain           String?               @unique
+  address                String?
+  plan                   String                @default("basico")
+  mercadoPagoPublicKey   String?
+  mercadoPagoAccessToken String?
+  menuiaApiKey           String?
+  menuiaStoreId          String?
+  printerName            String?
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+  users                  User[]
+  staffRoles             StaffRole[]
+  categories             Category[]
+  products               Product[]
+  complements            Complement[]
+  customers              Customer[]
+  settings               Setting[]
+  coupons                Coupon[]
+  orders                 Order[]
+  cashSessions           CashSession[]
+  cashEntries            CashEntry[]
+  deliveryFeeTiers       DeliveryFeeTier[]
+  customerAddresses      CustomerAddress[]
+  productComplements     ProductComplement[]
+  couponRedemptions      CouponRedemption[]
+  orderItems             OrderItem[]
+  orderItemComplements   OrderItemComplement[]
+  passwordResets         PasswordReset[]
+  favorites              Favorite[]
 }
 
 model StaffRole {
   id          String   @id @default(cuid())
-  name        String   @unique
+  name        String
   permissions String[] @default([])
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   users       User[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@unique([companyId, name])
+  @@index([companyId])
 }
 
 model Category {
   id          String    @id @default(cuid())
-  name        String    @unique
-  slug        String    @unique
+  companyId   String
+  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name        String
+  slug        String
   description String?
   active      Boolean   @default(true)
   products    Product[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
+  @@unique([companyId, name])
+  @@unique([companyId, slug])
+  @@index([companyId])
 }
 
 model Product {
-  id          String    @id @default(cuid())
+  id          String              @id @default(cuid())
+  companyId   String
+  company     Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
   name        String
   description String
-  price       Decimal   @db.Decimal(10, 2)
-  promoPrice  Decimal?  @db.Decimal(10, 2)
+  price       Decimal             @db.Decimal(10, 2)
+  promoPrice  Decimal?            @db.Decimal(10, 2)
   imageUrl    String?
-  available   Boolean   @default(true)
-  active      Boolean   @default(true)
+  available   Boolean             @default(true)
+  active      Boolean             @default(true)
   categoryId  String
-  category    Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  category    Category            @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   orderItems  OrderItem[]
   favorites   Favorite[]
   complements ProductComplement[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
 
   @@index([categoryId])
+  @@index([companyId])
 }
 
 model Complement {
-  id           String                @id @default(cuid())
-  name         String
-  description  String
-  price        Decimal               @db.Decimal(10, 2) @default(0)
-  imageUrl     String?
-  active       Boolean               @default(true)
-  products     ProductComplement[]
-  orderItems   OrderItemComplement[]
-  createdAt    DateTime              @default(now())
-  updatedAt    DateTime              @updatedAt
+  id          String                @id @default(cuid())
+  companyId   String
+  company     Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name        String
+  description String
+  price       Decimal               @default(0) @db.Decimal(10, 2)
+  imageUrl    String?
+  active      Boolean               @default(true)
+  products    ProductComplement[]
+  orderItems  OrderItemComplement[]
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  @@index([companyId])
 }
 
 model ProductComplement {
   id           String     @id @default(cuid())
+  companyId    String
+  company      Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
   productId    String
   product      Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
   complementId String
@@ -121,30 +191,39 @@ model ProductComplement {
   updatedAt    DateTime   @updatedAt
 
   @@unique([productId, complementId])
+  @@index([companyId])
   @@index([productId, sortOrder])
   @@index([complementId])
 }
 
 model Customer {
-  id        String   @id @default(cuid())
-  name      String
-  phone     String   @unique
-  address   String
-  number    String
-  district  String
-  complement String?
-  email     String?  @unique
-  passwordHash String?
-  addresses CustomerAddress[]
-  orders    Order[]
+  id                String             @id @default(cuid())
+  companyId         String
+  company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name              String
+  phone             String
+  address           String
+  number            String
+  district          String
+  complement        String?
+  email             String?
+  passwordHash      String?
+  addresses         CustomerAddress[]
+  orders            Order[]
   couponRedemptions CouponRedemption[]
-  passwordResets PasswordReset[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  passwordResets    PasswordReset[]
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@unique([companyId, phone])
+  @@unique([companyId, email])
+  @@index([companyId])
 }
 
 model PasswordReset {
   id         String    @id @default(cuid())
+  companyId  String
+  company    Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
   codeHash   String
   expiresAt  DateTime
   usedAt     DateTime?
@@ -156,10 +235,13 @@ model PasswordReset {
 
   @@index([userId, createdAt])
   @@index([customerId, createdAt])
+  @@index([companyId])
 }
 
 model CashSession {
   id            String      @id @default(cuid())
+  companyId     String
+  company       Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
   openedBy      String
   openingAmount Decimal     @db.Decimal(10, 2)
   openedAt      DateTime    @default(now())
@@ -170,118 +252,142 @@ model CashSession {
 
   @@index([openedAt])
   @@index([closedAt])
+  @@index([companyId])
 }
 
 model CashEntry {
-  id          String        @id @default(cuid())
-  sessionId   String
-  session     CashSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  type        CashEntryType
-  amount      Decimal       @db.Decimal(10, 2)
+  id            String         @id @default(cuid())
+  companyId     String
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  sessionId     String
+  session       CashSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  type          CashEntryType
+  amount        Decimal        @db.Decimal(10, 2)
   paymentMethod PaymentMethod?
-  orderId     String?
-  description String?
-  createdAt   DateTime      @default(now())
+  orderId       String?
+  description   String?
+  createdAt     DateTime       @default(now())
 
   @@index([sessionId, createdAt])
+  @@index([companyId])
 }
 
 model CustomerAddress {
-  id          String   @id @default(cuid())
-  customerId  String
-  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  label       String   // Casa, Trabalho, etc
-  address     String
-  number      String
-  district    String
-  complement  String?
-  latitude    Float?
-  longitude   Float?
-  isDefault   Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  label      String // Casa, Trabalho, etc
+  address    String
+  number     String
+  district   String
+  complement String?
+  latitude   Float?
+  longitude  Float?
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@index([customerId])
+  @@index([companyId])
 }
 
 model Coupon {
-  id           String    @id @default(cuid())
-  code         String    @unique
-  type         String
-  value        Decimal   @db.Decimal(10, 2)
-  minOrder     Decimal?  @db.Decimal(10, 2)
-  maxUses      Int?
+  id                 String             @id @default(cuid())
+  companyId          String
+  company            Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  code               String
+  type               String
+  value              Decimal            @db.Decimal(10, 2)
+  minOrder           Decimal?           @db.Decimal(10, 2)
+  maxUses            Int?
   maxUsesPerCustomer Int?
-  maxUsesPerDay Int?
-  active       Boolean   @default(true)
-  expiresAt    DateTime?
-  redemptions  CouponRedemption[]
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  maxUsesPerDay      Int?
+  active             Boolean            @default(true)
+  expiresAt          DateTime?
+  redemptions        CouponRedemption[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@unique([companyId, code])
+  @@index([companyId])
 }
 
 model Order {
-  id             String        @id @default(cuid())
-  orderNumber    Int           @unique @default(autoincrement())
-  customerId     String
-  customer       Customer      @relation(fields: [customerId], references: [id])
-  status         OrderStatus   @default(RECEIVED)
-  paymentMethod  PaymentMethod
-  fulfillmentType FulfillmentType @default(DELIVERY)
-  changeFor      Decimal?      @db.Decimal(10, 2)
-  subtotal       Decimal       @db.Decimal(10, 2)
-  deliveryFee    Decimal       @db.Decimal(10, 2)
-  deliveryLatitude Float?
-  deliveryLongitude Float?
+  id                 String            @id @default(cuid())
+  companyId          String
+  company            Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  orderNumber        Int               @unique @default(autoincrement())
+  customerId         String
+  customer           Customer          @relation(fields: [customerId], references: [id])
+  status             OrderStatus       @default(RECEIVED)
+  paymentMethod      PaymentMethod
+  fulfillmentType    FulfillmentType   @default(DELIVERY)
+  changeFor          Decimal?          @db.Decimal(10, 2)
+  subtotal           Decimal           @db.Decimal(10, 2)
+  deliveryFee        Decimal           @db.Decimal(10, 2)
+  deliveryLatitude   Float?
+  deliveryLongitude  Float?
   deliveryDistanceKm Float?
-  discount       Decimal       @db.Decimal(10, 2) @default(0)
-  total          Decimal       @db.Decimal(10, 2)
-  couponCode     String?
-  customerNotes  String?
-  paidAt         DateTime?
-  paidMethodDetail String?
-  notes          String?
-  whatsappLink   String?
-  viewedByStaff  Boolean       @default(false)
-  sentToDelivery Boolean       @default(false)
-  deliverySentAt DateTime?
-  items          OrderItem[]
-  couponRedemption CouponRedemption?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  discount           Decimal           @default(0) @db.Decimal(10, 2)
+  total              Decimal           @db.Decimal(10, 2)
+  couponCode         String?
+  customerNotes      String?
+  paidAt             DateTime?
+  paidMethodDetail   String?
+  notes              String?
+  whatsappLink       String?
+  viewedByStaff      Boolean           @default(false)
+  sentToDelivery     Boolean           @default(false)
+  deliverySentAt     DateTime?
+  items              OrderItem[]
+  couponRedemption   CouponRedemption?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
   @@index([status])
   @@index([createdAt])
+  @@index([companyId])
 }
 
 model CouponRedemption {
-  id          String   @id @default(cuid())
-  couponId    String
-  coupon      Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
-  customerId  String
-  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  orderId     String   @unique
-  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  usedAt      DateTime @default(now())
+  id         String   @id @default(cuid())
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  couponId   String
+  coupon     Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  orderId    String   @unique
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  usedAt     DateTime @default(now())
 
   @@index([couponId, usedAt])
   @@index([customerId, usedAt])
+  @@index([companyId])
 }
 
 model OrderItem {
-  id        String   @id @default(cuid())
-  orderId   String
-  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  productId String
-  product   Product  @relation(fields: [productId], references: [id])
-  quantity  Int
-  price     Decimal  @db.Decimal(10, 2)
-  total     Decimal  @db.Decimal(10, 2)
+  id          String                @id @default(cuid())
+  companyId   String
+  company     Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  orderId     String
+  order       Order                 @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product               @relation(fields: [productId], references: [id])
+  quantity    Int
+  price       Decimal               @db.Decimal(10, 2)
+  total       Decimal               @db.Decimal(10, 2)
   complements OrderItemComplement[]
+
+  @@index([companyId])
 }
 
 model OrderItemComplement {
   id           String      @id @default(cuid())
+  companyId    String
+  company      Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
   orderItemId  String
   orderItem    OrderItem   @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
   complementId String?
@@ -293,49 +399,57 @@ model OrderItemComplement {
 
   @@index([orderItemId])
   @@index([complementId])
+  @@index([companyId])
 }
 
 model Setting {
-  id                  String   @id @default(cuid())
-  companyName         String   @default("Lanchonete Delivery")
-  logoUrl             String?
-  promoBannerImageUrl String?
-  promoBannerTitle    String   @default("PROMO DA NOITE")
-  promoBannerText     String   @default("Confira nossos cupons e promocoes")
-  whatsappNumber      String
-  deliveryPhoneNumber String?
-  deliveryFee         Decimal  @db.Decimal(10, 2) @default(5)
-  ordersPaused        Boolean  @default(false)
-  ordersPausedReason  String?
-  storeLatitude       Float?
-  storeLongitude      Float?
-  openTime            String   @default("18:00")
-  closeTime           String   @default("23:59")
-  autoMessage         String   @default("Obrigado pelo pedido!")
-  pixKey              String?
-  pixQrCodeUrl        String?
-  darkModeEnabled     Boolean  @default(true)
-  menuiaApiKey        String?
-  menuiaStoreId       String?
-  menuiaEnabled       Boolean  @default(false)
-  whatsappOnReceived  Boolean  @default(true)
-  whatsappOnPreparing Boolean  @default(true)
-  whatsappOnOutForDelivery Boolean @default(true)
-  whatsappOnDelivered Boolean  @default(true)
-  whatsappOnFinished  Boolean  @default(true)
-  whatsappOnCanceled  Boolean  @default(true)
-  whatsappOnPaymentConfirmed Boolean @default(true)
-  printerEnabled      Boolean  @default(false)
-  printerName         String?
-  printerPaperWidth   Int      @default(58)
-  printerAutoPrint    Boolean  @default(false)
-  updatedAt           DateTime @updatedAt
-  createdAt           DateTime @default(now())
-  deliveryFeeTiers    DeliveryFeeTier[]
+  id                         String            @id @default(cuid())
+  companyId                  String
+  company                    Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyName                String            @default("Lanchonete Delivery")
+  logoUrl                    String?
+  promoBannerImageUrl        String?
+  promoBannerTitle           String            @default("PROMO DA NOITE")
+  promoBannerText            String            @default("Confira nossos cupons e promocoes")
+  whatsappNumber             String
+  deliveryPhoneNumber        String?
+  deliveryFee                Decimal           @default(5) @db.Decimal(10, 2)
+  ordersPaused               Boolean           @default(false)
+  ordersPausedReason         String?
+  storeLatitude              Float?
+  storeLongitude             Float?
+  openTime                   String            @default("18:00")
+  closeTime                  String            @default("23:59")
+  autoMessage                String            @default("Obrigado pelo pedido!")
+  pixKey                     String?
+  pixQrCodeUrl               String?
+  darkModeEnabled            Boolean           @default(true)
+  menuiaApiKey               String?
+  menuiaStoreId              String?
+  menuiaEnabled              Boolean           @default(false)
+  whatsappOnReceived         Boolean           @default(true)
+  whatsappOnPreparing        Boolean           @default(true)
+  whatsappOnOutForDelivery   Boolean           @default(true)
+  whatsappOnDelivered        Boolean           @default(true)
+  whatsappOnFinished         Boolean           @default(true)
+  whatsappOnCanceled         Boolean           @default(true)
+  whatsappOnPaymentConfirmed Boolean           @default(true)
+  printerEnabled             Boolean           @default(false)
+  printerName                String?
+  printerPaperWidth          Int               @default(58)
+  printerAutoPrint           Boolean           @default(false)
+  updatedAt                  DateTime          @updatedAt
+  createdAt                  DateTime          @default(now())
+  deliveryFeeTiers           DeliveryFeeTier[]
+
+  @@unique([companyId])
+  @@index([companyId])
 }
 
 model DeliveryFeeTier {
   id            String   @id @default(cuid())
+  companyId     String
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   settingId     String
   setting       Setting  @relation(fields: [settingId], references: [id], onDelete: Cascade)
   maxDistanceKm Float
@@ -345,14 +459,18 @@ model DeliveryFeeTier {
   updatedAt     DateTime @updatedAt
 
   @@index([settingId, sortOrder])
+  @@index([companyId])
 }
 
 model Favorite {
-  id         String   @id @default(cuid())
-  phone      String
-  productId  String
-  product    Product  @relation(fields: [productId], references: [id])
-  createdAt  DateTime @default(now())
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  phone     String
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  createdAt DateTime @default(now())
 
-  @@unique([phone, productId])
+  @@unique([companyId, phone, productId])
+  @@index([companyId])
 }

@@ -100,7 +100,7 @@ npm install
 5. Suba o banco:
 
 ```bash
-docker compose up -d postgres
+docker compose up -d db
 ```
 
 6. Gere o client Prisma e rode migracoes:
@@ -129,20 +129,50 @@ docker compose up --build
 
 ## Deploy no Render
 
-Use o `render.yaml` da raiz para criar dois Web Services:
-
-- `delivery-api`: API Express
-- `delivery-web`: site Next.js
+Use o `render.yaml` da raiz para criar um Web Service chamado
+`deliverycoite-node`. O mesmo servico executa o site Next.js e a API Express,
+e aplica as migracoes automaticamente ao iniciar.
 
 Configure no Render:
 
-- `DATABASE_URL`: conexao MySQL externa, no formato `mysql://usuario:senha@host:3306/banco?sslaccept=strict`
+- `DATABASE_URL`: conexao PostgreSQL do ambiente
 - `CORS_ORIGIN`: URL publica do site
-- `NEXT_PUBLIC_API_URL`: URL publica da API terminando em `/api`
+- `NEXT_PUBLIC_API_URL`: mantenha `/api`
 - `WHATSAPP_NUMBER`: numero da loja
 
 Nao use `localhost` na `DATABASE_URL`. No Render, `localhost` aponta para o
-proprio container, nao para o MySQL instalado no seu computador.
+proprio container.
+
+## Multiempresa e homologacao
+
+- A resolucao da empresa ocorre pelo subdominio, dominio personalizado ou pelo
+  header `x-company-subdomain` em testes.
+- O `companyId` e carregado no JWT e validado novamente no banco a cada
+  requisicao autenticada.
+- Dados operacionais usam `companyId` obrigatorio e consultas administrativas
+  sao sempre limitadas ao tenant autenticado.
+- A empresa publica atual pode ser consultada em `GET /api/company`.
+
+Para aplicar a conversao no banco de homologacao:
+
+```bash
+APP_ENV=staging DATABASE_URL="postgresql://..." \
+  npm run migrate:multiempresa:test -w @delivery/api
+npm run prisma:seed -w @delivery/api
+```
+
+O comando recusa ambientes diferentes de teste/homologacao e bloqueia URLs que
+contenham `prod` ou `production`. A migration cria a empresa padrao
+`Delivery Coité`, vincula os dados existentes e somente depois torna
+`companyId` obrigatorio.
+
+Nao execute essa migration diretamente em producao. Antes da promocao:
+
+1. tire backup do banco;
+2. restaure uma copia em homologacao;
+3. rode a migration e o seed;
+4. valide build, login, produtos, pedidos, complementos, cupons, caixa e configuracoes;
+5. aprove o merge da branch `feature/multiempresa`.
 
 ## Banco de dados
 

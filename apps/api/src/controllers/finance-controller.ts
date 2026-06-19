@@ -4,15 +4,16 @@ import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { formatOrderCode } from "../utils/order-code.js";
 import { recordCashPayments } from "../utils/cash-register.js";
+import { companyWhere, getCompanyId } from "../utils/tenant.js";
 
 const money = (value: number) => new Prisma.Decimal(value.toFixed(2));
 
-async function syncPaidOrders(sessionId: string) {
+async function syncPaidOrders(sessionId: string, companyId: string) {
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
 
   const lastClosedSession = await prisma.cashSession.findFirst({
-    where: { closedAt: { not: null } },
+    where: { companyId, closedAt: { not: null } },
     orderBy: { closedAt: "desc" },
     select: { closedAt: true }
   });
@@ -23,6 +24,7 @@ async function syncPaidOrders(sessionId: string) {
 
   const paidOrders = await prisma.order.findMany({
     where: {
+      companyId,
       paidAt: { gte: paidSince },
       status: { not: "CANCELED" }
     },
@@ -39,6 +41,7 @@ async function syncPaidOrders(sessionId: string) {
 
   await recordCashPayments(
     sessionId,
+    companyId,
     paidOrders.map((order) => ({
       amount: order.total,
       paymentMethod: order.paymentMethod,
@@ -66,9 +69,9 @@ const closeSchema = z.object({
   notes: z.string().optional()
 });
 
-async function buildSummary() {
+async function buildSummary(req: Request) {
   const currentSession = await prisma.cashSession.findFirst({
-    where: { closedAt: null },
+    where: { ...companyWhere(req), closedAt: null },
     include: { entries: { orderBy: { createdAt: "asc" } } },
     orderBy: { openedAt: "desc" }
   });
@@ -88,10 +91,10 @@ async function buildSummary() {
     };
   }
 
-  await syncPaidOrders(currentSession.id);
+  await syncPaidOrders(currentSession.id, getCompanyId(req));
 
   const entries = await prisma.cashEntry.findMany({
-    where: { sessionId: currentSession.id },
+    where: { ...companyWhere(req), sessionId: currentSession.id },
     orderBy: { createdAt: "asc" }
   });
 
@@ -128,7 +131,7 @@ async function buildSummary() {
     .filter((orderId): orderId is string => Boolean(orderId));
   const orders = orderIds.length
     ? await prisma.order.findMany({
-        where: { id: { in: orderIds } },
+        where: { ...companyWhere(req), id: { in: orderIds } },
         select: { id: true, orderNumber: true }
       })
     : [];
@@ -158,15 +161,15 @@ async function buildSummary() {
   };
 }
 
-export async function getFinanceSummary(_req: Request, res: Response) {
-  const summary = await buildSummary();
+export async function getFinanceSummary(req: Request, res: Response) {
+  const summary = await buildSummary(req);
   return res.json(summary);
 }
 
 export async function openCashSession(req: Request, res: Response) {
   const body = openSchema.parse(req.body);
 
-  const hasOpenSession = await prisma.cashSession.findFirst({ where: { closedAt: null } });
+  const hasOpenSession = await prisma.cashSession.findFirst({ where: { ...companyWhere(req), closedAt: null } });
   if (hasOpenSession) {
     return res.status(400).json({ message: "Ja existe um caixa aberto" });
   }
@@ -175,11 +178,13 @@ export async function openCashSession(req: Request, res: Response) {
 
   const session = await prisma.cashSession.create({
     data: {
+      companyId: getCompanyId(req),
       openedBy,
       openingAmount: money(body.openingAmount),
       notes: body.notes,
       entries: {
         create: {
+          companyId: getCompanyId(req),
           type: CashEntryType.OPENING,
           amount: money(body.openingAmount),
           description: "Abertura de caixa"
@@ -189,7 +194,7 @@ export async function openCashSession(req: Request, res: Response) {
     include: { entries: true }
   });
 
-  await syncPaidOrders(session.id);
+  await syncPaidOrders(session.id, getCompanyId(req));
 
   return res.status(201).json(session);
 }
@@ -197,13 +202,14 @@ export async function openCashSession(req: Request, res: Response) {
 export async function createCashEntry(req: Request, res: Response) {
   const body = entrySchema.parse(req.body);
 
-  const currentSession = await prisma.cashSession.findFirst({ where: { closedAt: null } });
+  const currentSession = await prisma.cashSession.findFirst({ where: { ...companyWhere(req), closedAt: null } });
   if (!currentSession) {
     return res.status(400).json({ message: "Nenhum caixa aberto" });
   }
 
   const entry = await prisma.cashEntry.create({
     data: {
+      companyId: getCompanyId(req),
       sessionId: currentSession.id,
       type: body.type,
       amount: money(body.amount),
@@ -217,7 +223,7 @@ export async function createCashEntry(req: Request, res: Response) {
 export async function closeCashSession(req: Request, res: Response) {
   const body = closeSchema.parse(req.body);
 
-  const currentSession = await prisma.cashSession.findFirst({ where: { closedAt: null } });
+  const currentSession = await prisma.cashSession.findFirst({ where: { ...companyWhere(req), closedAt: null } });
   if (!currentSession) {
     return res.status(400).json({ message: "Nenhum caixa aberto" });
   }
@@ -233,6 +239,7 @@ export async function closeCashSession(req: Request, res: Response) {
 
   await prisma.cashEntry.create({
     data: {
+      companyId: getCompanyId(req),
       sessionId: session.id,
       type: CashEntryType.CLOSING,
       amount: money(body.closingAmount),
@@ -249,6 +256,7 @@ export async function listCashSessions(req: Request, res: Response) {
 
   const sessions = await prisma.cashSession.findMany({
     where: {
+      ...companyWhere(req),
       ...(dateFrom || dateTo
         ? {
             openedAt: {

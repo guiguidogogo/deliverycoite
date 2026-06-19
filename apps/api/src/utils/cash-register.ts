@@ -8,7 +8,7 @@ type PaymentEntry = {
   description: string;
 };
 
-export async function recordCashPayments(sessionId: string, payments: PaymentEntry[]) {
+export async function recordCashPayments(sessionId: string, companyId: string, payments: PaymentEntry[]) {
   if (!payments.length) return;
 
   await prisma.$transaction(async (transaction) => {
@@ -16,6 +16,7 @@ export async function recordCashPayments(sessionId: string, payments: PaymentEnt
 
     const existingEntries = await transaction.cashEntry.findMany({
       where: {
+        companyId,
         orderId: { in: payments.map((payment) => payment.orderId) },
         paymentMethod: { not: null }
       },
@@ -28,6 +29,7 @@ export async function recordCashPayments(sessionId: string, payments: PaymentEnt
 
     await transaction.cashEntry.createMany({
       data: missingPayments.map((payment) => ({
+        companyId,
         sessionId,
         type: CashEntryType.MANUAL_INCOME,
         amount: payment.amount,

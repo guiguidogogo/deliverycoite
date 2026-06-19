@@ -3,13 +3,15 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { createPasswordReset, validatePasswordReset } from "../utils/password-reset.js";
+import { companyWhere, getCompanyId } from "../utils/tenant.js";
 
 export async function requestStaffPasswordReset(req: Request, res: Response) {
   const body = z.object({ email: z.string().email() }).parse(req.body);
-  const user = await prisma.user.findUnique({ where: { email: body.email.toLowerCase() } });
+  const user = await prisma.user.findFirst({ where: { email: body.email.toLowerCase(), ...companyWhere(req) } });
   if (user?.phone && user.active) {
     await createPasswordReset({
       userId: user.id,
+      companyId: user.companyId,
       phone: user.phone,
       name: user.name
     });
@@ -23,9 +25,13 @@ export async function resetStaffPassword(req: Request, res: Response) {
     code: z.string().length(6),
     newPassword: z.string().min(6)
   }).parse(req.body);
-  const user = await prisma.user.findUnique({ where: { email: body.email.toLowerCase() } });
+  const user = await prisma.user.findFirst({ where: { email: body.email.toLowerCase(), ...companyWhere(req) } });
   if (!user) return res.status(400).json({ message: "Codigo invalido ou expirado" });
-  const reset = await validatePasswordReset({ userId: user.id, code: body.code });
+  const reset = await validatePasswordReset({
+    companyId: getCompanyId(req),
+    userId: user.id,
+    code: body.code
+  });
   if (!reset) return res.status(400).json({ message: "Codigo invalido ou expirado" });
   await prisma.$transaction([
     prisma.user.update({
@@ -39,10 +45,11 @@ export async function resetStaffPassword(req: Request, res: Response) {
 
 export async function requestCustomerPasswordReset(req: Request, res: Response) {
   const body = z.object({ phone: z.string().min(8) }).parse(req.body);
-  const customer = await prisma.customer.findUnique({ where: { phone: body.phone } });
+  const customer = await prisma.customer.findFirst({ where: { phone: body.phone, ...companyWhere(req) } });
   if (customer) {
     await createPasswordReset({
       customerId: customer.id,
+      companyId: customer.companyId,
       phone: customer.phone,
       name: customer.name
     });
@@ -56,9 +63,13 @@ export async function resetCustomerPassword(req: Request, res: Response) {
     code: z.string().length(6),
     newPassword: z.string().min(6)
   }).parse(req.body);
-  const customer = await prisma.customer.findUnique({ where: { phone: body.phone } });
+  const customer = await prisma.customer.findFirst({ where: { phone: body.phone, ...companyWhere(req) } });
   if (!customer) return res.status(400).json({ message: "Codigo invalido ou expirado" });
-  const reset = await validatePasswordReset({ customerId: customer.id, code: body.code });
+  const reset = await validatePasswordReset({
+    companyId: getCompanyId(req),
+    customerId: customer.id,
+    code: body.code
+  });
   if (!reset) return res.status(400).json({ message: "Codigo invalido ou expirado" });
   await prisma.$transaction([
     prisma.customer.update({

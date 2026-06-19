@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
+import { companyWhere } from "../utils/tenant.js";
 
 export async function lookupCustomer(req: Request, res: Response) {
   const phone = req.query.phone?.toString().trim() ?? "";
@@ -11,7 +12,7 @@ export async function lookupCustomer(req: Request, res: Response) {
   const digits = phone.replace(/\D/g, "");
   const candidates = Array.from(new Set([phone, digits, `+${digits}`]));
   const customer = await prisma.customer.findFirst({
-    where: { phone: { in: candidates } },
+    where: { phone: { in: candidates }, ...companyWhere(req) },
     select: { name: true }
   });
 
@@ -33,6 +34,7 @@ export async function listCustomers(req: Request, res: Response) {
 
   const customers = await prisma.customer.findMany({
     where: {
+      ...companyWhere(req),
       ...(search
         ? {
             OR: [
@@ -58,8 +60,10 @@ export async function updateCustomer(req: Request, res: Response) {
   const body = customerUpdateSchema.parse(req.body);
   const customerId = req.params.id;
 
+  const existing = await prisma.customer.findFirst({ where: { id: customerId, ...companyWhere(req) } });
+  if (!existing) return res.status(404).json({ message: "Cliente nao encontrado" });
   const customer = await prisma.customer.update({
-    where: { id: customerId },
+    where: { id: existing.id },
     data: body
   });
 
@@ -69,8 +73,8 @@ export async function updateCustomer(req: Request, res: Response) {
 export async function deleteCustomer(req: Request, res: Response) {
   const customerId = req.params.id;
 
-  const existing = await prisma.customer.findUnique({
-    where: { id: customerId },
+  const existing = await prisma.customer.findFirst({
+    where: { id: customerId, ...companyWhere(req) },
     select: { id: true }
   });
 
