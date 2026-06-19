@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { API_URL } from "../../../../lib/api";
 import { LocationPicker } from "../../../../components/location-picker";
-import { printTestReceipt } from "../../../../lib/browser-print";
+import { printTestReceipt, testReceiptHtml } from "../../../../lib/browser-print";
+import { findLocalPrinters, printAgentInstallUrl, printHtmlWithAgent } from "../../../../lib/qz-print";
 
 export default function SettingsManagePage() {
   const [form, setForm] = useState({
@@ -36,6 +37,8 @@ export default function SettingsManagePage() {
     printerPaperWidth: 58,
     printerAutoPrint: false
   });
+  const [printers, setPrinters] = useState<string[]>([]);
+  const [agentStatus, setAgentStatus] = useState<"idle" | "connecting" | "connected" | "error">("idle");
   useEffect(() => {
     const token = localStorage.getItem("delivery:token");
     if (!token) return;
@@ -90,8 +93,6 @@ export default function SettingsManagePage() {
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({
         ...form,
-        printerName: "",
-        printerAutoPrint: false,
         deliveryFee: Number(form.deliveryFee),
         deliveryFeeTiers: form.deliveryFeeTiers.map((tier) => ({
           maxDistanceKm: Number(tier.maxDistanceKm),
@@ -107,6 +108,39 @@ export default function SettingsManagePage() {
     }
 
     toast.success("Configuracoes salvas");
+  }
+
+  async function searchPrinters() {
+    setAgentStatus("connecting");
+    try {
+      const found = await findLocalPrinters();
+      setPrinters(found);
+      setAgentStatus("connected");
+      if (!form.printerName && found.length === 1) {
+        setForm((value) => ({ ...value, printerName: found[0] }));
+      }
+      toast.success(`${found.length} impressora(s) encontrada(s)`);
+    } catch {
+      setAgentStatus("error");
+      toast.error("QZ Tray nao esta instalado ou nao esta aberto");
+    }
+  }
+
+  async function testPrinter() {
+    if (form.printerName) {
+      try {
+        await printHtmlWithAgent(
+          form.printerName,
+          testReceiptHtml(form.companyName),
+          form.printerPaperWidth === 80 ? 80 : 58
+        );
+        toast.success("Teste enviado para a impressora");
+        return;
+      } catch {
+        toast.error("Nao foi possivel usar o agente. Abrindo impressao manual.");
+      }
+    }
+    printTestReceipt(form.companyName, form.printerPaperWidth === 80 ? 80 : 58);
   }
 
   async function testMenuia() {
@@ -317,8 +351,11 @@ export default function SettingsManagePage() {
       <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
         <h2 className="mb-3 text-xl font-bold">Impressora termica</h2>
         <div className="mb-3 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
-          A impressora fica conectada ao seu computador, nao ao servidor Render.
-          Ao clicar em imprimir no pedido, o navegador abrira a lista de impressoras instaladas no Windows.
+          Para impressao automatica, instale e mantenha o QZ Tray aberto no computador da loja.
+          Ele permite ao painel localizar e usar as impressoras instaladas no Windows.
+          <a className="ml-1 font-semibold underline" href={printAgentInstallUrl()} target="_blank" rel="noreferrer">
+            Baixar QZ Tray
+          </a>
         </div>
         <label className="mb-3 flex items-center gap-2">
           <input
@@ -329,6 +366,20 @@ export default function SettingsManagePage() {
           Ativar impressao de pedidos
         </label>
         <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+          <label>
+            <span className="mb-1 block text-xs font-semibold">Impressora cadastrada</span>
+            <select
+              className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
+              value={form.printerName}
+              onChange={(e) => setForm((value) => ({ ...value, printerName: e.target.value }))}
+            >
+              <option value="">Selecione uma impressora</option>
+              {form.printerName && !printers.includes(form.printerName) && (
+                <option value={form.printerName}>{form.printerName}</option>
+              )}
+              {printers.map((printer) => <option key={printer} value={printer}>{printer}</option>)}
+            </select>
+          </label>
           <label>
             <span className="mb-1 block text-xs font-semibold">Largura do papel</span>
             <select
@@ -342,20 +393,32 @@ export default function SettingsManagePage() {
           </label>
           <button
             type="button"
+            className="rounded-xl border border-black/15 px-4 py-2 dark:border-white/20"
+            onClick={() => void searchPrinters()}
+            disabled={agentStatus === "connecting"}
+          >
+            {agentStatus === "connecting" ? "Procurando..." : "Buscar impressoras deste computador"}
+          </button>
+          <button
+            type="button"
             className="self-end rounded-xl bg-slate-700 px-4 py-2 text-white"
-            onClick={() => {
-              try {
-                printTestReceipt(form.companyName, form.printerPaperWidth === 80 ? 80 : 58);
-              } catch (error) {
-                toast.error(error instanceof Error ? error.message : "Falha ao abrir teste");
-              }
-            }}
+            onClick={() => void testPrinter()}
           >
             Testar impressao
           </button>
         </div>
-        <p className="mt-3 text-xs opacity-70">
-          A impressao automatica sem abrir a janela do navegador exige um agente local, que ainda nao esta instalado.
+        <label className="mt-3 flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={form.printerAutoPrint}
+            onChange={(e) => setForm((value) => ({ ...value, printerAutoPrint: e.target.checked }))}
+            disabled={!form.printerName}
+          />
+          Imprimir automaticamente quando chegar pedido
+        </label>
+        <p className="mt-2 text-xs opacity-70">
+          Status do agente: {agentStatus === "connected" ? "conectado" : agentStatus === "error" ? "nao encontrado" : "nao verificado"}.
+          O painel de pedidos precisa permanecer aberto.
         </p>
       </section>
 

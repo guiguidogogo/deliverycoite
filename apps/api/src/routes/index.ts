@@ -74,6 +74,7 @@ import {
   markOrderViewed,
   deleteOrder,
   markOrderPaid,
+  getOrderPrintData,
   printOrderById,
   sendToDelivery,
   updateOrderStatus
@@ -159,6 +160,7 @@ route.patch("/admin/orders/:id/paid", requirePermission("ORDERS"), markOrderPaid
 route.delete("/admin/orders/:id", requirePermission("ORDERS"), deleteOrder);
 route.post("/admin/orders/:id/send-delivery", requirePermission("ORDERS"), sendToDelivery);
 route.post("/admin/orders/:id/print", requirePermission("ORDERS"), printOrderById);
+route.get("/admin/orders/:id/print-data", requirePermission("ORDERS"), getOrderPrintData);
 route.get("/admin/printers", requirePermission("SETTINGS"), listPrinters);
 route.get("/admin/dashboard", requirePermission("ORDERS"), getDashboard);
 route.get("/admin/notifications/new-orders", requirePermission("ORDERS"), listNewOrders);

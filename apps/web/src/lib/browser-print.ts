@@ -5,7 +5,7 @@ type ReceiptItem = {
   complements?: Array<{ name: string; quantity: number; price?: number }>;
 };
 
-type ReceiptOrder = {
+export type ReceiptOrder = {
   orderNumber: number;
   createdAt: string;
   fulfillmentType: "DELIVERY" | "PICKUP";
@@ -77,9 +77,9 @@ function openPrintWindow(content: string, paperWidth: 58 | 80) {
   popup.document.close();
 }
 
-export function printOrderInBrowser(
+export function orderReceiptHtml(
   order: ReceiptOrder,
-  options: { companyName: string; paperWidth: 58 | 80 }
+  options: { companyName: string }
 ) {
   const delivery = order.fulfillmentType === "DELIVERY";
   const items = order.items.map((item) => `
@@ -92,7 +92,7 @@ export function printOrderInBrowser(
   const payment = order.paidMethodDetail
     ?? (order.paymentMethod === "CASH" ? "Dinheiro" : order.paymentMethod === "PIX" ? "PIX" : "Cartao");
 
-  openPrintWindow(`
+  return `
     <h1>${escapeHtml(options.companyName).toUpperCase()}</h1>
     <h2>PEDIDO #${String(order.orderNumber).padStart(5, "0")}</h2>
     <p class="center">${escapeHtml(new Date(order.createdAt).toLocaleString("pt-BR"))}</p>
@@ -116,16 +116,27 @@ export function printOrderInBrowser(
     ${order.changeFor ? `<p><strong>Troco para:</strong> ${money(order.changeFor)}</p>` : ""}
     ${order.customerNotes ? `<div class="line"></div><p><strong>Obs:</strong> ${escapeHtml(order.customerNotes)}</p>` : ""}
     <br /><br />
-  `, options.paperWidth);
+  `;
 }
 
-export function printTestReceipt(companyName: string, paperWidth: 58 | 80) {
-  openPrintWindow(`
+export function printOrderInBrowser(
+  order: ReceiptOrder,
+  options: { companyName: string; paperWidth: 58 | 80 }
+) {
+  openPrintWindow(orderReceiptHtml(order, options), options.paperWidth);
+}
+
+export function testReceiptHtml(companyName: string) {
+  return `
     <h1>${escapeHtml(companyName || "Delivery")}</h1>
     <h2>TESTE DE IMPRESSAO</h2>
     <div class="line"></div>
-    <p>Se este comprovante apareceu corretamente, escolha sua impressora instalada no Windows.</p>
+    <p>Impressora conectada com sucesso ao painel.</p>
     <p class="center">${escapeHtml(new Date().toLocaleString("pt-BR"))}</p>
     <br /><br />
-  `, paperWidth);
+  `;
+}
+
+export function printTestReceipt(companyName: string, paperWidth: 58 | 80) {
+  openPrintWindow(testReceiptHtml(companyName), paperWidth);
 }

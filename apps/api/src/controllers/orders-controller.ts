@@ -720,3 +720,24 @@ export async function printOrderById(req: Request, res: Response) {
     });
   }
 }
+
+export async function getOrderPrintData(req: Request, res: Response) {
+  const [settings, order] = await Promise.all([
+    prisma.setting.findFirstOrThrow({ where: companyWhere(req) }),
+    prisma.order.findFirst({
+      where: { id: req.params.id, ...companyWhere(req) },
+      include: { customer: true, items: { include: { product: true, complements: true } } }
+    })
+  ]);
+  if (!order) return res.status(404).json({ message: "Pedido nao encontrado" });
+  return res.json({
+    order,
+    print: {
+      companyName: settings.companyName,
+      printerName: settings.printerName,
+      paperWidth: settings.printerPaperWidth === 80 ? 80 : 58,
+      enabled: settings.printerEnabled,
+      autoPrint: settings.printerAutoPrint
+    }
+  });
+}

@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { API_URL } from "../lib/api";
-import { printOrderInBrowser } from "../lib/browser-print";
+import { orderReceiptHtml, printOrderInBrowser, type ReceiptOrder } from "../lib/browser-print";
+import { printHtmlWithAgent } from "../lib/qz-print";
 
 function toInputDate(value: Date) {
   const yyyy = value.getFullYear();
@@ -125,10 +126,17 @@ export function AdminPanel() {
   const [permissions, setPermissions] = useState<string[]>([]);
   const [userRole, setUserRole] = useState<string>("");
   const [ordersPaused, setOrdersPaused] = useState(false);
-  const [printSettings, setPrintSettings] = useState({ companyName: "Delivery", paperWidth: 58 as 58 | 80 });
+  const [printSettings, setPrintSettings] = useState({
+    companyName: "Delivery",
+    paperWidth: 58 as 58 | 80,
+    printerName: "",
+    enabled: false,
+    autoPrint: false
+  });
   const audioRef = useRef<AudioContext | null>(null);
   const knownNewOrdersRef = useRef<Set<string>>(new Set());
   const initializedOrdersRef = useRef(false);
+  const autoPrintedOrdersRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const storedToken = localStorage.getItem("delivery:token");
@@ -152,7 +160,10 @@ export function AdminPanel() {
         setOrdersPaused(Boolean(settings.ordersPaused));
         setPrintSettings({
           companyName: settings.companyName ?? "Delivery",
-          paperWidth: settings.printerPaperWidth === 80 ? 80 : 58
+          paperWidth: settings.printerPaperWidth === 80 ? 80 : 58,
+          printerName: settings.printerName ?? "",
+          enabled: Boolean(settings.printerEnabled),
+          autoPrint: Boolean(settings.printerAutoPrint)
         });
       });
   }, [router]);
@@ -248,6 +259,32 @@ export function AdminPanel() {
     };
   }, [token, refreshPanel]);
 
+  const autoPrintOrder = useCallback(async (orderId: string) => {
+    if (
+      !token ||
+      !printSettings.enabled ||
+      !printSettings.autoPrint ||
+      !printSettings.printerName ||
+      autoPrintedOrdersRef.current.has(orderId)
+    ) return;
+    autoPrintedOrdersRef.current.add(orderId);
+    try {
+      const payload = await authApi<{
+        order: ReceiptOrder;
+        print: { companyName: string; printerName: string; paperWidth: 58 | 80 };
+      }>(`/admin/orders/${orderId}/print-data`, token);
+      await printHtmlWithAgent(
+        payload.print.printerName,
+        orderReceiptHtml(payload.order, { companyName: payload.print.companyName }),
+        payload.print.paperWidth
+      );
+      toast.success(`Pedido #${String(payload.order.orderNumber).padStart(5, "0")} impresso automaticamente`);
+    } catch {
+      autoPrintedOrdersRef.current.delete(orderId);
+      toast.error("Impressao automatica falhou. Verifique se o QZ Tray esta aberto.");
+    }
+  }, [printSettings, token]);
+
   useEffect(() => {
     if (!token) return;
 
@@ -272,7 +309,10 @@ export function AdminPanel() {
       socket.onopen = () => setConnected(true);
       socket.onmessage = (event) => {
         const payload = JSON.parse(event.data);
-        if (payload.type === "new-order") void refreshPanel(true);
+        if (payload.type === "new-order") {
+          void refreshPanel(true);
+          if (payload.payload?.orderId) void autoPrintOrder(payload.payload.orderId);
+        }
       };
       socket.onerror = () => setConnected(false);
       socket.onclose = () => {
@@ -288,7 +328,7 @@ export function AdminPanel() {
       if (reconnectTimer) window.clearTimeout(reconnectTimer);
       socket?.close();
     };
-  }, [token, refreshPanel]);
+  }, [token, refreshPanel, autoPrintOrder]);
 
   async function enableSound() {
     const AudioContextClass = window.AudioContext
@@ -555,10 +595,19 @@ export function AdminPanel() {
                 <button
                   className="rounded-lg bg-slate-700 px-2 py-1 text-xs text-white"
                   onClick={() => {
-                    try {
+                    if (printSettings.printerName) {
+                      void printHtmlWithAgent(
+                        printSettings.printerName,
+                        orderReceiptHtml(order, { companyName: printSettings.companyName }),
+                        printSettings.paperWidth
+                      )
+                        .then(() => toast.success("Pedido enviado para a impressora"))
+                        .catch(() => {
+                          toast.error("QZ Tray indisponivel. Abrindo impressao manual.");
+                          printOrderInBrowser(order, printSettings);
+                        });
+                    } else {
                       printOrderInBrowser(order, printSettings);
-                    } catch (error) {
-                      toast.error(error instanceof Error ? error.message : "Falha ao abrir impressao");
                     }
                   }}
                 >
