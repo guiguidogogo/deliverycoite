@@ -9,6 +9,7 @@ export default function AdminLoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [subdomain, setSubdomain] = useState("");
   const [recovering, setRecovering] = useState(false);
   const [code, setCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -19,11 +20,16 @@ export default function AdminLoginPage() {
     const res = await fetch(`${API_URL}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify({
+        email,
+        password,
+        ...(subdomain.trim() ? { subdomain: subdomain.trim().toLowerCase() } : {})
+      })
     });
 
     if (!res.ok) {
-      toast.error("Credenciais invalidas");
+      const payload = await res.json().catch(() => ({}));
+      toast.error(payload.message ?? "Credenciais invalidas");
       return;
     }
 
@@ -68,6 +74,15 @@ export default function AdminLoginPage() {
         <div className="mt-4 space-y-3">
           <input className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
           <input className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Senha" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <input
+            className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/20"
+            placeholder="Subdominio da empresa (opcional)"
+            value={subdomain}
+            onChange={(e) => setSubdomain(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+          />
+          <p className="text-xs opacity-60">
+            Preencha apenas se o mesmo email estiver cadastrado em mais de uma empresa.
+          </p>
           <button className="w-full rounded-xl bg-ink px-4 py-2 font-semibold text-white dark:bg-ember" type="submit">
             Entrar
           </button>
