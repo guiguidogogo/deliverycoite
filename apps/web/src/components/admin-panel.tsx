@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { API_URL } from "../lib/api";
+import { printOrderInBrowser } from "../lib/browser-print";
 
 function toInputDate(value: Date) {
   const yyyy = value.getFullYear();
@@ -30,9 +31,15 @@ type Order = {
   orderNumber: number;
   status: "RECEIVED" | "PREPARING" | "OUT_FOR_DELIVERY" | "DELIVERED" | "FINISHED" | "CANCELED";
   fulfillmentType: "DELIVERY" | "PICKUP";
+  paymentMethod?: "CASH" | "PIX" | "CARD";
+  paidMethodDetail?: string | null;
+  changeFor?: number | null;
+  subtotal?: number;
+  deliveryFee?: number;
+  discount?: number;
   total: number;
   createdAt: string;
-  customer: { name: string; phone: string; address: string; number: string; district: string };
+  customer: { name: string; phone: string; address: string; number: string; district: string; complement?: string | null };
   items: Array<{
     id: string;
     quantity: number;
@@ -118,6 +125,7 @@ export function AdminPanel() {
   const [permissions, setPermissions] = useState<string[]>([]);
   const [userRole, setUserRole] = useState<string>("");
   const [ordersPaused, setOrdersPaused] = useState(false);
+  const [printSettings, setPrintSettings] = useState({ companyName: "Delivery", paperWidth: 58 as 58 | 80 });
   const audioRef = useRef<AudioContext | null>(null);
   const knownNewOrdersRef = useRef<Set<string>>(new Set());
   const initializedOrdersRef = useRef(false);
@@ -135,9 +143,18 @@ export function AdminPanel() {
         setUserRole(me.role);
       })
       .catch(() => undefined);
-    void fetch(`${API_URL}/settings`, { cache: "no-store" })
+    void fetch(`${API_URL}/admin/settings`, {
+      headers: { Authorization: `Bearer ${storedToken}` },
+      cache: "no-store"
+    })
       .then((response) => response.json())
-      .then((settings) => setOrdersPaused(Boolean(settings.ordersPaused)));
+      .then((settings) => {
+        setOrdersPaused(Boolean(settings.ordersPaused));
+        setPrintSettings({
+          companyName: settings.companyName ?? "Delivery",
+          paperWidth: settings.printerPaperWidth === 80 ? 80 : 58
+        });
+      });
   }, [router]);
 
   const can = useCallback(
@@ -538,9 +555,11 @@ export function AdminPanel() {
                 <button
                   className="rounded-lg bg-slate-700 px-2 py-1 text-xs text-white"
                   onClick={() => {
-                    void authApi<{ message?: string }>(`/admin/orders/${order.id}/print`, token, { method: "POST" })
-                      .then((payload) => toast.success(payload.message ?? "Pedido enviado para impressao"))
-                      .catch((error) => toast.error(error instanceof Error ? error.message : "Falha ao imprimir"));
+                    try {
+                      printOrderInBrowser(order, printSettings);
+                    } catch (error) {
+                      toast.error(error instanceof Error ? error.message : "Falha ao abrir impressao");
+                    }
                   }}
                 >
                   Imprimir

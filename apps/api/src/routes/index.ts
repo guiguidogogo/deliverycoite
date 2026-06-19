@@ -149,6 +149,7 @@ route.post("/admin/companies", requireSuperAdmin, createCompany);
 route.get("/admin/companies/:id", requireSuperAdmin, getCompany);
 route.patch("/admin/companies/:id", requireSuperAdmin, updateCompany);
 route.patch("/admin/companies/:id/status", requireSuperAdmin, updateCompanyStatus);
+route.get("/admin/settings", requirePermission("SETTINGS"), getSettings);
 route.patch("/admin/me", updateCurrentStaff);
 route.patch("/admin/password", changeStaffPassword);
 route.get("/admin/orders", requirePermission("ORDERS"), listOrders);

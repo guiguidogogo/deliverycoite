@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { API_URL } from "../../../../lib/api";
 import { LocationPicker } from "../../../../components/location-picker";
+import { printTestReceipt } from "../../../../lib/browser-print";
 
 export default function SettingsManagePage() {
   const [form, setForm] = useState({
@@ -35,13 +36,14 @@ export default function SettingsManagePage() {
     printerPaperWidth: 58,
     printerAutoPrint: false
   });
-  const [printers, setPrinters] = useState<string[]>([]);
-
   useEffect(() => {
     const token = localStorage.getItem("delivery:token");
     if (!token) return;
 
-    void fetch(`${API_URL}/settings`)
+    void fetch(`${API_URL}/admin/settings`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store"
+    })
       .then((res) => res.json())
       .then((data) => {
         setForm({
@@ -77,11 +79,6 @@ export default function SettingsManagePage() {
         });
       });
 
-    void fetch(`${API_URL}/admin/printers`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then((res) => res.ok ? res.json() : [])
-      .then((data) => setPrinters(Array.isArray(data) ? data : []));
   }, []);
 
   async function save() {
@@ -93,6 +90,8 @@ export default function SettingsManagePage() {
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({
         ...form,
+        printerName: "",
+        printerAutoPrint: false,
         deliveryFee: Number(form.deliveryFee),
         deliveryFeeTiers: form.deliveryFeeTiers.map((tier) => ({
           maxDistanceKm: Number(tier.maxDistanceKm),
@@ -317,6 +316,10 @@ export default function SettingsManagePage() {
 
       <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
         <h2 className="mb-3 text-xl font-bold">Impressora termica</h2>
+        <div className="mb-3 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+          A impressora fica conectada ao seu computador, nao ao servidor Render.
+          Ao clicar em imprimir no pedido, o navegador abrira a lista de impressoras instaladas no Windows.
+        </div>
         <label className="mb-3 flex items-center gap-2">
           <input
             type="checkbox"
@@ -326,19 +329,6 @@ export default function SettingsManagePage() {
           Ativar impressao de pedidos
         </label>
         <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-          <label>
-            <span className="mb-1 block text-xs font-semibold">Impressora do Windows</span>
-            <input
-              list="installed-printers"
-              className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
-              value={form.printerName}
-              onChange={(e) => setForm((value) => ({ ...value, printerName: e.target.value }))}
-              placeholder="Nome exato da impressora"
-            />
-            <datalist id="installed-printers">
-              {printers.map((printer) => <option key={printer} value={printer} />)}
-            </datalist>
-          </label>
           <label>
             <span className="mb-1 block text-xs font-semibold">Largura do papel</span>
             <select
@@ -350,15 +340,23 @@ export default function SettingsManagePage() {
               <option value={80}>80 mm</option>
             </select>
           </label>
+          <button
+            type="button"
+            className="self-end rounded-xl bg-slate-700 px-4 py-2 text-white"
+            onClick={() => {
+              try {
+                printTestReceipt(form.companyName, form.printerPaperWidth === 80 ? 80 : 58);
+              } catch (error) {
+                toast.error(error instanceof Error ? error.message : "Falha ao abrir teste");
+              }
+            }}
+          >
+            Testar impressao
+          </button>
         </div>
-        <label className="mt-3 flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={form.printerAutoPrint}
-            onChange={(e) => setForm((value) => ({ ...value, printerAutoPrint: e.target.checked }))}
-          />
-          Imprimir automaticamente quando chegar pedido
-        </label>
+        <p className="mt-3 text-xs opacity-70">
+          A impressao automatica sem abrir a janela do navegador exige um agente local, que ainda nao esta instalado.
+        </p>
       </section>
 
       <button className="mt-4 w-full rounded-xl bg-ember px-4 py-3 text-white" onClick={() => void save()}>
