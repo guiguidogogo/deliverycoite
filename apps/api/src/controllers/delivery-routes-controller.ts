@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { sendDriverPush } from "../services/expo-push.js";
+import { buildGoogleMapsDirectionsUrl, type RouteOrigin } from "../utils/google-maps-route.js";
 import { prisma } from "../utils/prisma.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
 import { optimizeRoute } from "../utils/route-optimizer.js";
@@ -53,30 +54,6 @@ function addressOf(order: {
     order.customer.district,
     order.customer.complement
   ].filter(Boolean).join(" - ");
-}
-
-function locationOf(stop: { address: string; latitude: number | null; longitude: number | null }) {
-  return stop.latitude !== null && stop.longitude !== null
-    ? `${stop.latitude},${stop.longitude}`
-    : stop.address;
-}
-
-function googleMapsUrl(
-  stops: Array<{ address: string; latitude: number | null; longitude: number | null }>,
-  origin?: { latitude: number; longitude: number } | string | null
-) {
-  const destination = locationOf(stops[stops.length - 1]);
-  const waypoints = stops.slice(0, -1).map(locationOf);
-  const params = new URLSearchParams({
-    api: "1",
-    destination,
-    travelmode: "driving"
-  });
-  if (origin) {
-    params.set("origin", typeof origin === "string" ? origin : `${origin.latitude},${origin.longitude}`);
-  }
-  if (waypoints.length) params.set("waypoints", waypoints.join("|"));
-  return `https://www.google.com/maps/dir/?${params.toString()}`;
 }
 
 const routeInclude = {
@@ -222,11 +199,18 @@ export async function createDeliveryRoute(req: Request, res: Response) {
     };
   });
 
-  const origin = settings?.storeLatitude !== null && settings?.storeLatitude !== undefined
+  const origin: RouteOrigin | null = settings?.storeLatitude !== null && settings?.storeLatitude !== undefined
     && settings?.storeLongitude !== null && settings?.storeLongitude !== undefined
     ? { latitude: settings.storeLatitude, longitude: settings.storeLongitude }
-    : company?.address ?? null;
-  const mapsUrl = googleMapsUrl(orderedStops, origin);
+    : company?.address?.trim()
+      ? { address: company.address }
+      : null;
+  if (!origin) {
+    return res.status(400).json({
+      message: "Configure as coordenadas da loja ou o endereco da empresa antes de criar a rota"
+    });
+  }
+  const mapsUrl = buildGoogleMapsDirectionsUrl(orderedStops, origin);
   const lines = orderedStops.map(({ order, address }, index) =>
     `${index + 1}. Pedido #${String(order.orderNumber).padStart(5, "0")} - ${order.customer.name} - ${address}`
   );
