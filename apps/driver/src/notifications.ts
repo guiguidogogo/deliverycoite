@@ -31,32 +31,48 @@ export async function registerPushNotifications(
 ) {
   if (!Device.isDevice) return null;
   onStatus?.("Preparando botoes da notificacao...");
-  await Notifications.setNotificationCategoryAsync(ROUTE_OFFER_CATEGORY, [
-    {
-      identifier: ACCEPT_ROUTE_ACTION,
-      buttonTitle: "Aceitar",
-      options: { opensAppToForeground: true }
-    },
-    {
-      identifier: DECLINE_ROUTE_ACTION,
-      buttonTitle: "Recusar",
-      options: { opensAppToForeground: true, isDestructive: true }
-    }
-  ]);
+  await withTimeout(
+    Notifications.setNotificationCategoryAsync(ROUTE_OFFER_CATEGORY, [
+      {
+        identifier: ACCEPT_ROUTE_ACTION,
+        buttonTitle: "Aceitar",
+        options: { opensAppToForeground: true }
+      },
+      {
+        identifier: DECLINE_ROUTE_ACTION,
+        buttonTitle: "Recusar",
+        options: { opensAppToForeground: true, isDestructive: true }
+      }
+    ]),
+    3000,
+    "Botoes da notificacao indisponiveis"
+  ).catch(() => undefined);
   if (Platform.OS === "android") {
     onStatus?.("Configurando som de alerta...");
-    await Notifications.setNotificationChannelAsync("delivery-routes", {
-      name: "Novas rotas",
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      sound: "default"
-    });
+    await withTimeout(
+      Notifications.setNotificationChannelAsync("delivery-routes", {
+        name: "Novas rotas",
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        sound: "default"
+      }),
+      3000,
+      "Canal de som indisponivel"
+    ).catch(() => undefined);
   }
   onStatus?.("Verificando permissao de notificacao...");
-  const current = await Notifications.getPermissionsAsync();
+  const current = await withTimeout(
+    Notifications.getPermissionsAsync(),
+    5000,
+    "O Android nao respondeu ao verificar a permissao."
+  );
   const permission = current.status === "granted"
     ? current
-    : await Notifications.requestPermissionsAsync();
+    : await withTimeout(
+      Notifications.requestPermissionsAsync(),
+      10000,
+      "O Android nao respondeu ao solicitar a permissao."
+    );
   if (permission.status !== "granted") return null;
 
   const projectId = Constants.easConfig?.projectId
@@ -67,12 +83,6 @@ export async function registerPushNotifications(
   if (!Constants.expoConfig?.extra?.firebaseConfigured) {
     throw new Error("FIREBASE_NOT_CONFIGURED");
   }
-  onStatus?.("Conectando o aparelho ao Firebase...");
-  await withTimeout(
-    Notifications.getDevicePushTokenAsync(),
-    15000,
-    "O Firebase nao respondeu. Verifique a internet e tente novamente."
-  );
   onStatus?.("Gerando token de notificacao...");
   const token = (await withTimeout(
     Notifications.getExpoPushTokenAsync({ projectId }),
