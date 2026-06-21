@@ -30,7 +30,7 @@ export async function sendDriverPush(message: PushMessage) {
       to: device.expoToken,
       sound: "default",
       priority: "high",
-      channelId: "delivery-routes",
+      channelId: "delivery-routes-ringing",
       title: message.title,
       body: message.body,
       data: message.data ?? {}

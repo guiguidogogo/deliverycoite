@@ -18,11 +18,13 @@ import {
   Switch,
   Text,
   TextInput,
+  Vibration,
   View
 } from "react-native";
 import { api } from "./src/api";
 import {
   ACCEPT_ROUTE_ACTION,
+  DELIVERY_NOTIFICATION_CHANNEL,
   DECLINE_ROUTE_ACTION,
   registerPushNotifications,
   ROUTE_OFFER_CATEGORY
@@ -181,8 +183,18 @@ export default function App() {
   useEffect(() => {
     const received = Notifications.addNotificationReceivedListener((notification) => {
       const routeId = notification.request.content.data?.routeId;
-      if (typeof routeId === "string") knownRouteIdsRef.current.add(routeId);
-      if (token) void loadData(false).catch(() => undefined);
+      if (typeof routeId !== "string" || !token) return;
+      void api<DeliveryRoute>(`/driver/routes/${routeId}`)
+        .then((route) => {
+          if (route.status === "CREATED") {
+            setOfferedRoute(route);
+            setScreen("routes");
+          } else {
+            setRoutes((current) => [route, ...current.filter((item) => item.id !== route.id)]);
+            setSelectedRoute(route);
+          }
+        })
+        .catch(() => void loadData(false).catch(() => undefined));
     });
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
       const routeId = response.notification.request.content.data?.routeId;
@@ -229,9 +241,8 @@ export default function App() {
       setOfferSeconds(remaining);
       if (remaining === 0) void respondToOffer(offeredRoute.id, "decline");
     };
-    updateCountdown();
-    const countdownTimer = setInterval(updateCountdown, 1000);
-    const soundTimer = setInterval(() => {
+    const ring = () => {
+      Vibration.vibrate([0, 500, 250, 500, 250, 900]);
       void Notifications.scheduleNotificationAsync({
         content: {
           title: "Nova corrida aguardando resposta",
@@ -240,12 +251,17 @@ export default function App() {
           categoryIdentifier: ROUTE_OFFER_CATEGORY,
           data: { routeId: offeredRoute.id, screen: "route" }
         },
-        trigger: null
+        trigger: Platform.OS === "android" ? { channelId: DELIVERY_NOTIFICATION_CHANNEL } : null
       });
-    }, 5000);
+    };
+    updateCountdown();
+    ring();
+    const countdownTimer = setInterval(updateCountdown, 1000);
+    const soundTimer = setInterval(ring, 3000);
     return () => {
       clearInterval(countdownTimer);
       clearInterval(soundTimer);
+      Vibration.cancel();
     };
   }, [offeredRoute]);
 
@@ -344,12 +360,14 @@ export default function App() {
     try {
       const route = await api<DeliveryRoute>(`/driver/routes/${routeId}/${action}`, { method: "POST" });
       setOfferedRoute(null);
+      Vibration.cancel();
       await Notifications.dismissAllNotificationsAsync();
-      await loadData(false);
       if (action === "accept") {
+        setRoutes((current) => [route, ...current.filter((item) => item.id !== route.id)]);
         setSelectedRoute(route);
         setScreen("route");
       }
+      await loadData(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Nao foi possivel responder a corrida";
       Alert.alert(

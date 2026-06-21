@@ -7,6 +7,7 @@ import { api } from "./api";
 export const ROUTE_OFFER_CATEGORY = "route-offer";
 export const ACCEPT_ROUTE_ACTION = "accept-route";
 export const DECLINE_ROUTE_ACTION = "decline-route";
+export const DELIVERY_NOTIFICATION_CHANNEL = "delivery-routes-ringing";
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
   return Promise.race([
@@ -50,11 +51,21 @@ export async function registerPushNotifications(
   if (Platform.OS === "android") {
     onStatus?.("Configurando som de alerta...");
     await withTimeout(
-      Notifications.setNotificationChannelAsync("delivery-routes", {
-        name: "Novas rotas",
+      Notifications.setNotificationChannelAsync(DELIVERY_NOTIFICATION_CHANNEL, {
+        name: "Novas corridas com toque",
         importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        sound: "default"
+        vibrationPattern: [0, 500, 250, 500, 250, 900],
+        sound: "default",
+        enableVibrate: true,
+        bypassDnd: false,
+        audioAttributes: {
+          usage: Notifications.AndroidAudioUsage.NOTIFICATION_RINGTONE,
+          contentType: Notifications.AndroidAudioContentType.SONIFICATION,
+          flags: {
+            enforceAudibility: true,
+            requestHardwareAudioVideoSynchronization: false
+          }
+        }
       }),
       3000,
       "Canal de som indisponivel"
