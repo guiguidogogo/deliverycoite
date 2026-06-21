@@ -148,13 +148,23 @@ export default function DeliveriesPage() {
     if (!selected.length || !driverId) return;
     setSaving(true);
     try {
-      const route = await adminApi<DeliveryRoute>("/admin/deliveries/routes", {
+      const route = await adminApi<DeliveryRoute & {
+        push?: { sent: number; errors: string[] };
+      }>("/admin/deliveries/routes", {
         method: "POST",
         body: JSON.stringify({ driverId, orderIds: selected })
       });
       setSelected([]);
       setShowRouteModal(false);
-      toast.success("Rota enviada ao motoboy e aguardando aceite");
+      if (route.push?.sent) {
+        toast.success("Rota enviada com notificacao push e aguardando aceite");
+      } else {
+        toast.warning(
+          route.push?.errors?.[0]
+            ? `Rota criada, mas o push falhou: ${route.push.errors[0]}`
+            : "Rota criada. O motoboy ainda nao registrou um aparelho para push."
+        );
+      }
       await load();
       window.open(route.googleMapsUrl, "_blank", "noopener,noreferrer");
     } catch (error) {

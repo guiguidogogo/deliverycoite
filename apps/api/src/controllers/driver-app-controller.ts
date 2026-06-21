@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { env } from "../utils/env.js";
+import { buildGoogleMapsDirectionsUrl, type RouteOrigin } from "../utils/google-maps-route.js";
 import { prisma } from "../utils/prisma.js";
 
 const routeInclude = {
@@ -23,6 +24,39 @@ const routeInclude = {
 function driverContext(req: Request) {
   if (!req.driver) throw new Error("Contexto do motoboy ausente");
   return req.driver;
+}
+
+async function getCompanyRouteOrigin(companyId: string): Promise<RouteOrigin | null> {
+  const [settings, company] = await Promise.all([
+    prisma.setting.findFirst({
+      where: { companyId },
+      select: { storeLatitude: true, storeLongitude: true }
+    }),
+    prisma.company.findUnique({
+      where: { id: companyId },
+      select: { address: true }
+    })
+  ]);
+  if (
+    settings?.storeLatitude !== null
+    && settings?.storeLatitude !== undefined
+    && settings.storeLongitude !== null
+    && settings.storeLongitude !== undefined
+  ) {
+    return { latitude: settings.storeLatitude, longitude: settings.storeLongitude };
+  }
+  return company?.address?.trim() ? { address: company.address } : null;
+}
+
+function routeWithNavigationUrl<T extends {
+  googleMapsUrl: string;
+  orders: Array<{ address: string; latitude: number | null; longitude: number | null }>;
+}>(route: T, origin: RouteOrigin | null) {
+  if (!origin || !route.orders.length) return { ...route, navigationUrl: route.googleMapsUrl };
+  return {
+    ...route,
+    navigationUrl: buildGoogleMapsDirectionsUrl(route.orders, origin)
+  };
 }
 
 export async function driverLogin(req: Request, res: Response) {
@@ -138,27 +172,33 @@ export async function registerDriverDevice(req: Request, res: Response) {
 export async function listDriverRoutes(req: Request, res: Response) {
   const context = driverContext(req);
   const history = req.query.history === "true";
-  const routes = await prisma.deliveryRoute.findMany({
-    where: {
-      driverId: context.id,
-      companyId: context.companyId,
-      status: history ? { in: ["COMPLETED", "CANCELED"] } : { in: ["CREATED", "IN_PROGRESS"] }
-    },
-    include: routeInclude,
-    orderBy: { createdAt: "desc" },
-    take: history ? 100 : 20
-  });
-  return res.json(routes);
+  const [routes, origin] = await Promise.all([
+    prisma.deliveryRoute.findMany({
+      where: {
+        driverId: context.id,
+        companyId: context.companyId,
+        status: history ? { in: ["COMPLETED", "CANCELED"] } : { in: ["CREATED", "IN_PROGRESS"] }
+      },
+      include: routeInclude,
+      orderBy: { createdAt: "desc" },
+      take: history ? 100 : 20
+    }),
+    getCompanyRouteOrigin(context.companyId)
+  ]);
+  return res.json(routes.map((route) => routeWithNavigationUrl(route, origin)));
 }
 
 export async function getDriverRoute(req: Request, res: Response) {
   const context = driverContext(req);
-  const route = await prisma.deliveryRoute.findFirst({
-    where: { id: req.params.id, driverId: context.id, companyId: context.companyId },
-    include: routeInclude
-  });
+  const [route, origin] = await Promise.all([
+    prisma.deliveryRoute.findFirst({
+      where: { id: req.params.id, driverId: context.id, companyId: context.companyId },
+      include: routeInclude
+    }),
+    getCompanyRouteOrigin(context.companyId)
+  ]);
   if (!route) return res.status(404).json({ message: "Rota nao encontrada" });
-  return res.json(route);
+  return res.json(routeWithNavigationUrl(route, origin));
 }
 
 export async function acceptDriverRoute(req: Request, res: Response) {

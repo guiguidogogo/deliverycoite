@@ -11,6 +11,7 @@ Aplicativo Expo criado em `apps/driver`, integrado exclusivamente com a API mult
 - disponibilidade online/offline;
 - lista de novas rotas e rotas em andamento;
 - notificacao push com som ao receber uma rota;
+- atualizacao automatica a cada 5 segundos com alerta local sonoro como fallback;
 - aceite ou recusa da corrida;
 - visualizacao dos pedidos, clientes, telefones, enderecos, itens e observacoes;
 - abertura da rota no Google Maps;
@@ -66,6 +67,10 @@ npx eas-cli build --profile development --platform ios
 O `eas init` deve adicionar `extra.eas.projectId` ao `app.json`.
 
 Push remoto deve ser validado em aparelho ou build compatível com notificacoes. A notificacao abre diretamente a rota informada em `data.routeId`.
+
+Depois de alterar `app.json`, notificacoes ou permissoes nativas, e obrigatorio gerar e instalar um novo APK. Atualizar apenas a API nao atualiza o aplicativo ja instalado.
+
+O app exibe o estado `Push e som ativados` quando o token Expo foi registrado. O painel administrativo informa ao criar a rota se o push foi enviado, falhou ou se o motoboy ainda nao registrou um aparelho.
 
 ## Homologacao sugerida
 

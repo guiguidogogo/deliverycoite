@@ -17,6 +17,7 @@ export type DeliveryRoute = {
   id: string;
   status: RouteStatus;
   googleMapsUrl: string;
+  navigationUrl?: string;
   createdAt: string;
   company: { tradeName: string; subdomain: string };
   orders: Array<{

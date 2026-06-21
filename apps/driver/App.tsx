@@ -2,10 +2,11 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
 import * as Notifications from "expo-notifications";
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   Linking,
   Pressable,
   RefreshControl,
@@ -37,6 +38,9 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [login, setLogin] = useState({ phone: "", password: "", subdomain: "" });
+  const [notificationStatus, setNotificationStatus] = useState("Configurando notificacoes...");
+  const knownRouteIdsRef = useRef<Set<string>>(new Set());
+  const routesInitializedRef = useRef(false);
 
   const loadSession = useCallback(async () => {
     const stored = await AsyncStorage.getItem("driver:token");
@@ -44,12 +48,30 @@ export default function App() {
     setLoading(false);
   }, []);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (notifyNewRoutes = false) => {
     const [profile, activeRoutes, historicRoutes] = await Promise.all([
       api<Driver>("/driver/me"),
       api<DeliveryRoute[]>("/driver/routes"),
       api<DeliveryRoute[]>("/driver/routes?history=true")
     ]);
+    const newRoutes = activeRoutes.filter(
+      (route) => route.status === "CREATED" && !knownRouteIdsRef.current.has(route.id)
+    );
+    if (notifyNewRoutes && routesInitializedRef.current) {
+      await Promise.all(newRoutes.map((route) =>
+        Notifications.scheduleNotificationAsync({
+          content: {
+            title: "Nova rota de entrega",
+            body: `Voce recebeu uma nova rota com ${route.orders.length} pedido(s).`,
+            sound: "default",
+            data: { routeId: route.id, screen: "route" }
+          },
+          trigger: null
+        })
+      ));
+    }
+    knownRouteIdsRef.current = new Set(activeRoutes.map((route) => route.id));
+    routesInitializedRef.current = true;
     setDriver(profile);
     setRoutes(activeRoutes);
     setHistory(historicRoutes);
@@ -67,14 +89,35 @@ export default function App() {
   useEffect(() => {
     if (!token) return;
     void loadData().catch((error) => Alert.alert("Erro", error.message));
-    void registerPushNotifications().catch((error) =>
-      Alert.alert("Notificacoes", error.message)
-    );
+    void registerPushNotifications()
+      .then((pushToken) => setNotificationStatus(
+        pushToken ? "Push e som ativados" : "Push indisponivel neste aparelho"
+      ))
+      .catch((error) => {
+        setNotificationStatus(`Push com erro: ${error.message}`);
+        Alert.alert("Notificacoes", error.message);
+      });
   }, [token, loadData]);
 
   useEffect(() => {
-    const received = Notifications.addNotificationReceivedListener(() => {
-      if (token) void loadData().catch(() => undefined);
+    if (!token) return;
+    const timer = setInterval(() => {
+      void loadData(true).catch(() => undefined);
+    }, 5000);
+    const appState = AppState.addEventListener("change", (state) => {
+      if (state === "active") void loadData(true).catch(() => undefined);
+    });
+    return () => {
+      clearInterval(timer);
+      appState.remove();
+    };
+  }, [token, loadData]);
+
+  useEffect(() => {
+    const received = Notifications.addNotificationReceivedListener((notification) => {
+      const routeId = notification.request.content.data?.routeId;
+      if (typeof routeId === "string") knownRouteIdsRef.current.add(routeId);
+      if (token) void loadData(false).catch(() => undefined);
     });
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
       const routeId = response.notification.request.content.data?.routeId;
@@ -244,7 +287,12 @@ export default function App() {
             </View>
           )}
           <View style={styles.row}>
-            <Pressable style={styles.mapsButton} onPress={() => void Linking.openURL(selectedRoute.googleMapsUrl)}><Text style={styles.buttonText}>Google Maps</Text></Pressable>
+            <Pressable
+              style={styles.mapsButton}
+              onPress={() => void Linking.openURL(selectedRoute.navigationUrl ?? selectedRoute.googleMapsUrl)}
+            >
+              <Text style={styles.buttonText}>Iniciar no Google Maps</Text>
+            </Pressable>
             <Pressable style={styles.wazeButton} onPress={() => {
               if (!finalStop) return;
               const query = finalStop.latitude != null && finalStop.longitude != null
@@ -300,6 +348,7 @@ export default function App() {
           <View><Text style={styles.cardTitle}>Status</Text><Text style={styles.muted}>{driver?.available ? "Disponivel para corridas" : "Indisponivel"}</Text></View>
           <Switch value={Boolean(driver?.available)} onValueChange={(value) => void setAvailability(value)} />
         </View>
+        <Text style={styles.notificationStatus}>{notificationStatus}</Text>
         <View style={styles.tabs}>
           <Pressable style={screen === "routes" ? styles.activeTab : styles.tab} onPress={() => setScreen("routes")}><Text>Rotas</Text></Pressable>
           <Pressable style={screen === "history" ? styles.activeTab : styles.tab} onPress={() => setScreen("history")}><Text>Historico</Text></Pressable>
@@ -349,5 +398,6 @@ const styles = StyleSheet.create({
   wazeButton: { flex: 1, backgroundColor: "#0ea5e9", padding: 14, borderRadius: 12, alignItems: "center" },
   deliveredButton: { backgroundColor: "#16a34a", padding: 12, borderRadius: 10, alignItems: "center", marginTop: 6 },
   deliveredText: { color: "#16a34a", fontWeight: "800" },
-  empty: { textAlign: "center", padding: 30, color: "#64748b" }
+  empty: { textAlign: "center", padding: 30, color: "#64748b" },
+  notificationStatus: { color: "#475569", fontSize: 12, textAlign: "center" }
 });

@@ -19,7 +19,9 @@
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
         "POST_NOTIFICATIONS",
-        "VIBRATE"
+        "VIBRATE",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ]
     },
     "plugins": [
@@ -35,6 +37,12 @@
           "locationWhenInUsePermission": "Permitir que o HubRegional Motoboy use sua localizacao durante as entregas."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "a2847fa4-5012-4414-885c-c7b39090ced6"
+      }
+    },
+    "owner": "higorsantana"
   }
 }
