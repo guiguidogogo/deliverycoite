@@ -60,6 +60,16 @@ import { deleteCustomer, listCustomers, lookupCustomer, updateCustomer } from ".
 import { getDashboard } from "../controllers/dashboard-controller.js";
 import { quoteDelivery } from "../controllers/delivery-controller.js";
 import {
+  createDeliveryRoute,
+  createDriver,
+  getDeliveryRoute,
+  listDeliveryRoutes,
+  listDrivers,
+  listReadyDeliveryOrders,
+  updateDeliveryRouteStatus,
+  updateDriver
+} from "../controllers/delivery-routes-controller.js";
+import {
   closeCashSession,
   createCashEntry,
   getFinanceSummary,
@@ -164,6 +174,14 @@ route.get("/admin/orders/:id/print-data", requirePermission("ORDERS"), getOrderP
 route.get("/admin/printers", requirePermission("SETTINGS"), listPrinters);
 route.get("/admin/dashboard", requirePermission("ORDERS"), getDashboard);
 route.get("/admin/notifications/new-orders", requirePermission("ORDERS"), listNewOrders);
+route.get("/admin/deliveries/orders", requirePermission("ORDERS"), listReadyDeliveryOrders);
+route.get("/admin/deliveries/drivers", requirePermission("ORDERS"), listDrivers);
+route.post("/admin/deliveries/drivers", requirePermission("ORDERS"), createDriver);
+route.patch("/admin/deliveries/drivers/:id", requirePermission("ORDERS"), updateDriver);
+route.get("/admin/deliveries/routes", requirePermission("ORDERS"), listDeliveryRoutes);
+route.post("/admin/deliveries/routes", requirePermission("ORDERS"), createDeliveryRoute);
+route.get("/admin/deliveries/routes/:id", requirePermission("ORDERS"), getDeliveryRoute);
+route.patch("/admin/deliveries/routes/:id/status", requirePermission("ORDERS"), updateDeliveryRouteStatus);
 route.get("/admin/reports/orders.xlsx", requirePermission("REPORTS"), exportOrdersExcel);
 route.get("/admin/reports/orders.pdf", requirePermission("REPORTS"), exportOrdersPdf);
 route.get("/admin/customers", requirePermission("CUSTOMERS"), listCustomers);

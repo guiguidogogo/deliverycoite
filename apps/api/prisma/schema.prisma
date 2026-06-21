@@ -42,6 +42,13 @@ enum CashEntryType {
   CLOSING
 }
 
+enum DeliveryRouteStatus {
+  CREATED
+  IN_PROGRESS
+  COMPLETED
+  CANCELED
+}
+
 model User {
   id             String          @id @default(cuid())
   name           String
@@ -107,6 +114,9 @@ model Company {
   orderItemComplements   OrderItemComplement[]
   passwordResets         PasswordReset[]
   favorites              Favorite[]
+  drivers                Driver[]
+  deliveryRoutes         DeliveryRoute[]
+  deliveryRouteOrders    DeliveryRouteOrder[]
 }
 
 model StaffRole {
@@ -344,6 +354,7 @@ model Order {
   viewedByStaff      Boolean           @default(false)
   sentToDelivery     Boolean           @default(false)
   deliverySentAt     DateTime?
+  deliveryRouteOrders DeliveryRouteOrder[]
   items              OrderItem[]
   couponRedemption   CouponRedemption?
   createdAt          DateTime          @default(now())
@@ -352,6 +363,64 @@ model Order {
   @@index([status])
   @@index([createdAt])
   @@index([companyId])
+}
+
+model Driver {
+  id             String          @id @default(cuid())
+  companyId      String
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name           String
+  phone          String
+  whatsapp       String
+  vehicle        String
+  licensePlate   String?
+  active         Boolean         @default(true)
+  deliveryRoutes DeliveryRoute[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@unique([companyId, phone])
+  @@index([companyId, active])
+}
+
+model DeliveryRoute {
+  id              String               @id @default(cuid())
+  companyId       String
+  company         Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  driverId        String
+  driver          Driver               @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  status          DeliveryRouteStatus  @default(CREATED)
+  googleMapsUrl   String
+  whatsappMessage String
+  startedAt       DateTime?
+  completedAt     DateTime?
+  canceledAt      DateTime?
+  orders          DeliveryRouteOrder[]
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@index([companyId, status])
+  @@index([driverId, createdAt])
+}
+
+model DeliveryRouteOrder {
+  id          String        @id @default(cuid())
+  companyId   String
+  company     Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  routeId     String
+  route       DeliveryRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  orderId     String
+  order       Order         @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  sequence    Int
+  address     String
+  latitude    Float?
+  longitude   Float?
+  createdAt   DateTime      @default(now())
+
+  @@unique([routeId, orderId])
+  @@unique([routeId, sequence])
+  @@index([companyId])
+  @@index([orderId])
 }
 
 model CouponRedemption {

@@ -400,6 +400,9 @@ export function AdminPanel() {
         {can("CUSTOMERS") && <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/customers">
           Clientes
         </a>}
+        {can("ORDERS") && <a className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white" href="/admin/manage/deliveries">
+          Entregas
+        </a>}
         {can("COUPONS") && <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/coupons">
           Cupons
         </a>}
@@ -524,8 +527,16 @@ export function AdminPanel() {
                     Marcar visualizado
                   </button>
                 )}
+                {order.fulfillmentType === "DELIVERY" && order.status === "PREPARING" && (
+                  <a
+                    className="rounded-lg bg-blue-700 px-2 py-1 text-xs text-white"
+                    href={`/admin/manage/deliveries?orderId=${encodeURIComponent(order.id)}`}
+                  >
+                    Enviar para entrega
+                  </a>
+                )}
                 {order.fulfillmentType === "DELIVERY"
-                  && (order.status === "OUT_FOR_DELIVERY" || order.status === "PREPARING")
+                  && order.status === "OUT_FOR_DELIVERY"
                   && !order.sentToDelivery && (
                   <button
                     className="rounded-lg bg-blue-500 px-2 py-1 text-xs text-white"
