@@ -19,6 +19,7 @@ export async function login(req: Request, res: Response) {
     where: {
       email,
       active: true,
+      ...(req.tenant?.bound && req.companyId ? { companyId: req.companyId } : {}),
       company: {
         active: true,
         ...(body.subdomain ? { subdomain: body.subdomain.toLowerCase() } : {})

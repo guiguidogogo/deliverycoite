@@ -40,16 +40,26 @@ const emptyCompany: CompanyFormValue = {
   plan: "basico",
   active: true
 };
+const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? "hubregional.com.br";
 
 export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, onSubmit }: Props) {
   const [form, setForm] = useState<CompanyFormValue>({ ...emptyCompany, ...initialValue });
   const [admin, setAdmin] = useState({ name: "", email: "", phone: "", password: "" });
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [subdomainEdited, setSubdomainEdited] = useState(false);
 
   useEffect(() => {
     setForm({ ...emptyCompany, ...initialValue });
   }, [initialValue]);
+
+  useEffect(() => {
+    if (!includeAdmin || subdomainEdited || form.tradeName.trim().length < 2) return;
+    const timer = window.setTimeout(() => {
+      void generateSubdomain();
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [form.tradeName, includeAdmin, subdomainEdited]);
 
   async function generateSubdomain() {
     if (form.tradeName.trim().length < 2) {
@@ -158,9 +168,10 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
             ...value,
             subdomain: event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "")
           }))}
+          onInput={() => setSubdomainEdited(true)}
         />
         <p className="mt-2 rounded-xl bg-slate-100 px-3 py-2 font-mono text-sm dark:bg-slate-800">
-          {form.subdomain || "subdominio"}.meudelivery.com.br
+          https://{form.subdomain || "subdominio"}.{ROOT_DOMAIN}
         </p>
       </section>
 

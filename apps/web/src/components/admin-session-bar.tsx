@@ -12,11 +12,21 @@ type Session = {
     subdomain: string;
   };
 };
+const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? "hubregional.com.br";
 
 export function AdminSessionBar() {
   const pathname = usePathname();
   const router = useRouter();
   const [session, setSession] = useState<Session | null>(null);
+  const realCompanyUrl = session
+    ? `https://${session.company.subdomain}.${ROOT_DOMAIN}`
+    : "#";
+  const companyUrl =
+    typeof window !== "undefined" && window.location.hostname.endsWith(ROOT_DOMAIN)
+      ? realCompanyUrl
+      : session
+        ? `/?subdomain=${encodeURIComponent(session.company.subdomain)}`
+        : "#";
 
   useEffect(() => {
     if (pathname === "/admin/login") return;
@@ -44,13 +54,13 @@ export function AdminSessionBar() {
       <div>
         <strong>{session.company.tradeName}</strong>
         <span className="ml-2 opacity-60">
-          {session.company.subdomain}.meudelivery.com.br
+          {session.company.subdomain}.{ROOT_DOMAIN}
         </span>
       </div>
       <div className="flex items-center gap-3">
         <a
           className="text-xs underline"
-          href={`/?subdomain=${encodeURIComponent(session.company.subdomain)}`}
+          href={companyUrl}
           target="_blank"
           rel="noreferrer"
         >

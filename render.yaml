@@ -12,6 +12,10 @@ services:
         value: 20
       - key: NEXT_PUBLIC_API_URL
         value: /api
+      - key: ROOT_DOMAIN
+        value: hubregional.com.br
+      - key: NEXT_PUBLIC_ROOT_DOMAIN
+        value: hubregional.com.br
       - key: DATABASE_URL
         sync: false
       - key: JWT_SECRET

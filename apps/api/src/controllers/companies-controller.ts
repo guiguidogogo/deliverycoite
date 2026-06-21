@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
+import { env } from "../utils/env.js";
 
 const optionalText = z.preprocess(
   (value) => typeof value === "string" && !value.trim() ? null : value,
@@ -68,6 +69,8 @@ function normalizeSubdomain(value: string) {
     .slice(0, 63);
 }
 
+const RESERVED_SUBDOMAINS = new Set(["www", "api", "admin", "app", "mail", "smtp", "ftp"]);
+
 function validateContactFields(data: {
   cnpj?: string | null;
   phone?: string | null;
@@ -102,6 +105,13 @@ function companyData(data: z.infer<typeof companySchema>) {
       message: "Subdominio invalido"
     }]);
   }
+  if (RESERVED_SUBDOMAINS.has(subdomain)) {
+    throw new z.ZodError([{
+      code: z.ZodIssueCode.custom,
+      path: ["subdomain"],
+      message: "Este subdominio e reservado pelo sistema"
+    }]);
+  }
   return {
     ...data,
     cnpj: onlyDigits(data.cnpj),
@@ -122,11 +132,15 @@ function conflictMessage(error: unknown) {
   return "Ja existe um cadastro com estes dados";
 }
 
+function publicCompanyUrl(subdomain: string) {
+  return `https://${subdomain}.${env.rootDomain}`;
+}
+
 export async function generateCompanySubdomain(req: Request, res: Response) {
   const tradeName = z.string().trim().min(2).parse(req.query.tradeName);
   const excludeId = req.query.excludeId?.toString();
   const base = normalizeSubdomain(tradeName) || "empresa";
-  let subdomain = base;
+  let subdomain = RESERVED_SUBDOMAINS.has(base) ? `${base}-loja` : base;
   let suffix = 2;
 
   while (await prisma.company.findFirst({
@@ -139,7 +153,8 @@ export async function generateCompanySubdomain(req: Request, res: Response) {
 
   return res.json({
     subdomain,
-    hostname: `${subdomain}.meudelivery.com.br`
+    hostname: `${subdomain}.${env.rootDomain}`,
+    publicUrl: publicCompanyUrl(subdomain)
   });
 }
 
@@ -171,7 +186,10 @@ export async function listCompanies(req: Request, res: Response) {
     },
     orderBy: { createdAt: "desc" }
   });
-  return res.json(companies);
+  return res.json(companies.map((company) => ({
+    ...company,
+    publicUrl: publicCompanyUrl(company.subdomain)
+  })));
 }
 
 export async function getCompany(req: Request, res: Response) {
@@ -187,7 +205,10 @@ export async function getCompany(req: Request, res: Response) {
     }
   });
   if (!company) return res.status(404).json({ message: "Empresa nao encontrada" });
-  return res.json(company);
+  return res.json({
+    ...company,
+    publicUrl: publicCompanyUrl(company.subdomain)
+  });
 }
 
 export async function createCompany(req: Request, res: Response) {
@@ -245,7 +266,10 @@ export async function createCompany(req: Request, res: Response) {
       });
       return created;
     });
-    return res.status(201).json(company);
+    return res.status(201).json({
+      ...company,
+      publicUrl: publicCompanyUrl(company.subdomain)
+    });
   } catch (error) {
     const message = conflictMessage(error);
     if (message) return res.status(409).json({ message });
@@ -296,7 +320,10 @@ export async function updateCompany(req: Request, res: Response) {
       });
       return updated;
     });
-    return res.json(company);
+    return res.json({
+      ...company,
+      publicUrl: publicCompanyUrl(company.subdomain)
+    });
   } catch (error) {
     const message = conflictMessage(error);
     if (message) return res.status(409).json({ message });

@@ -12,7 +12,48 @@ await prisma.$connect();
 await web.prepare();
 
 const handle = web.getRequestHandler();
-const server = http.createServer((req, res) => {
+const rootDomain = (process.env.ROOT_DOMAIN ?? "hubregional.com.br")
+  .trim()
+  .toLowerCase()
+  .replace(/^\.+|\.+$/g, "");
+const tenantCache = new Map();
+
+function requestHost(req) {
+  return String(req.headers["x-forwarded-host"] ?? req.headers.host ?? "")
+    .split(",")[0]
+    .trim()
+    .split(":")[0]
+    .toLowerCase()
+    .replace(/\.$/, "");
+}
+
+async function validWebTenant(req) {
+  if (req.url?.startsWith("/api") || req.url?.startsWith("/_next")) return true;
+  const acceptsHtml = String(req.headers.accept ?? "").includes("text/html");
+  if (!acceptsHtml) return true;
+  const host = requestHost(req);
+  if (!host.endsWith(`.${rootDomain}`)) return true;
+  const subdomain = host.slice(0, -(rootDomain.length + 1));
+  if (!subdomain || subdomain.includes(".")) return false;
+
+  const cached = tenantCache.get(subdomain);
+  if (cached && cached.expiresAt > Date.now()) return cached.valid;
+  const company = await prisma.company.findFirst({
+    where: { subdomain, active: true },
+    select: { id: true }
+  });
+  const valid = Boolean(company);
+  tenantCache.set(subdomain, { valid, expiresAt: Date.now() + 60_000 });
+  return valid;
+}
+
+const server = http.createServer(async (req, res) => {
+  if (!(await validWebTenant(req))) {
+    res.statusCode = 404;
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.end("<!doctype html><html lang=\"pt-BR\"><body><h1>Empresa nao encontrada</h1><p>Verifique o subdominio informado.</p></body></html>");
+    return;
+  }
   apiApp(req, res, () => {
     void handle(req, res);
   });

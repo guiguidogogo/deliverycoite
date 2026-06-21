@@ -138,6 +138,8 @@ Configure no Render:
 - `DATABASE_URL`: conexao PostgreSQL do ambiente
 - `CORS_ORIGIN`: URL publica do site
 - `NEXT_PUBLIC_API_URL`: mantenha `/api`
+- `ROOT_DOMAIN`: `hubregional.com.br`
+- `NEXT_PUBLIC_ROOT_DOMAIN`: `hubregional.com.br`
 - `WHATSAPP_NUMBER`: numero da loja
 
 Nao use `localhost` na `DATABASE_URL`. No Render, `localhost` aponta para o
@@ -152,6 +154,25 @@ proprio container.
 - Dados operacionais usam `companyId` obrigatorio e consultas administrativas
   sao sempre limitadas ao tenant autenticado.
 - A empresa publica atual pode ser consultada em `GET /api/company`.
+- Em homologacao, use
+  `https://deliverycoite-homolog.onrender.com/?subdomain=nome-da-empresa`.
+
+### DNS wildcard
+
+Para habilitar URLs reais como `yasminlanches.hubregional.com.br`:
+
+1. adicione `hubregional.com.br` como dominio customizado no servico web;
+2. adicione `*.hubregional.com.br` como dominio wildcard no mesmo servico;
+3. no provedor DNS, crie o registro wildcard solicitado pelo Render, normalmente:
+   - tipo `CNAME`;
+   - nome `*`;
+   - destino fornecido pelo Render;
+4. mantenha `ROOT_DOMAIN=hubregional.com.br`;
+5. aguarde a emissao do certificado TLS wildcard.
+
+Subdominios inexistentes em `*.hubregional.com.br` retornam `404` e nunca
+herdam os dados da empresa padrao. Em rotas autenticadas, o tenant resolvido
+pelo host precisa coincidir com o `companyId` do JWT.
 
 Para aplicar a conversao no banco de homologacao:
 

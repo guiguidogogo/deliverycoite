@@ -48,6 +48,9 @@ export function auth() {
       if (payload.companyId && payload.companyId !== user.companyId) {
         return res.status(401).json({ message: "Token pertence a outra empresa" });
       }
+      if (req.tenant?.bound && req.companyId && req.companyId !== user.companyId) {
+        return res.status(403).json({ message: "Usuario nao pertence a empresa deste subdominio" });
+      }
 
       req.user = {
         sub: user.id,

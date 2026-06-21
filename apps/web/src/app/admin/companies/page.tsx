@@ -12,6 +12,7 @@ type Company = {
   tradeName: string;
   cnpj?: string | null;
   subdomain: string;
+  publicUrl: string;
   plan: string;
   active: boolean;
   createdAt: string;
@@ -104,7 +105,9 @@ export default function CompaniesPage() {
                   <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">{company.plan}</span>
                 </div>
                 <p className="text-sm opacity-70">{company.companyName}</p>
-                <p className="mt-1 font-mono text-sm">{company.subdomain}.meudelivery.com.br</p>
+                <a className="mt-1 block font-mono text-sm underline" href={company.publicUrl} target="_blank" rel="noreferrer">
+                  {company.publicUrl}
+                </a>
                 <p className="mt-1 text-xs opacity-60">Admin: {company.users[0]?.email ?? "Nao encontrado"}</p>
               </div>
               <div className="flex gap-2">
