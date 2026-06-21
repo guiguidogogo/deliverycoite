@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { setAudioModeAsync, useAudioPlayer } from "expo-audio";
 import * as Location from "expo-location";
 import * as Notifications from "expo-notifications";
 import { StatusBar } from "expo-status-bar";
@@ -43,6 +44,7 @@ function notificationRouteId(value: unknown) {
 }
 
 export default function App() {
+  const ringtonePlayer = useAudioPlayer(require("./assets/ringtone.wav"));
   const [token, setToken] = useState<string | null>(null);
   const [driver, setDriver] = useState<Driver | null>(null);
   const [routes, setRoutes] = useState<DeliveryRoute[]>([]);
@@ -55,6 +57,7 @@ export default function App() {
   const [notificationStatus, setNotificationStatus] = useState("Configurando notificacoes...");
   const [pushReady, setPushReady] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
+  const [autoAccept, setAutoAccept] = useState(false);
   const [syncStatus, setSyncStatus] = useState("Sincronizando corridas...");
   const [offeredRoute, setOfferedRoute] = useState<DeliveryRoute | null>(null);
   const [offerSeconds, setOfferSeconds] = useState(30);
@@ -66,8 +69,12 @@ export default function App() {
   const pushLoadingRef = useRef(false);
 
   const loadSession = useCallback(async () => {
-    const stored = await AsyncStorage.getItem("driver:token");
+    const [stored, storedAutoAccept] = await Promise.all([
+      AsyncStorage.getItem("driver:token"),
+      AsyncStorage.getItem("driver:auto-accept")
+    ]);
     setToken(stored);
+    setAutoAccept(storedAutoAccept === "true");
     setLoading(false);
   }, []);
 
@@ -145,6 +152,16 @@ export default function App() {
   useEffect(() => {
     void loadSession();
   }, [loadSession]);
+
+  useEffect(() => {
+    void setAudioModeAsync({
+      playsInSilentMode: true,
+      shouldPlayInBackground: false,
+      interruptionMode: "doNotMix"
+    }).catch(() => undefined);
+    ringtonePlayer.loop = true;
+    ringtonePlayer.volume = 1;
+  }, [ringtonePlayer]);
 
   useEffect(() => {
     if (!token) return;
@@ -246,6 +263,9 @@ export default function App() {
       });
     };
     updateCountdown();
+    if (!autoAccept) {
+      void ringtonePlayer.seekTo(0).then(() => ringtonePlayer.play()).catch(() => undefined);
+    }
     ring();
     const countdownTimer = setInterval(updateCountdown, 1000);
     const soundTimer = setInterval(ring, 3000);
@@ -253,8 +273,15 @@ export default function App() {
       clearInterval(countdownTimer);
       clearInterval(soundTimer);
       Vibration.cancel();
+      ringtonePlayer.pause();
+      void ringtonePlayer.seekTo(0).catch(() => undefined);
     };
-  }, [offeredRoute]);
+  }, [offeredRoute, autoAccept, ringtonePlayer]);
+
+  useEffect(() => {
+    if (!offeredRoute || !autoAccept || respondingOfferRef.current) return;
+    void respondToOffer(offeredRoute.id, "accept");
+  }, [offeredRoute, autoAccept]);
 
   useEffect(() => {
     if (!token || !driver?.available) return;
@@ -330,6 +357,11 @@ export default function App() {
     }
   }
 
+  async function setAutomaticAcceptance(enabled: boolean) {
+    setAutoAccept(enabled);
+    await AsyncStorage.setItem("driver:auto-accept", String(enabled));
+  }
+
   async function routeAction(action: "accept" | "decline" | "complete") {
     if (!selectedRoute) return;
     if (action === "accept") {
@@ -356,6 +388,8 @@ export default function App() {
       const route = await api<DeliveryRoute>(`/driver/routes/${routeId}/${action}`, { method: "POST" });
       setOfferedRoute(null);
       Vibration.cancel();
+      ringtonePlayer.pause();
+      void ringtonePlayer.seekTo(0).catch(() => undefined);
       await Notifications.dismissAllNotificationsAsync();
       if (action === "accept") {
         setRoutes((current) => [route, ...current.filter((item) => item.id !== route.id)]);
@@ -550,6 +584,15 @@ export default function App() {
           <View><Text style={styles.cardTitle}>Status</Text><Text style={styles.muted}>{driver?.available ? "Disponivel para corridas" : "Indisponivel"}</Text></View>
           <Switch value={Boolean(driver?.available)} onValueChange={(value) => void setAvailability(value)} />
         </View>
+        <View style={styles.availability}>
+          <View style={styles.switchText}>
+            <Text style={styles.cardTitle}>Aceite automatico</Text>
+            <Text style={styles.muted}>
+              {autoAccept ? "Novas corridas serao aceitas automaticamente" : "Confirmar cada nova corrida"}
+            </Text>
+          </View>
+          <Switch value={autoAccept} onValueChange={(value) => void setAutomaticAcceptance(value)} />
+        </View>
         <Text style={styles.notificationStatus}>{notificationStatus}</Text>
         {!pushReady && (
           <Pressable
@@ -605,6 +648,7 @@ const styles = StyleSheet.create({
   buttonText: { color: "#fff", fontWeight: "700" },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   availability: { backgroundColor: "#fff", padding: 16, borderRadius: 16, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  switchText: { flex: 1, paddingRight: 12 },
   tabs: { flexDirection: "row", gap: 8 },
   tab: { padding: 12, flex: 1, alignItems: "center", borderRadius: 12, backgroundColor: "#fff" },
   activeTab: { padding: 12, flex: 1, alignItems: "center", borderRadius: 12, backgroundColor: "#7ebc59" },

@@ -1,6 +1,6 @@
 {
   "name": "@delivery/driver",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "private": true,
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
@@ -13,6 +13,7 @@
   "dependencies": {
     "@react-native-async-storage/async-storage": "^3.1.1",
     "expo": "~56.0.12",
+    "expo-audio": "~56.0.12",
     "expo-constants": "~56.0.18",
     "expo-device": "~56.0.4",
     "expo-location": "~56.0.18",
