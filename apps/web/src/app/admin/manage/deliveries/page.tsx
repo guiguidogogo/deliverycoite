@@ -113,6 +113,11 @@ export default function DeliveriesPage() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => void load(), 5000);
+    return () => window.clearInterval(timer);
+  }, [load]);
+
   const selectedOrders = useMemo(
     () => orders.filter((order) => selected.includes(order.id)),
     [orders, selected]

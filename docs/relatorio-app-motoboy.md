@@ -13,6 +13,9 @@ Aplicativo Expo criado em `apps/driver`, integrado exclusivamente com a API mult
 - notificacao push com som ao receber uma rota;
 - atualizacao automatica a cada 5 segundos com alerta local sonoro como fallback;
 - aceite ou recusa da corrida;
+- oferta em tela cheia com contagem regressiva de 30 segundos;
+- som repetido a cada 5 segundos enquanto aguarda resposta;
+- acoes Aceitar e Recusar diretamente na notificacao Android;
 - visualizacao dos pedidos, clientes, telefones, enderecos, itens e observacoes;
 - abertura da rota no Google Maps;
 - abertura do ultimo destino no Waze;
@@ -85,6 +88,8 @@ Nao coloque `firebase-admin` nem `serviceAccountKey.json` dentro do aplicativo. 
 Depois de alterar `app.json`, notificacoes ou permissoes nativas, e obrigatorio gerar e instalar um novo APK. Atualizar apenas a API nao atualiza o aplicativo ja instalado.
 
 O app exibe o estado `Push e som ativados` quando o token Expo foi registrado. O painel administrativo informa ao criar a rota se o push foi enviado, falhou ou se o motoboy ainda nao registrou um aparelho.
+
+Se o motoboy recusar ou os 30 segundos expirarem, a rota passa para cancelada. Os pedidos permanecem em preparo e voltam automaticamente para a lista de expedicao, podendo ser enviados novamente.
 
 ## Homologacao sugerida
 

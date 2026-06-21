@@ -9,6 +9,7 @@ import {
   type RouteOrigin
 } from "../utils/google-maps-route.js";
 import { prisma } from "../utils/prisma.js";
+import { expirePendingRouteOffers, routeOfferExpiresAt } from "../utils/route-offers.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
 import { optimizeRoute } from "../utils/route-optimizer.js";
 
@@ -113,6 +114,7 @@ export async function updateDriver(req: Request, res: Response) {
 }
 
 export async function listReadyDeliveryOrders(req: Request, res: Response) {
+  await expirePendingRouteOffers(getCompanyId(req));
   const orders = await prisma.order.findMany({
     where: {
       ...companyWhere(req),
@@ -129,6 +131,7 @@ export async function listReadyDeliveryOrders(req: Request, res: Response) {
 }
 
 export async function listDeliveryRoutes(req: Request, res: Response) {
+  await expirePendingRouteOffers(getCompanyId(req));
   return res.json(await prisma.deliveryRoute.findMany({
     where: companyWhere(req),
     include: routeInclude,
@@ -228,6 +231,7 @@ export async function createDeliveryRoute(req: Request, res: Response) {
         driverId: driver.id,
         googleMapsUrl: mapsUrl,
         whatsappMessage: message,
+        offerExpiresAt: routeOfferExpiresAt(),
         orders: {
           create: orderedStops.map((stop, index) => ({
             companyId,
@@ -250,6 +254,8 @@ export async function createDeliveryRoute(req: Request, res: Response) {
     title: "Nova rota de entrega",
     body: `Voce recebeu uma nova rota com ${orderedStops.length} pedido(s).`,
     data: { routeId: route.id, screen: "route" }
+    ,
+    categoryId: "route-offer"
   }).catch((error) => ({
     sent: 0,
     errors: [error instanceof Error ? error.message : "Falha ao enviar notificacao push"]

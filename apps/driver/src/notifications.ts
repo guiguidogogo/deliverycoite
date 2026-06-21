@@ -4,6 +4,10 @@ import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import { api } from "./api";
 
+export const ROUTE_OFFER_CATEGORY = "route-offer";
+export const ACCEPT_ROUTE_ACTION = "accept-route";
+export const DECLINE_ROUTE_ACTION = "decline-route";
+
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: true,
@@ -15,6 +19,18 @@ Notifications.setNotificationHandler({
 
 export async function registerPushNotifications() {
   if (!Device.isDevice) return null;
+  await Notifications.setNotificationCategoryAsync(ROUTE_OFFER_CATEGORY, [
+    {
+      identifier: ACCEPT_ROUTE_ACTION,
+      buttonTitle: "Aceitar",
+      options: { opensAppToForeground: true }
+    },
+    {
+      identifier: DECLINE_ROUTE_ACTION,
+      buttonTitle: "Recusar",
+      options: { opensAppToForeground: true, isDestructive: true }
+    }
+  ]);
   if (Platform.OS === "android") {
     await Notifications.setNotificationChannelAsync("delivery-routes", {
       name: "Novas rotas",

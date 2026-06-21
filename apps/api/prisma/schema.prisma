@@ -404,12 +404,14 @@ model DeliveryRoute {
   canceledAt      DateTime?
   acceptedAt      DateTime?
   declinedAt      DateTime?
+  offerExpiresAt  DateTime?
   orders          DeliveryRouteOrder[]
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
 
   @@index([companyId, status])
   @@index([driverId, createdAt])
+  @@index([status, offerExpiresAt])
 }
 
 model DriverDeviceToken {

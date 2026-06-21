@@ -8,6 +8,7 @@ import {
   Alert,
   AppState,
   Linking,
+  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -20,7 +21,12 @@ import {
   View
 } from "react-native";
 import { api } from "./src/api";
-import { registerPushNotifications } from "./src/notifications";
+import {
+  ACCEPT_ROUTE_ACTION,
+  DECLINE_ROUTE_ACTION,
+  registerPushNotifications,
+  ROUTE_OFFER_CATEGORY
+} from "./src/notifications";
 import type { DeliveryRoute, Driver } from "./src/types";
 
 type Screen = "routes" | "history" | "route";
@@ -40,8 +46,11 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [login, setLogin] = useState({ phone: "", password: "", subdomain: "" });
   const [notificationStatus, setNotificationStatus] = useState("Configurando notificacoes...");
+  const [offeredRoute, setOfferedRoute] = useState<DeliveryRoute | null>(null);
+  const [offerSeconds, setOfferSeconds] = useState(30);
   const knownRouteIdsRef = useRef<Set<string>>(new Set());
   const routesInitializedRef = useRef(false);
+  const respondingOfferRef = useRef(false);
 
   const loadSession = useCallback(async () => {
     const stored = await AsyncStorage.getItem("driver:token");
@@ -65,12 +74,20 @@ export default function App() {
             title: "Nova rota de entrega",
             body: `Voce recebeu uma nova rota com ${route.orders.length} pedido(s).`,
             sound: "default",
+            categoryIdentifier: ROUTE_OFFER_CATEGORY,
             data: { routeId: route.id, screen: "route" }
           },
           trigger: null
         })
       ));
     }
+    const newestOffer = newRoutes[0]
+      ?? activeRoutes.find((route) =>
+        route.status === "CREATED"
+        && route.offerExpiresAt
+        && new Date(route.offerExpiresAt).getTime() > Date.now()
+      );
+    if (newestOffer) setOfferedRoute((current) => current?.id === newestOffer.id ? current : newestOffer);
     knownRouteIdsRef.current = new Set(activeRoutes.map((route) => route.id));
     routesInitializedRef.current = true;
     setDriver(profile);
@@ -133,10 +150,21 @@ export default function App() {
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
       const routeId = response.notification.request.content.data?.routeId;
       if (typeof routeId !== "string") return;
+      if (response.actionIdentifier === ACCEPT_ROUTE_ACTION) {
+        void respondToOffer(routeId, "accept");
+        return;
+      }
+      if (response.actionIdentifier === DECLINE_ROUTE_ACTION) {
+        void respondToOffer(routeId, "decline");
+        return;
+      }
       void api<DeliveryRoute>(`/driver/routes/${routeId}`)
         .then((route) => {
-          setSelectedRoute(route);
-          setScreen("route");
+          if (route.status === "CREATED") setOfferedRoute(route);
+          else {
+            setSelectedRoute(route);
+            setScreen("route");
+          }
         })
         .catch(() => undefined);
     });
@@ -153,6 +181,36 @@ export default function App() {
       subscription.remove();
     };
   }, [token, loadData]);
+
+  useEffect(() => {
+    if (!offeredRoute) return;
+    const expiresAt = offeredRoute.offerExpiresAt
+      ? new Date(offeredRoute.offerExpiresAt).getTime()
+      : Date.now() + 30000;
+    const updateCountdown = () => {
+      const remaining = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+      setOfferSeconds(remaining);
+      if (remaining === 0) void respondToOffer(offeredRoute.id, "decline");
+    };
+    updateCountdown();
+    const countdownTimer = setInterval(updateCountdown, 1000);
+    const soundTimer = setInterval(() => {
+      void Notifications.scheduleNotificationAsync({
+        content: {
+          title: "Nova corrida aguardando resposta",
+          body: `Aceite ou recuse. ${Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000))} segundos restantes.`,
+          sound: "default",
+          categoryIdentifier: ROUTE_OFFER_CATEGORY,
+          data: { routeId: offeredRoute.id, screen: "route" }
+        },
+        trigger: null
+      });
+    }, 5000);
+    return () => {
+      clearInterval(countdownTimer);
+      clearInterval(soundTimer);
+    };
+  }, [offeredRoute]);
 
   useEffect(() => {
     if (!token || !driver?.available) return;
@@ -242,6 +300,26 @@ export default function App() {
     }
   }
 
+  async function respondToOffer(routeId: string, action: "accept" | "decline") {
+    if (respondingOfferRef.current) return;
+    respondingOfferRef.current = true;
+    try {
+      const route = await api<DeliveryRoute>(`/driver/routes/${routeId}/${action}`, { method: "POST" });
+      setOfferedRoute(null);
+      await Notifications.dismissAllNotificationsAsync();
+      await loadData(false);
+      if (action === "accept") {
+        setSelectedRoute(route);
+        setScreen("route");
+      }
+    } catch {
+      setOfferedRoute(null);
+      await loadData(false).catch(() => undefined);
+    } finally {
+      respondingOfferRef.current = false;
+    }
+  }
+
   async function markDelivered(orderId: string) {
     if (!selectedRoute) return;
     try {
@@ -275,6 +353,33 @@ export default function App() {
     [selectedRoute]
   );
 
+  const offerModal = (
+    <Modal visible={Boolean(offeredRoute)} transparent animationType="slide" onRequestClose={() => undefined}>
+      <View style={styles.offerBackdrop}>
+        <View style={styles.offerCard}>
+          <Text style={styles.offerEyebrow}>NOVA CORRIDA</Text>
+          <Text style={styles.offerTitle}>{offeredRoute?.orders.length ?? 0} entrega(s)</Text>
+          <Text style={styles.offerCountdown}>{offerSeconds}s</Text>
+          <Text style={styles.offerHint}>A oferta sera recusada automaticamente quando o tempo terminar.</Text>
+          <View style={styles.row}>
+            <Pressable
+              style={styles.declineButton}
+              onPress={() => offeredRoute && void respondToOffer(offeredRoute.id, "decline")}
+            >
+              <Text style={styles.buttonText}>Recusar</Text>
+            </Pressable>
+            <Pressable
+              style={styles.acceptButton}
+              onPress={() => offeredRoute && void respondToOffer(offeredRoute.id, "accept")}
+            >
+              <Text style={styles.buttonText}>Aceitar corrida</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
   if (loading) {
     return <SafeAreaView style={styles.center}><ActivityIndicator size="large" color="#e76f51" /></SafeAreaView>;
   }
@@ -301,6 +406,7 @@ export default function App() {
     return (
       <SafeAreaView style={styles.page}>
         <StatusBar style="dark" />
+        {offerModal}
         <ScrollView contentContainerStyle={styles.content}>
           <Pressable
             accessibilityRole="button"
@@ -366,6 +472,7 @@ export default function App() {
   return (
     <SafeAreaView style={styles.page}>
       <StatusBar style="dark" />
+      {offerModal}
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} />}
@@ -453,4 +560,21 @@ const styles = StyleSheet.create({
   deliveredText: { color: "#16a34a", fontWeight: "800" },
   empty: { textAlign: "center", padding: 30, color: "#64748b" },
   notificationStatus: { color: "#475569", fontSize: 12, textAlign: "center" }
+  ,
+  offerBackdrop: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(15,23,42,0.72)",
+    padding: 18
+  },
+  offerCard: {
+    borderRadius: 24,
+    backgroundColor: "#fff",
+    padding: 22,
+    gap: 12
+  },
+  offerEyebrow: { color: "#e76f51", fontWeight: "900", letterSpacing: 2, textAlign: "center" },
+  offerTitle: { color: "#14213d", fontSize: 26, fontWeight: "900", textAlign: "center" },
+  offerCountdown: { color: "#dc2626", fontSize: 52, fontWeight: "900", textAlign: "center" },
+  offerHint: { color: "#64748b", textAlign: "center", marginBottom: 6 }
 });

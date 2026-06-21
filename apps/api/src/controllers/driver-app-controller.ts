@@ -10,6 +10,7 @@ import {
   type RouteOrigin
 } from "../utils/google-maps-route.js";
 import { prisma } from "../utils/prisma.js";
+import { expirePendingRouteOffers } from "../utils/route-offers.js";
 
 const routeInclude = {
   company: { select: { tradeName: true, subdomain: true } },
@@ -180,6 +181,7 @@ export async function registerDriverDevice(req: Request, res: Response) {
 
 export async function listDriverRoutes(req: Request, res: Response) {
   const context = driverContext(req);
+  await expirePendingRouteOffers(context.companyId);
   const history = req.query.history === "true";
   const [routes, origin] = await Promise.all([
     prisma.deliveryRoute.findMany({
@@ -199,6 +201,7 @@ export async function listDriverRoutes(req: Request, res: Response) {
 
 export async function getDriverRoute(req: Request, res: Response) {
   const context = driverContext(req);
+  await expirePendingRouteOffers(context.companyId);
   const [route, origin] = await Promise.all([
     prisma.deliveryRoute.findFirst({
       where: { id: req.params.id, driverId: context.id, companyId: context.companyId },
@@ -212,6 +215,7 @@ export async function getDriverRoute(req: Request, res: Response) {
 
 export async function acceptDriverRoute(req: Request, res: Response) {
   const context = driverContext(req);
+  await expirePendingRouteOffers(context.companyId);
   const route = await prisma.deliveryRoute.findFirst({
     where: { id: req.params.id, driverId: context.id, companyId: context.companyId, status: "CREATED" },
     include: { orders: { select: { orderId: true } } }

@@ -6,6 +6,7 @@ type PushMessage = {
   title: string;
   body: string;
   data?: Record<string, string>;
+  categoryId?: string;
 };
 
 export async function sendDriverPush(message: PushMessage) {
@@ -33,6 +34,8 @@ export async function sendDriverPush(message: PushMessage) {
       title: message.title,
       body: message.body,
       data: message.data ?? {}
+      ,
+      categoryId: message.categoryId
     })))
   });
 
@@ -55,6 +58,11 @@ export async function sendDriverPush(message: PushMessage) {
   }
   return {
     sent: results.filter((item) => item.status === "ok").length,
-    errors: results.filter((item) => item.status === "error").map((item) => item.message ?? "Falha no push")
+    errors: results.filter((item) => item.status === "error").map((item) => {
+      const errorMessage = item.message ?? "Falha no push";
+      return /FCM server key|Firebase/i.test(errorMessage)
+        ? "Credencial FCM V1 ainda nao configurada no projeto EAS"
+        : errorMessage;
+    })
   };
 }

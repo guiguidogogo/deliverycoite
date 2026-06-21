@@ -21,6 +21,7 @@ export type DeliveryRoute = {
   routePlanUrl?: string;
   androidNavigationIntent?: string;
   createdAt: string;
+  offerExpiresAt?: string | null;
   company: { tradeName: string; subdomain: string };
   orders: Array<{
     id: string;
