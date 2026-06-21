@@ -94,8 +94,18 @@ export default function App() {
         pushToken ? "Push e som ativados" : "Push indisponivel neste aparelho"
       ))
       .catch((error) => {
-        setNotificationStatus(`Push com erro: ${error.message}`);
-        Alert.alert("Notificacoes", error.message);
+        const firebaseMissing =
+          error instanceof Error
+          && (
+            error.message === "FIREBASE_NOT_CONFIGURED"
+            || error.message.includes("Firebase Messaging")
+            || error.message.includes("FirebaseApp")
+          );
+        setNotificationStatus(
+          firebaseMissing
+            ? "Alerta automatico local ativo. Push remoto aguardando configuracao Firebase."
+            : "Alerta automatico local ativo. Push remoto indisponivel."
+        );
       });
   }, [token, loadData]);
 

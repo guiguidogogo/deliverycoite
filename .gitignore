@@ -7,3 +7,5 @@ dist
 coverage
 backups
 *.log
+firebase-service-account*.json
+*-firebase-adminsdk-*.json

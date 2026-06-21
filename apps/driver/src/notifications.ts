@@ -34,6 +34,9 @@ export async function registerPushNotifications() {
   if (!projectId) {
     throw new Error("Execute eas init para configurar o projectId das notificacoes");
   }
+  if (!Constants.expoConfig?.extra?.firebaseConfigured) {
+    throw new Error("FIREBASE_NOT_CONFIGURED");
+  }
   const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
   await api("/driver/device-token", {
     method: "POST",

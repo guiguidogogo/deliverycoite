@@ -68,6 +68,18 @@ O `eas init` deve adicionar `extra.eas.projectId` ao `app.json`.
 
 Push remoto deve ser validado em aparelho ou build compatível com notificacoes. A notificacao abre diretamente a rota informada em `data.routeId`.
 
+### Configurar Firebase no Android
+
+1. Criar ou abrir um projeto no Firebase Console.
+2. Adicionar um aplicativo Android com o package `br.com.hubregional.motoboy`.
+3. Baixar `google-services.json` e salvar em `apps/driver/google-services.json`.
+4. Em Firebase > Configuracoes do projeto > Contas de servico, gerar uma chave privada.
+5. Executar `eas credentials --platform android`.
+6. Selecionar o perfil usado no APK e configurar `Google Service Account > FCM V1`, enviando a chave privada.
+7. Gerar e instalar um novo APK.
+
+O arquivo `google-services.json` registra o aplicativo no Firebase. A chave privada de conta de servico e secreta e nao deve ser adicionada ao Git.
+
 Depois de alterar `app.json`, notificacoes ou permissoes nativas, e obrigatorio gerar e instalar um novo APK. Atualizar apenas a API nao atualiza o aplicativo ja instalado.
 
 O app exibe o estado `Push e som ativados` quando o token Expo foi registrado. O painel administrativo informa ao criar a rota se o push foi enviado, falhou ou se o motoboy ainda nao registrou um aparelho.
