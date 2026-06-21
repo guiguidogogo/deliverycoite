@@ -603,7 +603,27 @@ export async function deleteOrder(req: Request, res: Response) {
     }
   }
 
-  await prisma.order.delete({ where: { id: req.params.id } });
+  await prisma.$transaction(async (transaction) => {
+    const routeLinks = await transaction.deliveryRouteOrder.findMany({
+      where: { orderId: order.id, companyId: getCompanyId(req) },
+      select: { routeId: true }
+    });
+    await transaction.deliveryRouteOrder.deleteMany({
+      where: { orderId: order.id, companyId: getCompanyId(req) }
+    });
+    await transaction.order.delete({ where: { id: order.id } });
+    const routeIds = [...new Set(routeLinks.map((link) => link.routeId))];
+    for (const routeId of routeIds) {
+      const remaining = await transaction.deliveryRouteOrder.count({
+        where: { routeId, companyId: getCompanyId(req) }
+      });
+      if (remaining === 0) {
+        await transaction.deliveryRoute.deleteMany({
+          where: { id: routeId, companyId: getCompanyId(req) }
+        });
+      }
+    }
+  });
   return res.status(204).send();
 }
 

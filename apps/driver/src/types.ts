@@ -18,6 +18,8 @@ export type DeliveryRoute = {
   status: RouteStatus;
   googleMapsUrl: string;
   navigationUrl?: string;
+  routePlanUrl?: string;
+  androidNavigationIntent?: string;
   createdAt: string;
   company: { tradeName: string; subdomain: string };
   orders: Array<{

@@ -37,3 +37,28 @@ export function buildGoogleMapsDirectionsUrl(stops: RouteLocation[], origin: Rou
 
   return `https://www.google.com/maps/dir/?${parameters.join("&")}`;
 }
+
+export function buildGoogleMapsNavigationUrl(stops: RouteLocation[]) {
+  if (!stops.length) throw new Error("A rota precisa ter pelo menos um destino");
+  const destination = locationValue(stops[stops.length - 1]);
+  const waypoints = stops.slice(0, -1).map(locationValue);
+  const parameters = [
+    "api=1",
+    `destination=${encodeURIComponent(destination)}`,
+    ...(waypoints.length ? [`waypoints=${encodeURIComponent(waypoints.join("|"))}`] : []),
+    "travelmode=driving",
+    "dir_action=navigate"
+  ];
+  return `https://www.google.com/maps/dir/?${parameters.join("&")}`;
+}
+
+export function buildGoogleMapsAndroidNavigationIntent(stops: RouteLocation[]) {
+  if (!stops.length) throw new Error("A rota precisa ter pelo menos um destino");
+  const destination = locationValue(stops[stops.length - 1]);
+  const waypoints = stops.slice(0, -1).map(locationValue);
+  return [
+    `google.navigation:q=${encodeURIComponent(destination)}`,
+    ...(waypoints.length ? [`waypoints=${encodeURIComponent(waypoints.join("|"))}`] : []),
+    "mode=d"
+  ].join("&");
+}

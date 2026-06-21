@@ -174,6 +174,12 @@ export default function DeliveriesPage() {
     }
   }
 
+  const allSelected = orders.length > 0 && orders.every((order) => selected.includes(order.id));
+
+  function toggleAllOrders() {
+    setSelected(allSelected ? [] : orders.map((order) => order.id));
+  }
+
   async function updateStatus(route: DeliveryRoute, status: RouteStatus) {
     try {
       await adminApi(`/admin/deliveries/routes/${route.id}/status`, {
@@ -252,13 +258,22 @@ export default function DeliveriesPage() {
             <h2 className="text-xl font-bold">Pedidos prontos para entrega</h2>
             <p className="text-sm opacity-70">Selecione varios pedidos para montar uma rota otimizada.</p>
           </div>
-          <button
-            className="rounded-xl bg-ember px-4 py-2 font-semibold text-white disabled:opacity-50"
-            disabled={!selected.length || !drivers.some((driver) => driver.active)}
-            onClick={() => setShowRouteModal(true)}
-          >
-            Enviar para entrega ({selected.length})
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="rounded-xl border border-black/15 px-4 py-2 font-semibold dark:border-white/20"
+              disabled={!orders.length}
+              onClick={toggleAllOrders}
+            >
+              {allSelected ? "Desmarcar todos" : "Selecionar todos"}
+            </button>
+            <button
+              className="rounded-xl bg-ember px-4 py-2 font-semibold text-white disabled:opacity-50"
+              disabled={!selected.length || !drivers.some((driver) => driver.active)}
+              onClick={() => setShowRouteModal(true)}
+            >
+              Enviar para entrega ({selected.length})
+            </button>
+          </div>
         </div>
 
         <div className="mt-4 space-y-2">

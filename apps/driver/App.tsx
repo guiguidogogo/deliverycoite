@@ -256,6 +256,20 @@ export default function App() {
     }
   }
 
+  async function startGoogleNavigation() {
+    if (!selectedRoute) return;
+    const nativeIntent = selectedRoute.androidNavigationIntent;
+    if (Platform.OS === "android" && nativeIntent) {
+      try {
+        await Linking.openURL(nativeIntent);
+        return;
+      } catch {
+        // O link universal abaixo funciona quando o app Google Maps nao aceita o intent.
+      }
+    }
+    await Linking.openURL(selectedRoute.navigationUrl ?? selectedRoute.googleMapsUrl);
+  }
+
   const finalStop = useMemo(
     () => selectedRoute?.orders[selectedRoute.orders.length - 1],
     [selectedRoute]
@@ -308,7 +322,7 @@ export default function App() {
           <View style={styles.row}>
             <Pressable
               style={styles.mapsButton}
-              onPress={() => void Linking.openURL(selectedRoute.navigationUrl ?? selectedRoute.googleMapsUrl)}
+              onPress={() => void startGoogleNavigation()}
             >
               <Text style={styles.buttonText}>Iniciar no Google Maps</Text>
             </Pressable>

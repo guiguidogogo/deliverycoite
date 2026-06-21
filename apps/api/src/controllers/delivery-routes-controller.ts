@@ -3,7 +3,11 @@ import bcrypt from "bcryptjs";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { sendDriverPush } from "../services/expo-push.js";
-import { buildGoogleMapsDirectionsUrl, type RouteOrigin } from "../utils/google-maps-route.js";
+import {
+  buildGoogleMapsDirectionsUrl,
+  buildGoogleMapsNavigationUrl,
+  type RouteOrigin
+} from "../utils/google-maps-route.js";
 import { prisma } from "../utils/prisma.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
 import { optimizeRoute } from "../utils/route-optimizer.js";
@@ -211,10 +215,11 @@ export async function createDeliveryRoute(req: Request, res: Response) {
     });
   }
   const mapsUrl = buildGoogleMapsDirectionsUrl(orderedStops, origin);
+  const navigationUrl = buildGoogleMapsNavigationUrl(orderedStops);
   const lines = orderedStops.map(({ order, address }, index) =>
     `${index + 1}. Pedido #${String(order.orderNumber).padStart(5, "0")} - ${order.customer.name} - ${address}`
   );
-  const message = `Nova rota de entrega:\n\n${lines.join("\n")}\n\nAbrir rota: ${mapsUrl}`;
+  const message = `Nova rota de entrega:\n\n${lines.join("\n")}\n\nIniciar navegacao: ${navigationUrl}`;
 
   const route = await prisma.$transaction(async (transaction) => {
     const created = await transaction.deliveryRoute.create({
@@ -252,6 +257,7 @@ export async function createDeliveryRoute(req: Request, res: Response) {
 
   return res.status(201).json({
     ...route,
+    navigationUrl,
     push,
     whatsappUrl: `https://wa.me/${driver.whatsapp}?text=${encodeURIComponent(message)}`
   });

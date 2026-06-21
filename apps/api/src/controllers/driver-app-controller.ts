@@ -3,7 +3,12 @@ import jwt from "jsonwebtoken";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { env } from "../utils/env.js";
-import { buildGoogleMapsDirectionsUrl, type RouteOrigin } from "../utils/google-maps-route.js";
+import {
+  buildGoogleMapsAndroidNavigationIntent,
+  buildGoogleMapsDirectionsUrl,
+  buildGoogleMapsNavigationUrl,
+  type RouteOrigin
+} from "../utils/google-maps-route.js";
 import { prisma } from "../utils/prisma.js";
 
 const routeInclude = {
@@ -52,10 +57,14 @@ function routeWithNavigationUrl<T extends {
   googleMapsUrl: string;
   orders: Array<{ address: string; latitude: number | null; longitude: number | null }>;
 }>(route: T, origin: RouteOrigin | null) {
-  if (!origin || !route.orders.length) return { ...route, navigationUrl: route.googleMapsUrl };
+  if (!route.orders.length) return { ...route, navigationUrl: route.googleMapsUrl };
   return {
     ...route,
-    navigationUrl: buildGoogleMapsDirectionsUrl(route.orders, origin)
+    routePlanUrl: origin
+      ? buildGoogleMapsDirectionsUrl(route.orders, origin)
+      : route.googleMapsUrl,
+    navigationUrl: buildGoogleMapsNavigationUrl(route.orders),
+    androidNavigationIntent: buildGoogleMapsAndroidNavigationIntent(route.orders)
   };
 }
 
