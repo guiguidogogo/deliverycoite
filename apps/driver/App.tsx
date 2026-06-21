@@ -46,11 +46,14 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [login, setLogin] = useState({ phone: "", password: "", subdomain: "" });
   const [notificationStatus, setNotificationStatus] = useState("Configurando notificacoes...");
+  const [syncStatus, setSyncStatus] = useState("Sincronizando corridas...");
   const [offeredRoute, setOfferedRoute] = useState<DeliveryRoute | null>(null);
   const [offerSeconds, setOfferSeconds] = useState(30);
+  const [offerActionLoading, setOfferActionLoading] = useState<"accept" | "decline" | null>(null);
   const knownRouteIdsRef = useRef<Set<string>>(new Set());
   const routesInitializedRef = useRef(false);
   const respondingOfferRef = useRef(false);
+  const syncingRef = useRef(false);
 
   const loadSession = useCallback(async () => {
     const stored = await AsyncStorage.getItem("driver:token");
@@ -59,16 +62,26 @@ export default function App() {
   }, []);
 
   const loadData = useCallback(async (notifyNewRoutes = false) => {
-    const [profile, activeRoutes, historicRoutes] = await Promise.all([
+    if (syncingRef.current) return;
+    syncingRef.current = true;
+    const [profileResult, activeRoutesResult, historicRoutesResult] = await Promise.allSettled([
       api<Driver>("/driver/me"),
       api<DeliveryRoute[]>("/driver/routes"),
       api<DeliveryRoute[]>("/driver/routes?history=true")
     ]);
+    if (activeRoutesResult.status === "rejected") {
+      syncingRef.current = false;
+      throw activeRoutesResult.reason;
+    }
+    const activeRoutes = activeRoutesResult.value;
+    const historicRoutes = historicRoutesResult.status === "fulfilled"
+      ? historicRoutesResult.value
+      : null;
     const newRoutes = activeRoutes.filter(
       (route) => route.status === "CREATED" && !knownRouteIdsRef.current.has(route.id)
     );
     if (notifyNewRoutes && routesInitializedRef.current) {
-      await Promise.all(newRoutes.map((route) =>
+      await Promise.allSettled(newRoutes.map((route) =>
         Notifications.scheduleNotificationAsync({
           content: {
             title: "Nova rota de entrega",
@@ -87,17 +100,28 @@ export default function App() {
         && route.offerExpiresAt
         && new Date(route.offerExpiresAt).getTime() > Date.now()
       );
-    if (newestOffer) setOfferedRoute((current) => current?.id === newestOffer.id ? current : newestOffer);
+    setOfferedRoute((current) => {
+      const currentRoute = current
+        ? activeRoutes.find((route) => route.id === current.id && route.status === "CREATED")
+        : null;
+      return currentRoute ?? newestOffer ?? null;
+    });
     knownRouteIdsRef.current = new Set(activeRoutes.map((route) => route.id));
     routesInitializedRef.current = true;
-    setDriver(profile);
+    if (profileResult.status === "fulfilled") setDriver(profileResult.value);
     setRoutes(activeRoutes);
-    setHistory(historicRoutes);
+    if (historicRoutes) setHistory(historicRoutes);
     setSelectedRoute((current) =>
       current
-        ? [...activeRoutes, ...historicRoutes].find((route) => route.id === current.id) ?? current
+        ? [...activeRoutes, ...(historicRoutes ?? [])].find((route) => route.id === current.id) ?? current
         : current
     );
+    setSyncStatus(`Atualizado automaticamente as ${new Date().toLocaleTimeString("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    })}`);
+    syncingRef.current = false;
   }, []);
 
   useEffect(() => {
@@ -129,11 +153,12 @@ export default function App() {
 
   useEffect(() => {
     if (!token) return;
-    const timer = setInterval(() => {
-      void loadData(true).catch(() => undefined);
-    }, 5000);
+    const update = () => void loadData(true).catch((error) => {
+      setSyncStatus(error instanceof Error ? `Falha ao atualizar: ${error.message}` : "Falha ao atualizar corridas");
+    });
+    const timer = setInterval(update, 2500);
     const appState = AppState.addEventListener("change", (state) => {
-      if (state === "active") void loadData(true).catch(() => undefined);
+      if (state === "active") update();
     });
     return () => {
       clearInterval(timer);
@@ -303,6 +328,7 @@ export default function App() {
   async function respondToOffer(routeId: string, action: "accept" | "decline") {
     if (respondingOfferRef.current) return;
     respondingOfferRef.current = true;
+    setOfferActionLoading(action);
     try {
       const route = await api<DeliveryRoute>(`/driver/routes/${routeId}/${action}`, { method: "POST" });
       setOfferedRoute(null);
@@ -312,11 +338,16 @@ export default function App() {
         setSelectedRoute(route);
         setScreen("route");
       }
-    } catch {
-      setOfferedRoute(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Nao foi possivel responder a corrida";
+      Alert.alert(
+        action === "accept" ? "Nao foi possivel aceitar" : "Nao foi possivel recusar",
+        message
+      );
       await loadData(false).catch(() => undefined);
     } finally {
       respondingOfferRef.current = false;
+      setOfferActionLoading(null);
     }
   }
 
@@ -363,16 +394,22 @@ export default function App() {
           <Text style={styles.offerHint}>A oferta sera recusada automaticamente quando o tempo terminar.</Text>
           <View style={styles.row}>
             <Pressable
-              style={styles.declineButton}
+              style={[styles.declineButton, offerActionLoading && styles.disabledButton]}
+              disabled={Boolean(offerActionLoading)}
               onPress={() => offeredRoute && void respondToOffer(offeredRoute.id, "decline")}
             >
-              <Text style={styles.buttonText}>Recusar</Text>
+              <Text style={styles.buttonText}>
+                {offerActionLoading === "decline" ? "Recusando..." : "Recusar"}
+              </Text>
             </Pressable>
             <Pressable
-              style={styles.acceptButton}
+              style={[styles.acceptButton, offerActionLoading && styles.disabledButton]}
+              disabled={Boolean(offerActionLoading)}
               onPress={() => offeredRoute && void respondToOffer(offeredRoute.id, "accept")}
             >
-              <Text style={styles.buttonText}>Aceitar corrida</Text>
+              <Text style={styles.buttonText}>
+                {offerActionLoading === "accept" ? "Aceitando..." : "Aceitar corrida"}
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -489,6 +526,7 @@ export default function App() {
           <Switch value={Boolean(driver?.available)} onValueChange={(value) => void setAvailability(value)} />
         </View>
         <Text style={styles.notificationStatus}>{notificationStatus}</Text>
+        <Text style={styles.syncStatus}>{syncStatus}</Text>
         <View style={styles.tabs}>
           <Pressable style={screen === "routes" ? styles.activeTab : styles.tab} onPress={() => setScreen("routes")}><Text>Rotas</Text></Pressable>
           <Pressable style={screen === "history" ? styles.activeTab : styles.tab} onPress={() => setScreen("history")}><Text>Historico</Text></Pressable>
@@ -561,20 +599,25 @@ const styles = StyleSheet.create({
   empty: { textAlign: "center", padding: 30, color: "#64748b" },
   notificationStatus: { color: "#475569", fontSize: 12, textAlign: "center" }
   ,
+  syncStatus: { color: "#64748b", fontSize: 11, textAlign: "center", marginTop: 4 },
   offerBackdrop: {
     flex: 1,
-    justifyContent: "flex-end",
+    justifyContent: "flex-start",
     backgroundColor: "rgba(15,23,42,0.72)",
-    padding: 18
+    paddingHorizontal: 14,
+    paddingTop: Platform.OS === "android" ? 52 : 24
   },
   offerCard: {
-    borderRadius: 24,
+    borderRadius: 20,
     backgroundColor: "#fff",
     padding: 22,
-    gap: 12
+    gap: 12,
+    width: "100%",
+    elevation: 12
   },
   offerEyebrow: { color: "#e76f51", fontWeight: "900", letterSpacing: 2, textAlign: "center" },
   offerTitle: { color: "#14213d", fontSize: 26, fontWeight: "900", textAlign: "center" },
   offerCountdown: { color: "#dc2626", fontSize: 52, fontWeight: "900", textAlign: "center" },
-  offerHint: { color: "#64748b", textAlign: "center", marginBottom: 6 }
+  offerHint: { color: "#64748b", textAlign: "center", marginBottom: 6 },
+  disabledButton: { opacity: 0.6 }
 });
