@@ -2,7 +2,7 @@
   "expo": {
     "name": "HubRegional Motoboy",
     "slug": "hubregional-motoboy",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "orientation": "portrait",
     "scheme": "hubregional-driver",
     "userInterfaceStyle": "light",
@@ -15,7 +15,7 @@
     },
     "android": {
       "package": "br.com.hubregional.motoboy",
-      "versionCode": 5,
+      "versionCode": 6,
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "ACCESS_COARSE_LOCATION",
@@ -30,7 +30,9 @@
       [
         "expo-notifications",
         {
-          "sounds": []
+          "sounds": [
+            "./assets/ringtone.wav"
+          ]
         }
       ],
       [

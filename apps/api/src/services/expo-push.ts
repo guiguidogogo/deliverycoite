@@ -28,7 +28,7 @@ export async function sendDriverPush(message: PushMessage) {
     },
     body: JSON.stringify(devices.map((device) => ({
       to: device.expoToken,
-      sound: "default",
+      sound: "ringtone.wav",
       priority: "high",
       channelId: "delivery-routes-ringing",
       title: message.title,

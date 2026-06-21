@@ -8,6 +8,7 @@ export const ROUTE_OFFER_CATEGORY = "route-offer";
 export const ACCEPT_ROUTE_ACTION = "accept-route";
 export const DECLINE_ROUTE_ACTION = "decline-route";
 export const DELIVERY_NOTIFICATION_CHANNEL = "delivery-routes-ringing";
+export const DELIVERY_RINGTONE = "ringtone.wav";
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
   return Promise.race([
@@ -55,7 +56,7 @@ export async function registerPushNotifications(
         name: "Novas corridas com toque",
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 500, 250, 500, 250, 900],
-        sound: "default",
+        sound: DELIVERY_RINGTONE,
         enableVibrate: true,
         bypassDnd: false,
         audioAttributes: {

@@ -215,24 +215,50 @@ export async function getDriverRoute(req: Request, res: Response) {
 
 export async function acceptDriverRoute(req: Request, res: Response) {
   const context = driverContext(req);
-  await expirePendingRouteOffers(context.companyId);
   const route = await prisma.deliveryRoute.findFirst({
-    where: { id: req.params.id, driverId: context.id, companyId: context.companyId, status: "CREATED" },
+    where: { id: req.params.id, driverId: context.id, companyId: context.companyId },
     include: { orders: { select: { orderId: true } } }
   });
-  if (!route) return res.status(404).json({ message: "Rota pendente nao encontrada" });
-  const updated = await prisma.$transaction(async (transaction) => {
+  if (!route) return res.status(404).json({ message: "Rota nao encontrada para este motoboy" });
+
+  const origin = await getCompanyRouteOrigin(context.companyId);
+  if (route.status === "IN_PROGRESS") {
+    const accepted = await prisma.deliveryRoute.findFirst({
+      where: { id: route.id, driverId: context.id, companyId: context.companyId },
+      include: routeInclude
+    });
+    return res.json(routeWithNavigationUrl(accepted!, origin));
+  }
+  if (route.status !== "CREATED") {
+    return res.status(409).json({ message: "Esta corrida nao esta mais disponivel para aceite" });
+  }
+
+  const updatedId = await prisma.$transaction(async (transaction) => {
+    const accepted = await transaction.deliveryRoute.updateMany({
+      where: {
+        id: route.id,
+        driverId: context.id,
+        companyId: context.companyId,
+        status: "CREATED"
+      },
+      data: { status: "IN_PROGRESS", acceptedAt: new Date(), startedAt: new Date(), declinedAt: null }
+    });
+    if (accepted.count !== 1) return null;
     await transaction.order.updateMany({
       where: { id: { in: route.orders.map((item) => item.orderId) }, companyId: context.companyId },
       data: { status: "OUT_FOR_DELIVERY", sentToDelivery: true, deliverySentAt: new Date() }
     });
-    return transaction.deliveryRoute.update({
-      where: { id: route.id },
-      data: { status: "IN_PROGRESS", acceptedAt: new Date(), startedAt: new Date(), declinedAt: null },
-      include: routeInclude
-    });
+    return route.id;
   });
-  return res.json(updated);
+  if (!updatedId) {
+    return res.status(409).json({ message: "A corrida foi respondida em outro dispositivo" });
+  }
+  const updated = await prisma.deliveryRoute.findFirst({
+    where: { id: updatedId, driverId: context.id, companyId: context.companyId },
+    include: routeInclude
+  });
+  if (!updated) return res.status(404).json({ message: "Rota aceita, mas nao foi possivel carrega-la" });
+  return res.json(routeWithNavigationUrl(updated, origin));
 }
 
 export async function declineDriverRoute(req: Request, res: Response) {

@@ -25,6 +25,7 @@ import { api } from "./src/api";
 import {
   ACCEPT_ROUTE_ACTION,
   DELIVERY_NOTIFICATION_CHANNEL,
+  DELIVERY_RINGTONE,
   DECLINE_ROUTE_ACTION,
   registerPushNotifications,
   ROUTE_OFFER_CATEGORY
@@ -35,6 +36,10 @@ type Screen = "routes" | "history" | "route";
 
 function routeCode(number: number) {
   return `#${String(number).padStart(5, "0")}`;
+}
+
+function notificationRouteId(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 export default function App() {
@@ -69,64 +74,52 @@ export default function App() {
   const loadData = useCallback(async (notifyNewRoutes = false) => {
     if (syncingRef.current) return;
     syncingRef.current = true;
-    const [profileResult, activeRoutesResult, historicRoutesResult] = await Promise.allSettled([
-      api<Driver>("/driver/me"),
-      api<DeliveryRoute[]>("/driver/routes"),
-      api<DeliveryRoute[]>("/driver/routes?history=true")
-    ]);
-    if (activeRoutesResult.status === "rejected") {
-      syncingRef.current = false;
-      throw activeRoutesResult.reason;
-    }
-    const activeRoutes = activeRoutesResult.value;
-    const historicRoutes = historicRoutesResult.status === "fulfilled"
-      ? historicRoutesResult.value
-      : null;
-    const newRoutes = activeRoutes.filter(
-      (route) => route.status === "CREATED" && !knownRouteIdsRef.current.has(route.id)
-    );
-    if (notifyNewRoutes && routesInitializedRef.current) {
-      await Promise.allSettled(newRoutes.map((route) =>
-        Notifications.scheduleNotificationAsync({
-          content: {
-            title: "Nova rota de entrega",
-            body: `Voce recebeu uma nova rota com ${route.orders.length} pedido(s).`,
-            sound: "default",
-            categoryIdentifier: ROUTE_OFFER_CATEGORY,
-            data: { routeId: route.id, screen: "route" }
-          },
-          trigger: null
-        })
-      ));
-    }
-    const newestOffer = newRoutes[0]
-      ?? activeRoutes.find((route) =>
-        route.status === "CREATED"
-        && route.offerExpiresAt
-        && new Date(route.offerExpiresAt).getTime() > Date.now()
-      );
-    setOfferedRoute((current) => {
-      const currentRoute = current
-        ? activeRoutes.find((route) => route.id === current.id && route.status === "CREATED")
+    try {
+      const [profileResult, activeRoutesResult, historicRoutesResult] = await Promise.allSettled([
+        api<Driver>("/driver/me"),
+        api<DeliveryRoute[]>("/driver/routes"),
+        api<DeliveryRoute[]>("/driver/routes?history=true")
+      ]);
+      if (activeRoutesResult.status === "rejected") throw activeRoutesResult.reason;
+      const activeRoutes = activeRoutesResult.value;
+      const historicRoutes = historicRoutesResult.status === "fulfilled"
+        ? historicRoutesResult.value
         : null;
-      return currentRoute ?? newestOffer ?? null;
-    });
-    knownRouteIdsRef.current = new Set(activeRoutes.map((route) => route.id));
-    routesInitializedRef.current = true;
-    if (profileResult.status === "fulfilled") setDriver(profileResult.value);
-    setRoutes(activeRoutes);
-    if (historicRoutes) setHistory(historicRoutes);
-    setSelectedRoute((current) =>
-      current
-        ? [...activeRoutes, ...(historicRoutes ?? [])].find((route) => route.id === current.id) ?? current
-        : current
-    );
-    setSyncStatus(`Atualizado automaticamente as ${new Date().toLocaleTimeString("pt-BR", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit"
-    })}`);
-    syncingRef.current = false;
+      const newRoutes = activeRoutes.filter(
+        (route) => route.status === "CREATED" && !knownRouteIdsRef.current.has(route.id)
+      );
+      const newestOffer = newRoutes[0]
+        ?? activeRoutes.find((route) =>
+          route.status === "CREATED"
+          && (!route.offerExpiresAt || new Date(route.offerExpiresAt).getTime() > Date.now())
+        );
+      setOfferedRoute((current) => {
+        const currentRoute = current
+          ? activeRoutes.find((route) => route.id === current.id && route.status === "CREATED")
+          : null;
+        return currentRoute ?? newestOffer ?? null;
+      });
+      knownRouteIdsRef.current = new Set(activeRoutes.map((route) => route.id));
+      routesInitializedRef.current = true;
+      if (profileResult.status === "fulfilled") setDriver(profileResult.value);
+      setRoutes(activeRoutes);
+      if (historicRoutes) setHistory(historicRoutes);
+      setSelectedRoute((current) =>
+        current
+          ? [...activeRoutes, ...(historicRoutes ?? [])].find((route) => route.id === current.id) ?? current
+          : current
+      );
+      setSyncStatus(`Atualizado automaticamente as ${new Date().toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      })}`);
+      if (notifyNewRoutes && routesInitializedRef.current && newRoutes.length) {
+        setScreen("routes");
+      }
+    } finally {
+      syncingRef.current = false;
+    }
   }, []);
 
   const setupPush = useCallback(async () => {
@@ -181,24 +174,33 @@ export default function App() {
   }, [token, loadData]);
 
   useEffect(() => {
+    const openNotificationRoute = async (routeId: string) => {
+      try {
+        const route = await api<DeliveryRoute>(`/driver/routes/${encodeURIComponent(routeId)}`);
+        setRoutes((current) => [route, ...current.filter((item) => item.id !== route.id)]);
+        if (route.status === "CREATED") {
+          setOfferedRoute(route);
+          setScreen("routes");
+          return;
+        }
+        if (route.status === "IN_PROGRESS") {
+          setSelectedRoute(route);
+          setScreen("route");
+          return;
+        }
+        await loadData(false);
+      } catch {
+        await loadData(false).catch(() => undefined);
+      }
+    };
     const received = Notifications.addNotificationReceivedListener((notification) => {
-      const routeId = notification.request.content.data?.routeId;
-      if (typeof routeId !== "string" || !token) return;
-      void api<DeliveryRoute>(`/driver/routes/${routeId}`)
-        .then((route) => {
-          if (route.status === "CREATED") {
-            setOfferedRoute(route);
-            setScreen("routes");
-          } else {
-            setRoutes((current) => [route, ...current.filter((item) => item.id !== route.id)]);
-            setSelectedRoute(route);
-          }
-        })
-        .catch(() => void loadData(false).catch(() => undefined));
+      const routeId = notificationRouteId(notification.request.content.data?.routeId);
+      if (!routeId || !token) return;
+      void openNotificationRoute(routeId);
     });
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-      const routeId = response.notification.request.content.data?.routeId;
-      if (typeof routeId !== "string") return;
+      const routeId = notificationRouteId(response.notification.request.content.data?.routeId);
+      if (!routeId) return;
       if (response.actionIdentifier === ACCEPT_ROUTE_ACTION) {
         void respondToOffer(routeId, "accept");
         return;
@@ -207,24 +209,13 @@ export default function App() {
         void respondToOffer(routeId, "decline");
         return;
       }
-      void api<DeliveryRoute>(`/driver/routes/${routeId}`)
-        .then((route) => {
-          if (route.status === "CREATED") setOfferedRoute(route);
-          else {
-            setSelectedRoute(route);
-            setScreen("route");
-          }
-        })
-        .catch(() => undefined);
+      void openNotificationRoute(routeId);
     });
-    void Notifications.getLastNotificationResponseAsync().then((response) => {
-      const routeId = response?.notification.request.content.data?.routeId;
-      if (typeof routeId !== "string" || !token) return;
-      void api<DeliveryRoute>(`/driver/routes/${routeId}`).then((route) => {
-        setSelectedRoute(route);
-        setScreen("route");
-      }).catch(() => undefined);
-    });
+    void Notifications.getLastNotificationResponseAsync().then(async (response) => {
+      const routeId = notificationRouteId(response?.notification.request.content.data?.routeId);
+      if (routeId && token) await openNotificationRoute(routeId);
+      await Notifications.clearLastNotificationResponseAsync();
+    }).catch(() => undefined);
     return () => {
       received.remove();
       subscription.remove();
@@ -247,7 +238,7 @@ export default function App() {
         content: {
           title: "Nova corrida aguardando resposta",
           body: `Aceite ou recuse. ${Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000))} segundos restantes.`,
-          sound: "default",
+          sound: DELIVERY_RINGTONE,
           categoryIdentifier: ROUTE_OFFER_CATEGORY,
           data: { routeId: offeredRoute.id, screen: "route" }
         },
@@ -341,6 +332,10 @@ export default function App() {
 
   async function routeAction(action: "accept" | "decline" | "complete") {
     if (!selectedRoute) return;
+    if (action === "accept") {
+      await respondToOffer(selectedRoute.id, "accept");
+      return;
+    }
     try {
       await api(`/driver/routes/${selectedRoute.id}/${action}`, { method: "POST" });
       await refresh();
@@ -367,7 +362,7 @@ export default function App() {
         setSelectedRoute(route);
         setScreen("route");
       }
-      await loadData(false);
+      void loadData(false).catch(() => undefined);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Nao foi possivel responder a corrida";
       Alert.alert(
