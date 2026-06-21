@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "308170845880",
+    "project_id": "hubregional",
+    "storage_bucket": "hubregional.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:308170845880:android:54a41d6317bc3deea98e4d",
+        "android_client_info": {
+          "package_name": "br.com.hubregional.motoboy"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCVChMzvHDuqWNlT3I-rcm-iZWI2u6905Y"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

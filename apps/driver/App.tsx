@@ -8,6 +8,7 @@ import {
   Alert,
   AppState,
   Linking,
+  Platform,
   Pressable,
   RefreshControl,
   SafeAreaView,
@@ -287,7 +288,15 @@ export default function App() {
       <SafeAreaView style={styles.page}>
         <StatusBar style="dark" />
         <ScrollView contentContainerStyle={styles.content}>
-          <Pressable onPress={() => setScreen("routes")}><Text style={styles.link}>Voltar</Text></Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Voltar para a lista de rotas"
+            hitSlop={10}
+            style={styles.backButton}
+            onPress={() => setScreen("routes")}
+          >
+            <Text style={styles.backButtonText}>← Voltar para rotas</Text>
+          </Pressable>
           <Text style={styles.title}>Detalhes da rota</Text>
           <Text style={styles.muted}>{selectedRoute.orders.length} entrega(s)</Text>
           {selectedRoute.status === "CREATED" && (
@@ -378,8 +387,18 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: "#f5f3ea" },
-  loginPage: { flex: 1, justifyContent: "center", padding: 20, backgroundColor: "#f5f3ea" },
+  page: {
+    flex: 1,
+    paddingTop: Platform.OS === "android" ? 28 : 0,
+    backgroundColor: "#f5f3ea"
+  },
+  loginPage: {
+    flex: 1,
+    justifyContent: "center",
+    padding: 20,
+    paddingTop: Platform.OS === "android" ? 40 : 20,
+    backgroundColor: "#f5f3ea"
+  },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   content: { padding: 20, gap: 14 },
   loginCard: { backgroundColor: "#fff", padding: 22, borderRadius: 22, gap: 12 },
@@ -399,6 +418,16 @@ const styles = StyleSheet.create({
   customer: { fontSize: 18, fontWeight: "700" },
   muted: { color: "#64748b" },
   link: { color: "#2563eb", fontWeight: "700", marginTop: 4 },
+  backButton: {
+    alignSelf: "flex-start",
+    minHeight: 48,
+    justifyContent: "center",
+    borderRadius: 14,
+    backgroundColor: "#14213d",
+    paddingHorizontal: 18,
+    paddingVertical: 12
+  },
+  backButtonText: { color: "#fff", fontSize: 16, fontWeight: "800" },
   note: { backgroundColor: "#fff7ed", padding: 10, borderRadius: 8 },
   item: { color: "#475569" },
   row: { flexDirection: "row", gap: 10 },

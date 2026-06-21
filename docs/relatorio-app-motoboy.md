@@ -80,6 +80,8 @@ Push remoto deve ser validado em aparelho ou build compatível com notificacoes.
 
 O arquivo `google-services.json` registra o aplicativo no Firebase. A chave privada de conta de servico e secreta e nao deve ser adicionada ao Git.
 
+Nao coloque `firebase-admin` nem `serviceAccountKey.json` dentro do aplicativo. Neste projeto, a chave privada deve ser enviada diretamente ao EAS; a API envia notificacoes pelo Expo Push Service.
+
 Depois de alterar `app.json`, notificacoes ou permissoes nativas, e obrigatorio gerar e instalar um novo APK. Atualizar apenas a API nao atualiza o aplicativo ja instalado.
 
 O app exibe o estado `Push e som ativados` quando o token Expo foi registrado. O painel administrativo informa ao criar a rota se o push foi enviado, falhou ou se o motoboy ainda nao registrou um aparelho.
