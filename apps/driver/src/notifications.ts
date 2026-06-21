@@ -8,6 +8,15 @@ export const ROUTE_OFFER_CATEGORY = "route-offer";
 export const ACCEPT_ROUTE_ACTION = "accept-route";
 export const DECLINE_ROUTE_ACTION = "decline-route";
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error(message)), timeoutMs);
+    })
+  ]);
+}
+
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: true,
@@ -17,8 +26,11 @@ Notifications.setNotificationHandler({
   })
 });
 
-export async function registerPushNotifications() {
+export async function registerPushNotifications(
+  onStatus?: (status: string) => void
+) {
   if (!Device.isDevice) return null;
+  onStatus?.("Preparando botoes da notificacao...");
   await Notifications.setNotificationCategoryAsync(ROUTE_OFFER_CATEGORY, [
     {
       identifier: ACCEPT_ROUTE_ACTION,
@@ -32,6 +44,7 @@ export async function registerPushNotifications() {
     }
   ]);
   if (Platform.OS === "android") {
+    onStatus?.("Configurando som de alerta...");
     await Notifications.setNotificationChannelAsync("delivery-routes", {
       name: "Novas rotas",
       importance: Notifications.AndroidImportance.MAX,
@@ -39,6 +52,7 @@ export async function registerPushNotifications() {
       sound: "default"
     });
   }
+  onStatus?.("Verificando permissao de notificacao...");
   const current = await Notifications.getPermissionsAsync();
   const permission = current.status === "granted"
     ? current
@@ -53,10 +67,22 @@ export async function registerPushNotifications() {
   if (!Constants.expoConfig?.extra?.firebaseConfigured) {
     throw new Error("FIREBASE_NOT_CONFIGURED");
   }
-  const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-  await api("/driver/device-token", {
+  onStatus?.("Conectando o aparelho ao Firebase...");
+  await withTimeout(
+    Notifications.getDevicePushTokenAsync(),
+    15000,
+    "O Firebase nao respondeu. Verifique a internet e tente novamente."
+  );
+  onStatus?.("Gerando token de notificacao...");
+  const token = (await withTimeout(
+    Notifications.getExpoPushTokenAsync({ projectId }),
+    15000,
+    "A Expo nao conseguiu gerar o token. Tente novamente."
+  )).data;
+  onStatus?.("Registrando aparelho no servidor...");
+  await withTimeout(api("/driver/device-token", {
     method: "POST",
     body: JSON.stringify({ expoToken: token, platform: Platform.OS })
-  });
+  }), 15000, "O servidor nao conseguiu registrar este aparelho.");
   return token;
 }

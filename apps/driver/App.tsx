@@ -46,6 +46,8 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [login, setLogin] = useState({ phone: "", password: "", subdomain: "" });
   const [notificationStatus, setNotificationStatus] = useState("Configurando notificacoes...");
+  const [pushReady, setPushReady] = useState(false);
+  const [pushLoading, setPushLoading] = useState(false);
   const [syncStatus, setSyncStatus] = useState("Sincronizando corridas...");
   const [offeredRoute, setOfferedRoute] = useState<DeliveryRoute | null>(null);
   const [offerSeconds, setOfferSeconds] = useState(30);
@@ -54,6 +56,7 @@ export default function App() {
   const routesInitializedRef = useRef(false);
   const respondingOfferRef = useRef(false);
   const syncingRef = useRef(false);
+  const pushLoadingRef = useRef(false);
 
   const loadSession = useCallback(async () => {
     const stored = await AsyncStorage.getItem("driver:token");
@@ -124,6 +127,26 @@ export default function App() {
     syncingRef.current = false;
   }, []);
 
+  const setupPush = useCallback(async () => {
+    if (pushLoadingRef.current) return;
+    pushLoadingRef.current = true;
+    setPushLoading(true);
+    try {
+      const pushToken = await registerPushNotifications(setNotificationStatus);
+      setPushReady(Boolean(pushToken));
+      setNotificationStatus(
+        pushToken ? "Push e som ativados neste aparelho" : "Permissao de notificacao nao concedida"
+      );
+    } catch (error) {
+      setPushReady(false);
+      const message = error instanceof Error ? error.message : "Falha ao configurar notificacoes";
+      setNotificationStatus(`Push com erro: ${message}`);
+    } finally {
+      pushLoadingRef.current = false;
+      setPushLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void loadSession();
   }, [loadSession]);
@@ -131,25 +154,14 @@ export default function App() {
   useEffect(() => {
     if (!token) return;
     void loadData().catch((error) => Alert.alert("Erro", error.message));
-    void registerPushNotifications()
-      .then((pushToken) => setNotificationStatus(
-        pushToken ? "Push e som ativados" : "Push indisponivel neste aparelho"
-      ))
-      .catch((error) => {
-        const firebaseMissing =
-          error instanceof Error
-          && (
-            error.message === "FIREBASE_NOT_CONFIGURED"
-            || error.message.includes("Firebase Messaging")
-            || error.message.includes("FirebaseApp")
-          );
-        setNotificationStatus(
-          firebaseMissing
-            ? "Alerta automatico local ativo. Push remoto aguardando configuracao Firebase."
-            : "Alerta automatico local ativo. Push remoto indisponivel."
-        );
-      });
-  }, [token, loadData]);
+    void setupPush();
+  }, [token, loadData, setupPush]);
+
+  useEffect(() => {
+    if (!token || pushReady || pushLoading) return;
+    const retryTimer = setInterval(() => void setupPush(), 30000);
+    return () => clearInterval(retryTimer);
+  }, [token, pushReady, pushLoading, setupPush]);
 
   useEffect(() => {
     if (!token) return;
@@ -526,6 +538,17 @@ export default function App() {
           <Switch value={Boolean(driver?.available)} onValueChange={(value) => void setAvailability(value)} />
         </View>
         <Text style={styles.notificationStatus}>{notificationStatus}</Text>
+        {!pushReady && (
+          <Pressable
+            style={[styles.pushRetryButton, pushLoading && styles.disabledButton]}
+            disabled={pushLoading}
+            onPress={() => void setupPush()}
+          >
+            <Text style={styles.pushRetryText}>
+              {pushLoading ? "Ativando..." : "Ativar notificacoes"}
+            </Text>
+          </Pressable>
+        )}
         <Text style={styles.syncStatus}>{syncStatus}</Text>
         <View style={styles.tabs}>
           <Pressable style={screen === "routes" ? styles.activeTab : styles.tab} onPress={() => setScreen("routes")}><Text>Rotas</Text></Pressable>
@@ -599,6 +622,15 @@ const styles = StyleSheet.create({
   empty: { textAlign: "center", padding: 30, color: "#64748b" },
   notificationStatus: { color: "#475569", fontSize: 12, textAlign: "center" }
   ,
+  pushRetryButton: {
+    alignSelf: "center",
+    marginTop: 8,
+    backgroundColor: "#2563eb",
+    borderRadius: 12,
+    paddingHorizontal: 18,
+    paddingVertical: 11
+  },
+  pushRetryText: { color: "#fff", fontWeight: "800" },
   syncStatus: { color: "#64748b", fontSize: 11, textAlign: "center", marginTop: 4 },
   offerBackdrop: {
     flex: 1,
