@@ -58,6 +58,19 @@ import {
 } from "../controllers/staff-controller.js";
 import { deleteCustomer, listCustomers, lookupCustomer, updateCustomer } from "../controllers/customers-controller.js";
 import { getDashboard } from "../controllers/dashboard-controller.js";
+import {
+  acceptDriverRoute,
+  completeDriverRoute,
+  declineDriverRoute,
+  driverLogin,
+  getDriverProfile,
+  getDriverRoute,
+  listDriverRoutes,
+  markDriverOrderDelivered,
+  registerDriverDevice,
+  updateDriverAvailability,
+  updateDriverLocation
+} from "../controllers/driver-app-controller.js";
 import { quoteDelivery } from "../controllers/delivery-controller.js";
 import {
   createDeliveryRoute,
@@ -102,6 +115,7 @@ import { listPrinters } from "../controllers/printer-controller.js";
 import { getSettings, updateSettings } from "../controllers/settings-controller.js";
 import { auth, requireAnyPermission, requirePermission, requireSuperAdmin } from "../middlewares/auth.js";
 import { customerAuth } from "../middlewares/customer-auth.js";
+import { driverAuth } from "../middlewares/driver-auth.js";
 import { imageUpload } from "../utils/upload.js";
 import { asyncHandler } from "../utils/async-handler.js";
 import { resolveCompany } from "../utils/tenant.js";
@@ -126,6 +140,17 @@ const route = {
 
 route.post("/auth/login", login);
 route.get("/company", getPublicCompany);
+route.post("/driver/auth/login", driverLogin);
+route.get("/driver/me", driverAuth, getDriverProfile);
+route.patch("/driver/availability", driverAuth, updateDriverAvailability);
+route.patch("/driver/location", driverAuth, updateDriverLocation);
+route.post("/driver/device-token", driverAuth, registerDriverDevice);
+route.get("/driver/routes", driverAuth, listDriverRoutes);
+route.get("/driver/routes/:id", driverAuth, getDriverRoute);
+route.post("/driver/routes/:id/accept", driverAuth, acceptDriverRoute);
+route.post("/driver/routes/:id/decline", driverAuth, declineDriverRoute);
+route.post("/driver/routes/:id/complete", driverAuth, completeDriverRoute);
+route.patch("/driver/routes/:routeId/orders/:orderId/delivered", driverAuth, markDriverOrderDelivered);
 route.post("/auth/password/request", requestStaffPasswordReset);
 route.post("/auth/password/reset", resetStaffPassword);
 // Customer auth routes

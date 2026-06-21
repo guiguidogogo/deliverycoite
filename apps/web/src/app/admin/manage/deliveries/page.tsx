@@ -13,6 +13,7 @@ type Driver = {
   vehicle: string;
   licensePlate?: string | null;
   active: boolean;
+  available: boolean;
 };
 
 type ReadyOrder = {
@@ -51,7 +52,7 @@ type DeliveryRoute = {
 };
 
 const statusLabel: Record<RouteStatus, string> = {
-  CREATED: "Criada",
+  CREATED: "Aguardando aceite",
   IN_PROGRESS: "Em andamento",
   COMPLETED: "Concluida",
   CANCELED: "Cancelada"
@@ -62,7 +63,8 @@ const blankDriver = {
   phone: "",
   whatsapp: "",
   vehicle: "Moto",
-  licensePlate: ""
+  licensePlate: "",
+  password: ""
 };
 
 function orderCode(number: number) {
@@ -152,7 +154,7 @@ export default function DeliveriesPage() {
       });
       setSelected([]);
       setShowRouteModal(false);
-      toast.success("Rota criada e pedidos enviados para entrega");
+      toast.success("Rota enviada ao motoboy e aguardando aceite");
       await load();
       window.open(route.googleMapsUrl, "_blank", "noopener,noreferrer");
     } catch (error) {
@@ -185,6 +187,24 @@ export default function DeliveriesPage() {
       await load();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao atualizar motoboy");
+    }
+  }
+
+  async function resetDriverPassword(driver: Driver) {
+    const password = window.prompt(`Nova senha para ${driver.name} (minimo 6 caracteres):`);
+    if (!password) return;
+    if (password.length < 6) {
+      toast.error("A senha precisa ter pelo menos 6 caracteres");
+      return;
+    }
+    try {
+      await adminApi(`/admin/deliveries/drivers/${driver.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ password })
+      });
+      toast.success("Senha do motoboy atualizada");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao atualizar senha");
     }
   }
 
@@ -263,13 +283,21 @@ export default function DeliveriesPage() {
                 <strong>{driver.name}</strong>
                 <p className="text-sm">{driver.vehicle}{driver.licensePlate ? ` - ${driver.licensePlate}` : ""}</p>
                 <p className="text-xs opacity-60">WhatsApp: {driver.whatsapp}</p>
+                <p className={`text-xs font-semibold ${driver.available ? "text-emerald-600" : "text-amber-600"}`}>
+                  {driver.available ? "Disponivel" : "Indisponivel"}
+                </p>
               </div>
-              <button
-                className={`rounded-xl px-3 py-2 text-xs text-white ${driver.active ? "bg-red-600" : "bg-emerald-600"}`}
-                onClick={() => void toggleDriver(driver)}
-              >
-                {driver.active ? "Desativar" : "Ativar"}
-              </button>
+              <div className="flex flex-col gap-2">
+                <button className="rounded-xl bg-ink px-3 py-2 text-xs text-white" onClick={() => void resetDriverPassword(driver)}>
+                  Definir senha
+                </button>
+                <button
+                  className={`rounded-xl px-3 py-2 text-xs text-white ${driver.active ? "bg-red-600" : "bg-emerald-600"}`}
+                  onClick={() => void toggleDriver(driver)}
+                >
+                  {driver.active ? "Desativar" : "Ativar"}
+                </button>
+              </div>
             </article>
           ))}
         </div>
@@ -372,13 +400,16 @@ export default function DeliveriesPage() {
                 ["phone", "Telefone"],
                 ["whatsapp", "WhatsApp"],
                 ["vehicle", "Veiculo"],
-                ["licensePlate", "Placa (opcional)"]
+                ["licensePlate", "Placa (opcional)"],
+                ["password", "Senha do app"]
               ] as const).map(([field, label]) => (
                 <label key={field} className="grid gap-1 text-sm">
                   <span className="font-semibold">{label}</span>
                   <input
                     className="rounded-xl border border-black/15 bg-transparent px-3 py-2 dark:border-white/20"
                     required={field !== "licensePlate"}
+                    type={field === "password" ? "password" : "text"}
+                    minLength={field === "password" ? 6 : undefined}
                     value={driverForm[field]}
                     onChange={(event) => setDriverForm((current) => ({ ...current, [field]: event.target.value }))}
                   />

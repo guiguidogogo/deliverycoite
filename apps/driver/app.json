@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "HubRegional Motoboy",
+    "slug": "hubregional-motoboy",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "hubregional-driver",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "br.com.hubregional.motoboy",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Sua localizacao ajuda a empresa a acompanhar a rota de entrega."
+      }
+    },
+    "android": {
+      "package": "br.com.hubregional.motoboy",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "POST_NOTIFICATIONS",
+        "VIBRATE"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "sounds": []
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Permitir que o HubRegional Motoboy use sua localizacao durante as entregas."
+        }
+      ]
+    ]
+  }
+}

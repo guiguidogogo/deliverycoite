@@ -117,6 +117,7 @@ model Company {
   drivers                Driver[]
   deliveryRoutes         DeliveryRoute[]
   deliveryRouteOrders    DeliveryRouteOrder[]
+  driverDeviceTokens     DriverDeviceToken[]
 }
 
 model StaffRole {
@@ -366,18 +367,24 @@ model Order {
 }
 
 model Driver {
-  id             String          @id @default(cuid())
-  companyId      String
-  company        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  name           String
-  phone          String
-  whatsapp       String
-  vehicle        String
-  licensePlate   String?
-  active         Boolean         @default(true)
-  deliveryRoutes DeliveryRoute[]
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  id                String              @id @default(cuid())
+  companyId         String
+  company           Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name              String
+  phone             String
+  whatsapp          String
+  vehicle           String
+  licensePlate      String?
+  passwordHash      String?
+  active            Boolean             @default(true)
+  available         Boolean             @default(true)
+  lastLatitude      Float?
+  lastLongitude     Float?
+  lastLocationAt    DateTime?
+  deliveryRoutes    DeliveryRoute[]
+  deviceTokens      DriverDeviceToken[]
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
 
   @@unique([companyId, phone])
   @@index([companyId, active])
@@ -395,12 +402,29 @@ model DeliveryRoute {
   startedAt       DateTime?
   completedAt     DateTime?
   canceledAt      DateTime?
+  acceptedAt      DateTime?
+  declinedAt      DateTime?
   orders          DeliveryRouteOrder[]
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
 
   @@index([companyId, status])
   @@index([driverId, createdAt])
+}
+
+model DriverDeviceToken {
+  id         String   @id @default(cuid())
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  driverId   String
+  driver     Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  expoToken  String   @unique
+  platform   String?
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([companyId, driverId])
 }
 
 model DeliveryRouteOrder {

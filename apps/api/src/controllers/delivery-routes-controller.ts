@@ -1,6 +1,8 @@
 import { DeliveryRouteStatus } from "@prisma/client";
+import bcrypt from "bcryptjs";
 import type { Request, Response } from "express";
 import { z } from "zod";
+import { sendDriverPush } from "../services/expo-push.js";
 import { prisma } from "../utils/prisma.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
 import { optimizeRoute } from "../utils/route-optimizer.js";
@@ -16,8 +18,28 @@ const driverSchema = z.object({
   whatsapp: z.string().trim().min(8),
   vehicle: z.string().trim().min(2),
   licensePlate: optionalText,
+  password: z.string().min(6).optional(),
   active: z.boolean().default(true)
 });
+const createDriverSchema = driverSchema.extend({
+  password: z.string().min(6, "A senha deve ter pelo menos 6 caracteres")
+});
+const driverSelect = {
+  id: true,
+  companyId: true,
+  name: true,
+  phone: true,
+  whatsapp: true,
+  vehicle: true,
+  licensePlate: true,
+  active: true,
+  available: true,
+  lastLatitude: true,
+  lastLongitude: true,
+  lastLocationAt: true,
+  createdAt: true,
+  updatedAt: true
+};
 
 function digits(value: string) {
   return value.replace(/\D/g, "");
@@ -58,7 +80,7 @@ function googleMapsUrl(
 }
 
 const routeInclude = {
-  driver: true,
+  driver: { select: driverSelect },
   orders: {
     orderBy: { sequence: "asc" as const },
     include: { order: { include: { customer: true } } }
@@ -68,20 +90,25 @@ const routeInclude = {
 export async function listDrivers(req: Request, res: Response) {
   return res.json(await prisma.driver.findMany({
     where: companyWhere(req),
+    select: driverSelect,
     orderBy: [{ active: "desc" }, { name: "asc" }]
   }));
 }
 
 export async function createDriver(req: Request, res: Response) {
-  const body = driverSchema.parse(req.body);
+  const body = createDriverSchema.parse(req.body);
   const driver = await prisma.driver.create({
     data: {
-      ...body,
       companyId: getCompanyId(req),
+      name: body.name,
       phone: digits(body.phone),
       whatsapp: digits(body.whatsapp),
-      licensePlate: body.licensePlate?.toUpperCase() ?? null
-    }
+      vehicle: body.vehicle,
+      licensePlate: body.licensePlate?.toUpperCase() ?? null,
+      passwordHash: await bcrypt.hash(body.password, 10),
+      active: body.active
+    },
+    select: driverSelect
   });
   return res.status(201).json(driver);
 }
@@ -90,14 +117,17 @@ export async function updateDriver(req: Request, res: Response) {
   const current = await prisma.driver.findFirst({ where: { id: req.params.id, ...companyWhere(req) } });
   if (!current) return res.status(404).json({ message: "Motoboy nao encontrado" });
   const body = driverSchema.partial().parse(req.body);
+  const { password, ...driverData } = body;
   return res.json(await prisma.driver.update({
     where: { id: current.id },
     data: {
-      ...body,
+      ...driverData,
       ...(body.phone ? { phone: digits(body.phone) } : {}),
       ...(body.whatsapp ? { whatsapp: digits(body.whatsapp) } : {}),
-      ...(body.licensePlate !== undefined ? { licensePlate: body.licensePlate?.toUpperCase() ?? null } : {})
-    }
+      ...(body.licensePlate !== undefined ? { licensePlate: body.licensePlate?.toUpperCase() ?? null } : {}),
+      ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {})
+    },
+    select: driverSelect
   }));
 }
 
@@ -144,7 +174,7 @@ export async function createDeliveryRoute(req: Request, res: Response) {
   const companyId = getCompanyId(req);
 
   const [driver, orders, settings, company] = await Promise.all([
-    prisma.driver.findFirst({ where: { id: body.driverId, companyId, active: true } }),
+    prisma.driver.findFirst({ where: { id: body.driverId, companyId, active: true, available: true } }),
     prisma.order.findMany({
       where: { id: { in: orderIds }, companyId },
       include: {
@@ -222,19 +252,23 @@ export async function createDeliveryRoute(req: Request, res: Response) {
       },
       include: routeInclude
     });
-    await transaction.order.updateMany({
-      where: { id: { in: orderIds }, companyId },
-      data: {
-        status: "OUT_FOR_DELIVERY",
-        sentToDelivery: true,
-        deliverySentAt: new Date()
-      }
-    });
     return created;
   });
 
+  const push = await sendDriverPush({
+    driverId: driver.id,
+    companyId,
+    title: "Nova rota de entrega",
+    body: `Voce recebeu uma nova rota com ${orderedStops.length} pedido(s).`,
+    data: { routeId: route.id, screen: "route" }
+  }).catch((error) => ({
+    sent: 0,
+    errors: [error instanceof Error ? error.message : "Falha ao enviar notificacao push"]
+  }));
+
   return res.status(201).json({
     ...route,
+    push,
     whatsappUrl: `https://wa.me/${driver.whatsapp}?text=${encodeURIComponent(message)}`
   });
 }
@@ -261,6 +295,12 @@ export async function updateDeliveryRouteStatus(req: Request, res: Response) {
 
   const now = new Date();
   const updated = await prisma.$transaction(async (transaction) => {
+    if (body.status === "IN_PROGRESS") {
+      await transaction.order.updateMany({
+        where: { id: { in: route.orders.map((item) => item.orderId) }, companyId: getCompanyId(req) },
+        data: { status: "OUT_FOR_DELIVERY", sentToDelivery: true, deliverySentAt: now }
+      });
+    }
     if (body.status === "COMPLETED") {
       await transaction.order.updateMany({
         where: { id: { in: route.orders.map((item) => item.orderId) }, companyId: getCompanyId(req) },
@@ -281,7 +321,7 @@ export async function updateDeliveryRouteStatus(req: Request, res: Response) {
       where: { id: route.id },
       data: {
         status: body.status,
-        ...(body.status === "IN_PROGRESS" ? { startedAt: now } : {}),
+        ...(body.status === "IN_PROGRESS" ? { startedAt: now, acceptedAt: now } : {}),
         ...(body.status === "COMPLETED" ? { completedAt: now } : {}),
         ...(body.status === "CANCELED" ? { canceledAt: now } : {})
       },

@@ -13,6 +13,8 @@
     "render:build": "npm run render:build -w @delivery/api && npm run build -w @delivery/web",
     "render:start": "npm run render:prepare -w @delivery/api && node server.mjs",
     "render:migrate": "npm run render:migrate -w @delivery/api",
+    "driver:start": "npm run start -w @delivery/driver",
+    "driver:typecheck": "npm run typecheck -w @delivery/driver",
     "lint": "npm run lint -w @delivery/api && npm run lint -w @delivery/web"
   },
   "devDependencies": {
