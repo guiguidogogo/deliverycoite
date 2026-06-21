@@ -1,0 +1,4 @@
+ALTER TABLE "Company"
+ADD COLUMN "faviconUrl" TEXT,
+ADD COLUMN "primaryColor" TEXT NOT NULL DEFAULT '#e76f51',
+ADD COLUMN "secondaryColor" TEXT NOT NULL DEFAULT '#7ebc59';

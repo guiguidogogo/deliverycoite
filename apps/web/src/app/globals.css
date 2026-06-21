@@ -4,6 +4,8 @@
 
 :root {
   color-scheme: light;
+  --tenant-primary: #e76f51;
+  --tenant-secondary: #7ebc59;
 }
 
 .dark {

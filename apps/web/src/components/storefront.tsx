@@ -9,7 +9,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { api } from "../lib/api";
 import { money } from "../lib/format";
-import type { CartItem, Category, Product, SelectedComplement, Settings } from "../lib/types";
+import type { CartItem, Category, Product, PublicCompany, SelectedComplement, Settings } from "../lib/types";
 import { LocationPicker } from "./location-picker";
 import { findAddressCoordinates, findAddressFromCoordinates } from "../lib/geocoding";
 
@@ -92,6 +92,7 @@ export function Storefront() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [company, setCompany] = useState<PublicCompany | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [query, setQuery] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -135,6 +136,24 @@ export function Storefront() {
   const typedDistrict = watch("district") || "";
 
   useEffect(() => {
+    api<PublicCompany>("/company")
+      .then((tenantCompany) => {
+        setCompany(tenantCompany);
+        document.documentElement.style.setProperty("--tenant-primary", tenantCompany.primaryColor);
+        document.documentElement.style.setProperty("--tenant-secondary", tenantCompany.secondaryColor);
+        if (tenantCompany.faviconUrl) {
+          let favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+          if (!favicon) {
+            favicon = document.createElement("link");
+            favicon.rel = "icon";
+            document.head.appendChild(favicon);
+          }
+          favicon.href = tenantCompany.faviconUrl;
+        }
+        document.title = tenantCompany.tradeName;
+      })
+      .catch(() => setCompany(null));
+
     api<Category[]>("/categories")
       .then((c) => {
         setCategories(c.filter((item: any) => item.active !== false));
@@ -596,8 +615,24 @@ export function Storefront() {
       <section className="reveal card-surface overflow-hidden p-4">
         <div className="flex items-center justify-between">
           <div>
-            <p className="font-display text-3xl tracking-wide">{settings?.companyName ?? "Lanchonete Delivery"}</p>
-            <p className="text-sm opacity-70">Sabores artesanais e entrega rapida</p>
+            <div className="flex items-center gap-3">
+              {company?.logoUrl && (
+                <Image
+                  src={company.logoUrl}
+                  alt={`Logo ${company.tradeName}`}
+                  width={56}
+                  height={56}
+                  className="h-14 w-14 rounded-xl object-contain"
+                  unoptimized
+                />
+              )}
+              <div>
+                <p className="font-display text-3xl tracking-wide">
+                  {company?.tradeName ?? settings?.companyName ?? "Lanchonete Delivery"}
+                </p>
+                <p className="text-sm opacity-70">Sabores artesanais e entrega rapida</p>
+              </div>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             {customer ? (
@@ -634,7 +669,7 @@ export function Storefront() {
         )}
 
         <div
-          className="relative mt-4 overflow-hidden rounded-2xl bg-gradient-to-r from-ember/90 to-lime/80 p-4 text-white"
+          className="relative mt-4 overflow-hidden rounded-2xl p-4 text-white"
           style={
             settings?.promoBannerImageUrl
               ? {
@@ -642,7 +677,9 @@ export function Storefront() {
                   backgroundPosition: "center",
                   backgroundSize: "cover"
                 }
-              : undefined
+              : {
+                  backgroundImage: "linear-gradient(90deg, var(--tenant-primary), var(--tenant-secondary))"
+                }
           }
         >
           <p className="font-display text-2xl">{settings?.promoBannerTitle || "PROMO DA NOITE"}</p>

@@ -74,6 +74,9 @@ model Company {
   email                  String?
   subdomain              String                @unique
   logoUrl                String?
+  faviconUrl             String?
+  primaryColor           String                @default("#e76f51")
+  secondaryColor         String                @default("#7ebc59")
   active                 Boolean               @default(true)
   customDomain           String?               @unique
   address                String?

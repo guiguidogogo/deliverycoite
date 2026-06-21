@@ -10,6 +10,15 @@ const optionalText = z.preprocess(
   z.string().trim().nullable().optional()
 );
 
+const optionalUrl = (message: string) => z.preprocess(
+  (value) => typeof value === "string" && !value.trim() ? null : value,
+  z.string().trim().url(message).nullable().optional()
+);
+
+const brandColor = z.string()
+  .trim()
+  .regex(/^#[0-9a-fA-F]{6}$/, "Use uma cor hexadecimal no formato #RRGGBB");
+
 const companySchema = z.object({
   companyName: z.string().trim().min(2, "Informe a razao social"),
   tradeName: z.string().trim().min(2, "Informe o nome fantasia"),
@@ -21,10 +30,10 @@ const companySchema = z.object({
     (value) => typeof value === "string" && !value.trim() ? null : value,
     z.string().trim().email("Email invalido").nullable().optional()
   ),
-  logoUrl: z.preprocess(
-    (value) => typeof value === "string" && !value.trim() ? null : value,
-    z.string().trim().url("URL da logo invalida").nullable().optional()
-  ),
+  logoUrl: optionalUrl("URL da logo invalida"),
+  faviconUrl: optionalUrl("URL do favicon invalida"),
+  primaryColor: brandColor.default("#e76f51"),
+  secondaryColor: brandColor.default("#7ebc59"),
   subdomain: z.string().trim().min(2).max(63),
   plan: z.string().trim().min(2).max(40).default("basico"),
   active: z.boolean().default(true)
@@ -226,6 +235,9 @@ export async function createCompany(req: Request, res: Response) {
           instagram: data.instagram,
           email: data.email,
           logoUrl: data.logoUrl,
+          faviconUrl: data.faviconUrl,
+          primaryColor: data.primaryColor,
+          secondaryColor: data.secondaryColor,
           subdomain: data.subdomain,
           plan: data.plan,
           active: data.active
@@ -290,6 +302,9 @@ export async function updateCompany(req: Request, res: Response) {
     instagram: body.instagram === undefined ? existing.instagram : body.instagram,
     email: body.email === undefined ? existing.email : body.email,
     logoUrl: body.logoUrl === undefined ? existing.logoUrl : body.logoUrl,
+    faviconUrl: body.faviconUrl === undefined ? existing.faviconUrl : body.faviconUrl,
+    primaryColor: body.primaryColor ?? existing.primaryColor,
+    secondaryColor: body.secondaryColor ?? existing.secondaryColor,
     subdomain: body.subdomain ?? existing.subdomain,
     plan: body.plan ?? existing.plan,
     active: body.active ?? existing.active

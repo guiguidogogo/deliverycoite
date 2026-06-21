@@ -13,6 +13,9 @@ export type CompanyFormValue = {
   instagram: string;
   email: string;
   logoUrl: string;
+  faviconUrl: string;
+  primaryColor: string;
+  secondaryColor: string;
   subdomain: string;
   plan: string;
   active: boolean;
@@ -36,6 +39,9 @@ const emptyCompany: CompanyFormValue = {
   instagram: "",
   email: "",
   logoUrl: "",
+  faviconUrl: "",
+  primaryColor: "#e76f51",
+  secondaryColor: "#7ebc59",
   subdomain: "",
   plan: "basico",
   active: true
@@ -122,6 +128,9 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
           {input("whatsapp", "WhatsApp")}
           {input("instagram", "Instagram", { placeholder: "@empresa" })}
           {input("logoUrl", "URL da logo", { type: "url" })}
+          {input("faviconUrl", "URL do favicon", { type: "url" })}
+          {input("primaryColor", "Cor primaria", { type: "color" })}
+          {input("secondaryColor", "Cor secundaria", { type: "color" })}
           <label className="grid gap-1 text-sm">
             <span className="font-semibold">Plano</span>
             <select

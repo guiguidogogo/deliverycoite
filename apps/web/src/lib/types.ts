@@ -59,6 +59,20 @@ export type Settings = {
   darkModeEnabled: boolean;
 };
 
+export type PublicCompany = {
+  id: string;
+  tradeName: string;
+  logoUrl?: string | null;
+  faviconUrl?: string | null;
+  primaryColor: string;
+  secondaryColor: string;
+  phone?: string | null;
+  whatsapp?: string | null;
+  instagram?: string | null;
+  subdomain: string;
+  active: boolean;
+};
+
 export type CartItem = {
   id: string;
   product: Product;
