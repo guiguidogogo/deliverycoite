@@ -57,7 +57,12 @@ export async function sendDriverPush(message: PushMessage) {
     return { sent: 0, errors: [`Expo Push respondeu HTTP ${response.status}`] };
   }
   const payload = await response.json() as {
-    data?: Array<{ status: "ok" | "error"; message?: string; details?: { error?: string } }>;
+    data?: Array<{
+      status: "ok" | "error";
+      id?: string;
+      message?: string;
+      details?: { error?: string };
+    }>;
   };
   const results = payload.data ?? [];
   const invalidTokens = devices.filter((_, index) =>
@@ -69,6 +74,47 @@ export async function sendDriverPush(message: PushMessage) {
       where: { id: { in: invalidTokens.map((device) => device.id) } },
       data: { active: false }
     });
+  }
+  const tickets = devices.flatMap((device, index) => {
+    const ticket = results[index];
+    return ticket?.status === "ok" && ticket.id
+      ? [{ deviceId: device.id, ticketId: ticket.id }]
+      : [];
+  });
+  if (tickets.length) {
+    const receiptTimer = setTimeout(async () => {
+      const receiptResponse = await fetch(
+        "https://exp.host/--/api/v2/push/getReceipts",
+        {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ ids: tickets.map((ticket) => ticket.ticketId) })
+        }
+      ).catch(() => null);
+      if (!receiptResponse?.ok) return;
+      const receipts = await receiptResponse.json() as {
+        data?: Record<string, {
+          status: "ok" | "error";
+          details?: { error?: string };
+        }>;
+      };
+      const invalidDeviceIds = tickets
+        .filter(({ ticketId }) =>
+          receipts.data?.[ticketId]?.status === "error"
+          && receipts.data[ticketId]?.details?.error === "DeviceNotRegistered"
+        )
+        .map(({ deviceId }) => deviceId);
+      if (invalidDeviceIds.length) {
+        await prisma.driverDeviceToken.updateMany({
+          where: { id: { in: invalidDeviceIds } },
+          data: { active: false }
+        });
+      }
+    }, 10000);
+    receiptTimer.unref();
   }
   return {
     sent: results.filter((item) => item.status === "ok").length,

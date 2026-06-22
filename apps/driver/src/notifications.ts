@@ -95,6 +95,12 @@ export async function registerPushNotifications(
   if (!Constants.expoConfig?.extra?.firebaseConfigured) {
     throw new Error("FIREBASE_NOT_CONFIGURED");
   }
+  onStatus?.("Renovando registro do Firebase...");
+  await withTimeout(
+    Notifications.getDevicePushTokenAsync(),
+    15000,
+    "O Firebase nao conseguiu renovar o token deste aparelho."
+  );
   onStatus?.("Gerando token de notificacao...");
   const token = (await withTimeout(
     Notifications.getExpoPushTokenAsync({ projectId }),
