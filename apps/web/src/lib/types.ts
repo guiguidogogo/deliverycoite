@@ -71,6 +71,12 @@ export type PublicCompany = {
   instagram?: string | null;
   subdomain: string;
   active: boolean;
+  category: string;
+  city: string;
+  isOpen: boolean;
+  deliveryFee: number;
+  deliveryTimeMin: number;
+  rating: number;
 };
 
 export type CartItem = {

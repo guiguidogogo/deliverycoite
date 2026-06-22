@@ -19,6 +19,14 @@ export type CompanyFormValue = {
   subdomain: string;
   plan: string;
   active: boolean;
+  marketplaceVisible: boolean;
+  featured: boolean;
+  category: string;
+  city: string;
+  isOpen: boolean;
+  deliveryFee: number;
+  deliveryTimeMin: number;
+  rating: number;
 };
 
 type Props = {
@@ -44,7 +52,15 @@ const emptyCompany: CompanyFormValue = {
   secondaryColor: "#7ebc59",
   subdomain: "",
   plan: "basico",
-  active: true
+  active: true,
+  marketplaceVisible: true,
+  featured: false,
+  category: "Lanches",
+  city: "Conceição do Coité",
+  isOpen: true,
+  deliveryFee: 5,
+  deliveryTimeMin: 35,
+  rating: 5
 };
 const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? "hubregional.com.br";
 
@@ -151,6 +167,55 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
             />
             Empresa ativa
           </label>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-black/10 bg-white/85 p-5 dark:border-white/10 dark:bg-slate-900/70">
+        <h2 className="text-xl font-bold">Marketplace regional</h2>
+        <p className="text-sm opacity-70">Informações exibidas no catálogo público do HubRegional.</p>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <label className="grid gap-1 text-sm">
+            <span className="font-semibold">Categoria</span>
+            <select
+              className="rounded-xl border border-black/15 bg-transparent px-3 py-2 dark:border-white/20"
+              value={form.category}
+              onChange={(event) => setForm((value) => ({ ...value, category: event.target.value }))}
+            >
+              {["Lanches", "Pizzaria", "Açaí", "Marmitas", "Sushi", "Conveniência", "Farmácia", "Mercado"].map((category) => (
+                <option key={category} value={category}>{category}</option>
+              ))}
+            </select>
+          </label>
+          {input("city", "Cidade", { required: true })}
+          {input("deliveryFee", "Taxa de entrega (R$)", { type: "number", required: true })}
+          {input("deliveryTimeMin", "Tempo médio (minutos)", { type: "number", required: true })}
+          {input("rating", "Avaliação inicial", { type: "number", required: true })}
+          <div className="grid gap-2">
+            <label className="flex items-center gap-2 rounded-xl border border-black/10 px-3 py-2 dark:border-white/20">
+              <input
+                type="checkbox"
+                checked={form.marketplaceVisible}
+                onChange={(event) => setForm((value) => ({ ...value, marketplaceVisible: event.target.checked }))}
+              />
+              Exibir no marketplace
+            </label>
+            <label className="flex items-center gap-2 rounded-xl border border-black/10 px-3 py-2 dark:border-white/20">
+              <input
+                type="checkbox"
+                checked={form.featured}
+                onChange={(event) => setForm((value) => ({ ...value, featured: event.target.checked }))}
+              />
+              Empresa em destaque
+            </label>
+            <label className="flex items-center gap-2 rounded-xl border border-black/10 px-3 py-2 dark:border-white/20">
+              <input
+                type="checkbox"
+                checked={form.isOpen}
+                onChange={(event) => setForm((value) => ({ ...value, isOpen: event.target.checked }))}
+              />
+              Loja aberta no marketplace
+            </label>
+          </div>
         </div>
       </section>
 

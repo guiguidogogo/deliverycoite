@@ -85,6 +85,14 @@ model Company {
   primaryColor           String                @default("#e76f51")
   secondaryColor         String                @default("#7ebc59")
   active                 Boolean               @default(true)
+  marketplaceVisible     Boolean               @default(true)
+  featured               Boolean               @default(false)
+  category               String                @default("Lanches")
+  city                   String                @default("Conceição do Coité")
+  isOpen                 Boolean               @default(true)
+  deliveryFee            Decimal               @default(5) @db.Decimal(10, 2)
+  deliveryTimeMin        Int                   @default(35)
+  rating                 Decimal               @default(5) @db.Decimal(2, 1)
   customDomain           String?               @unique
   address                String?
   plan                   String                @default("basico")

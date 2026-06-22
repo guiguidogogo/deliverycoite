@@ -113,6 +113,7 @@ import {
 import { exportOrdersExcel, exportOrdersPdf } from "../controllers/reports-controller.js";
 import { listPrinters } from "../controllers/printer-controller.js";
 import { getSettings, updateSettings } from "../controllers/settings-controller.js";
+import { listMarketplaceCompanies, marketplaceSummary } from "../controllers/marketplace-controller.js";
 import { auth, requireAnyPermission, requirePermission, requireSuperAdmin } from "../middlewares/auth.js";
 import { customerAuth } from "../middlewares/customer-auth.js";
 import { driverAuth } from "../middlewares/driver-auth.js";
@@ -139,6 +140,8 @@ const route = {
 };
 
 route.post("/auth/login", login);
+route.get("/marketplace/companies", listMarketplaceCompanies);
+route.get("/marketplace/summary", marketplaceSummary);
 route.get("/company", getPublicCompany);
 route.post("/driver/auth/login", driverLogin);
 route.get("/driver/me", driverAuth, getDriverProfile);

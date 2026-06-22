@@ -36,7 +36,15 @@ const companySchema = z.object({
   secondaryColor: brandColor.default("#7ebc59"),
   subdomain: z.string().trim().min(2).max(63),
   plan: z.string().trim().min(2).max(40).default("basico"),
-  active: z.boolean().default(true)
+  active: z.boolean().default(true),
+  marketplaceVisible: z.boolean().default(true),
+  featured: z.boolean().default(false),
+  category: z.string().trim().min(2).max(50).default("Lanches"),
+  city: z.string().trim().min(2).max(80).default("Conceição do Coité"),
+  isOpen: z.boolean().default(true),
+  deliveryFee: z.coerce.number().min(0).max(999).default(5),
+  deliveryTimeMin: z.coerce.number().int().min(5).max(240).default(35),
+  rating: z.coerce.number().min(0).max(5).default(5)
 });
 
 const createCompanySchema = companySchema.extend({
@@ -240,7 +248,15 @@ export async function createCompany(req: Request, res: Response) {
           secondaryColor: data.secondaryColor,
           subdomain: data.subdomain,
           plan: data.plan,
-          active: data.active
+          active: data.active,
+          marketplaceVisible: data.marketplaceVisible,
+          featured: data.featured,
+          category: data.category,
+          city: data.city,
+          isOpen: data.isOpen,
+          deliveryFee: new Prisma.Decimal(data.deliveryFee),
+          deliveryTimeMin: data.deliveryTimeMin,
+          rating: new Prisma.Decimal(data.rating)
         }
       });
 
@@ -250,6 +266,7 @@ export async function createCompany(req: Request, res: Response) {
           companyName: created.tradeName,
           logoUrl: created.logoUrl,
           whatsappNumber: created.whatsapp ?? created.phone ?? "",
+          deliveryFee: created.deliveryFee,
           openTime: "00:00",
           closeTime: "23:59"
         }
@@ -307,19 +324,32 @@ export async function updateCompany(req: Request, res: Response) {
     secondaryColor: body.secondaryColor ?? existing.secondaryColor,
     subdomain: body.subdomain ?? existing.subdomain,
     plan: body.plan ?? existing.plan,
-    active: body.active ?? existing.active
+    active: body.active ?? existing.active,
+    marketplaceVisible: body.marketplaceVisible ?? existing.marketplaceVisible,
+    featured: body.featured ?? existing.featured,
+    category: body.category ?? existing.category,
+    city: body.city ?? existing.city,
+    isOpen: body.isOpen ?? existing.isOpen,
+    deliveryFee: body.deliveryFee ?? Number(existing.deliveryFee),
+    deliveryTimeMin: body.deliveryTimeMin ?? existing.deliveryTimeMin,
+    rating: body.rating ?? Number(existing.rating)
   });
   try {
     const company = await prisma.$transaction(async (transaction) => {
       const updated = await transaction.company.update({
         where: { id: existing.id },
-        data: merged
+        data: {
+          ...merged,
+          deliveryFee: new Prisma.Decimal(merged.deliveryFee),
+          rating: new Prisma.Decimal(merged.rating)
+        }
       });
       await transaction.setting.upsert({
         where: { companyId: existing.id },
         update: {
           companyName: updated.tradeName,
           logoUrl: updated.logoUrl,
+          deliveryFee: updated.deliveryFee,
           ...(updated.whatsapp || updated.phone
             ? { whatsappNumber: updated.whatsapp ?? updated.phone ?? "" }
             : {})
@@ -329,6 +359,7 @@ export async function updateCompany(req: Request, res: Response) {
           companyName: updated.tradeName,
           logoUrl: updated.logoUrl,
           whatsappNumber: updated.whatsapp ?? updated.phone ?? "",
+          deliveryFee: updated.deliveryFee,
           openTime: "00:00",
           closeTime: "23:59"
         }

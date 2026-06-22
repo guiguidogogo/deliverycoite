@@ -16,7 +16,13 @@ export async function getPublicCompany(req: Request, res: Response) {
       whatsapp: true,
       instagram: true,
       subdomain: true,
-      active: true
+      active: true,
+      category: true,
+      city: true,
+      isOpen: true,
+      deliveryFee: true,
+      deliveryTimeMin: true,
+      rating: true
     }
   });
 
