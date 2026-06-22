@@ -7,10 +7,9 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/src/server.js",
-    "render:prepare": "prisma db push && npm run prisma:seed",
     "render:serve": "node dist/src/server.js",
     "render:build": "prisma generate && tsc -p tsconfig.json",
-    "render:migrate": "prisma db push",
+    "render:migrate": "node -e \"throw new Error('Migration automatica bloqueada. Use o plano de migracao aprovado para este ambiente.')\"",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "migrate:multiempresa:test": "tsx scripts/run-multiempresa-test-migration.ts",
@@ -30,12 +29,12 @@
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
-    "node-cron": "^3.0.3",
     "pdfkit": "^0.15.0",
     "ws": "^8.18.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
@@ -45,8 +44,10 @@
     "@types/node": "^22.5.4",
     "@types/ws": "^8.5.12",
     "eslint": "^9.9.1",
+    "globals": "^14.0.0",
     "prisma": "^5.17.0",
     "tsx": "^4.17.1",
-    "typescript": "^5.5.4"
+    "typescript": "^5.5.4",
+    "typescript-eslint": "^8.61.1"
   }
 }

@@ -2,7 +2,6 @@ import { existsSync, readFileSync } from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { app } from "./app.js";
-import { startBackupScheduler } from "./services/backup.js";
 import { attachRealtimeServer } from "./services/realtime.js";
 import { env } from "./utils/env.js";
 import { prisma } from "./utils/prisma.js";
@@ -33,7 +32,6 @@ async function bootstrap() {
   loadEnvFile();
   await prisma.$connect();
 
-  startBackupScheduler();
   const server = http.createServer(app);
   attachRealtimeServer(server);
 

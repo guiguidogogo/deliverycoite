@@ -14,6 +14,12 @@ function slugify(value: string) {
 }
 
 async function main() {
+  const environment = (process.env.APP_ENV ?? process.env.NODE_ENV ?? "").toLowerCase();
+  if (environment === "production" && process.env.ALLOW_PRODUCTION_SEED !== "true") {
+    throw new Error(
+      "Seed bloqueado em producao. Defina ALLOW_PRODUCTION_SEED=true somente durante uma operacao aprovada."
+    );
+  }
   const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@delivery.com";
   const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "123456";
   const masterEmail = process.env.SEED_MASTER_EMAIL?.trim().toLowerCase();

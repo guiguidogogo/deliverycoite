@@ -1,5 +1,3 @@
-import withPWA from "next-pwa";
-
 const apiServerUrl = process.env.API_SERVER_HOST
   ? `http://${process.env.API_SERVER_HOST}`
   : (process.env.API_SERVER_URL ?? "http://localhost:3333").replace(/\/$/, "");
@@ -7,9 +5,7 @@ const apiServerUrl = process.env.API_SERVER_HOST
 const nextConfig = {
   reactStrictMode: true,
   distDir: process.env.NODE_ENV === "development" ? ".next-dev" : ".next",
-  experimental: {
-    typedRoutes: true
-  },
+  typedRoutes: true,
   async rewrites() {
     return [
       {
@@ -24,7 +20,4 @@ const nextConfig = {
   }
 };
 
-export default withPWA({
-  dest: "public",
-  disable: true
-})(nextConfig);
+export default nextConfig;

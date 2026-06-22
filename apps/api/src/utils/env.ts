@@ -11,6 +11,12 @@ export const env = {
   get corsOrigin() {
     return process.env.CORS_ORIGIN ?? "http://localhost:3000";
   },
+  get corsOrigins() {
+    return this.corsOrigin
+      .split(",")
+      .map((origin) => origin.trim().replace(/\/$/, ""))
+      .filter(Boolean);
+  },
   get rootDomain() {
     return (process.env.ROOT_DOMAIN ?? "hubregional.com.br")
       .trim()

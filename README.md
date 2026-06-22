@@ -74,7 +74,7 @@ Aplicacao web completa (mobile-first) para cardapio, pedido por WhatsApp e paine
 - Validacao de dados com Zod
 - Seguranca basica com Helmet + CORS + Rate limit
 - Logs com Morgan e tratamento global de erros
-- Backup automatico diario em JSON (03:00)
+- Plano de backup nativo/logico via Supabase para operacoes de producao
 - Gancho de impressao termica (adaptavel para ESC/POS)
 - Arquitetura em monorepo (apps/web + apps/api)
 
@@ -130,8 +130,9 @@ docker compose up --build
 ## Deploy no Render
 
 Use o `render.yaml` da raiz para criar um Web Service chamado
-`deliverycoite-node`. O mesmo servico executa o site Next.js e a API Express,
-e aplica as migracoes automaticamente ao iniciar.
+`deliverycoite-node`. O mesmo servico executa o site Next.js e a API Express.
+Por seguranca, o deploy nao executa migration nem seed automaticamente.
+Siga `docs/plano-promocao-producao.md` para alteracoes de banco.
 
 Configure no Render:
 

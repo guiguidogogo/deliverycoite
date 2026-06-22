@@ -4,12 +4,16 @@ services:
     runtime: node
     plan: free
     rootDir: .
-    buildCommand: npm ci && npm run render:build
+    buildCommand: npm ci --workspace @delivery/api --workspace @delivery/web --include-workspace-root && npm run render:build
     startCommand: npm run render:start
-    healthCheckPath: /
+    healthCheckPath: /health
     envVars:
       - key: NODE_VERSION
         value: 20
+      - key: APP_ENV
+        value: production
+      - key: ALLOW_PRODUCTION_SEED
+        value: "false"
       - key: NEXT_PUBLIC_API_URL
         value: /api
       - key: ROOT_DOMAIN
