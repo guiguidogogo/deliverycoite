@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export const API_URL =
-  process.env.EXPO_PUBLIC_API_URL ?? "https://deliverycoite-homolog.onrender.com/api";
+  process.env.EXPO_PUBLIC_API_URL ?? "https://hubregional.com.br/api";
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const token = await AsyncStorage.getItem("driver:token");
