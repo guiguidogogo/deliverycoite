@@ -23,6 +23,7 @@ Defina as URLs de sessao do Supabase somente na sessao do terminal:
 ```powershell
 $env:PRODUCTION_DATABASE_URL = "postgresql://..."
 $env:HOMOLOGATION_DATABASE_URL = "postgresql://..."
+$env:POSTGRES_BIN = "C:\caminho\para\pgsql\bin"
 .\scripts\backup-and-audit.ps1
 ```
 
