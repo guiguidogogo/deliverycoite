@@ -11,10 +11,6 @@ const nextConfig = {
       {
         source: "/api/:path*",
         destination: `${apiServerUrl}/api/:path*`
-      },
-      {
-        source: "/ws-admin",
-        destination: `${apiServerUrl}/ws-admin`
       }
     ];
   }
