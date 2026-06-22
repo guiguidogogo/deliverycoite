@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { env } from "../utils/env.js";
+import { chooseDriverCompany } from "../utils/driver-login.js";
 import {
   buildGoogleMapsAndroidNavigationIntent,
   buildGoogleMapsDirectionsUrl,
@@ -82,20 +83,22 @@ export async function driverLogin(req: Request, res: Response) {
       active: true,
       ...(req.tenant?.bound && req.companyId ? { companyId: req.companyId } : {}),
       company: {
-        active: true,
-        ...(body.subdomain ? { subdomain: body.subdomain.toLowerCase() } : {})
+        active: true
       }
     },
     include: { company: { select: { id: true, tradeName: true, subdomain: true } } },
     take: 10
   });
-  const matches = (await Promise.all(candidates.map(async (driver) => ({
+  const passwordMatches = (await Promise.all(candidates.map(async (driver) => ({
     driver,
     valid: Boolean(driver.passwordHash) && await bcrypt.compare(body.password, driver.passwordHash!)
   })))).filter((candidate) => candidate.valid);
 
-  if (!matches.length) return res.status(401).json({ message: "Credenciais invalidas" });
-  if (matches.length > 1 && !body.subdomain) {
+  if (!passwordMatches.length) return res.status(401).json({ message: "Telefone ou senha invalidos" });
+
+  const matches = chooseDriverCompany(passwordMatches, body.subdomain);
+
+  if (matches.length > 1) {
     return res.status(409).json({ message: "Informe o subdominio da empresa" });
   }
   const driver = matches[0].driver;
