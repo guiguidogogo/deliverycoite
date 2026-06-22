@@ -2,7 +2,10 @@ import { DeliveryRouteStatus } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { sendDriverPush } from "../services/expo-push.js";
+import {
+  repeatDriverRouteOfferPush,
+  sendDriverPush
+} from "../services/expo-push.js";
 import {
   buildGoogleMapsDirectionsUrl,
   buildGoogleMapsNavigationUrl,
@@ -248,18 +251,19 @@ export async function createDeliveryRoute(req: Request, res: Response) {
     return created;
   });
 
-  const push = await sendDriverPush({
+  const pushMessage = {
     driverId: driver.id,
     companyId,
     title: "Nova rota de entrega",
-    body: `Voce recebeu uma nova rota com ${orderedStops.length} pedido(s).`,
-    data: { routeId: route.id, screen: "route" }
-    ,
+    body: `Voce recebeu uma nova rota com ${orderedStops.length} pedido(s). Responda em 30 segundos.`,
+    data: { routeId: route.id, screen: "route" },
     categoryId: "route-offer"
-  }).catch((error) => ({
+  };
+  const push = await sendDriverPush(pushMessage).catch((error) => ({
     sent: 0,
     errors: [error instanceof Error ? error.message : "Falha ao enviar notificacao push"]
   }));
+  repeatDriverRouteOfferPush(route.id, pushMessage, route.offerExpiresAt!);
 
   return res.status(201).json({
     ...route,

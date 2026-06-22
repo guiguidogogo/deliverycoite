@@ -1,4 +1,5 @@
 import { prisma } from "../utils/prisma.js";
+import { ROUTE_OFFER_SECONDS } from "../utils/route-offers.js";
 
 type PushMessage = {
   driverId: string;
@@ -8,6 +9,19 @@ type PushMessage = {
   data?: Record<string, string>;
   categoryId?: string;
 };
+
+export const ROUTE_PUSH_INTERVAL_MS = 4000;
+
+export function routePushDelays(
+  durationMs = ROUTE_OFFER_SECONDS * 1000,
+  intervalMs = ROUTE_PUSH_INTERVAL_MS
+) {
+  const delays: number[] = [];
+  for (let delay = intervalMs; delay < durationMs; delay += intervalMs) {
+    delays.push(delay);
+  }
+  return delays;
+}
 
 export async function sendDriverPush(message: PushMessage) {
   const devices = await prisma.driverDeviceToken.findMany({
@@ -65,4 +79,58 @@ export async function sendDriverPush(message: PushMessage) {
         : errorMessage;
     })
   };
+}
+
+export function repeatDriverRouteOfferPush(
+  routeId: string,
+  message: PushMessage,
+  expiresAt: Date
+) {
+  const delays = routePushDelays(
+    Math.max(0, expiresAt.getTime() - Date.now())
+  );
+
+  for (const delay of delays) {
+    const timer = setTimeout(async () => {
+      const route = await prisma.deliveryRoute.findFirst({
+        where: {
+          id: routeId,
+          driverId: message.driverId,
+          companyId: message.companyId,
+          status: "CREATED",
+          offerExpiresAt: { gt: new Date() }
+        },
+        select: { offerExpiresAt: true }
+      }).catch(() => null);
+
+      if (!route) return;
+      const seconds = Math.max(
+        1,
+        Math.ceil((route.offerExpiresAt!.getTime() - Date.now()) / 1000)
+      );
+      await sendDriverPush({
+        ...message,
+        body: `${message.body} Responda em ${seconds} segundos.`
+      }).catch(() => undefined);
+    }, delay);
+    timer.unref();
+  }
+
+  const expirationTimer = setTimeout(async () => {
+    await prisma.deliveryRoute.updateMany({
+      where: {
+        id: routeId,
+        driverId: message.driverId,
+        companyId: message.companyId,
+        status: "CREATED",
+        offerExpiresAt: { lte: new Date() }
+      },
+      data: {
+        status: "CANCELED",
+        canceledAt: new Date(),
+        declinedAt: new Date()
+      }
+    }).catch(() => undefined);
+  }, Math.max(0, expiresAt.getTime() - Date.now()) + 250);
+  expirationTimer.unref();
 }
