@@ -1,9 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { API_URL } from "../../../lib/api";
+
+const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? "hubregional.com.br";
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -13,6 +15,12 @@ export default function AdminLoginPage() {
   const [recovering, setRecovering] = useState(false);
   const [code, setCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [masterAccess, setMasterAccess] = useState(false);
+
+  useEffect(() => {
+    const host = window.location.hostname.toLowerCase();
+    setMasterAccess(host === ROOT_DOMAIN || host === `www.${ROOT_DOMAIN}` || host === `admin.${ROOT_DOMAIN}`);
+  }, []);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -73,21 +81,27 @@ export default function AdminLoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center p-4">
       <form onSubmit={handleSubmit} className="w-full max-w-sm rounded-2xl border border-black/10 bg-white/85 p-5 dark:border-white/10 dark:bg-slate-900/70">
-        <h1 className="font-display text-4xl">Admin Login</h1>
-        <p className="text-sm opacity-70">Administrador / Atendente</p>
+        <h1 className="font-display text-4xl">{masterAccess ? "Painel Master SaaS" : "Admin Login"}</h1>
+        <p className="text-sm opacity-70">
+          {masterAccess ? "Acesso global para gerenciamento das empresas" : "Administrador / Atendente"}
+        </p>
 
         <div className="mt-4 space-y-3">
           <input className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
           <input className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Senha" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          <input
-            className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/20"
-            placeholder="Subdominio da empresa (opcional)"
-            value={subdomain}
-            onChange={(e) => setSubdomain(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
-          />
-          <p className="text-xs opacity-60">
-            Preencha apenas se o mesmo email estiver cadastrado em mais de uma empresa.
-          </p>
+          {!masterAccess && (
+            <>
+              <input
+                className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/20"
+                placeholder="Subdominio da empresa (opcional)"
+                value={subdomain}
+                onChange={(e) => setSubdomain(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+              />
+              <p className="text-xs opacity-60">
+                Preencha apenas se o mesmo email estiver cadastrado em mais de uma empresa.
+              </p>
+            </>
+          )}
           <button className="w-full rounded-xl bg-ink px-4 py-2 font-semibold text-white dark:bg-ember" type="submit">
             Entrar
           </button>

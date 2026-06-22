@@ -68,7 +68,6 @@ export default function CompaniesPage() {
           <h1 className="font-display text-4xl">Empresas</h1>
         </div>
         <div className="flex gap-2">
-          <Link className="rounded-xl border border-black/15 px-4 py-2 dark:border-white/20" href="/admin">Voltar</Link>
           <Link className="rounded-xl bg-ink px-4 py-2 text-white" href="/admin/companies/new">Nova empresa</Link>
         </div>
       </div>

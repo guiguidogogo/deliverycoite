@@ -82,7 +82,7 @@ async function authApi<T>(path: string, token: string, init?: RequestInit): Prom
     const payload = await res.json().catch(() => ({}));
     const message = payload.message ?? "Erro na API";
 
-    if (res.status === 401 || res.status === 403) {
+    if (res.status === 401) {
       localStorage.removeItem("delivery:token");
       if (typeof window !== "undefined") {
         window.location.href = "/admin/login";
@@ -148,25 +148,29 @@ export function AdminPanel() {
     setToken(storedToken);
     void authApi<{ permissions: string[]; role: string }>("/admin/me", storedToken)
       .then((me) => {
+        if (me.role === "SUPER_ADMIN") {
+          router.replace("/admin/companies");
+          return;
+        }
         setPermissions(me.permissions);
         setUserRole(me.role);
+        return fetch(`${API_URL}/admin/settings`, {
+          headers: { Authorization: `Bearer ${storedToken}` },
+          cache: "no-store"
+        })
+          .then((response) => response.json())
+          .then((settings) => {
+            setOrdersPaused(Boolean(settings.ordersPaused));
+            setPrintSettings({
+              companyName: settings.companyName ?? "Delivery",
+              paperWidth: settings.printerPaperWidth === 80 ? 80 : 58,
+              printerName: settings.printerName ?? "",
+              enabled: Boolean(settings.printerEnabled),
+              autoPrint: Boolean(settings.printerAutoPrint)
+            });
+          });
       })
       .catch(() => undefined);
-    void fetch(`${API_URL}/admin/settings`, {
-      headers: { Authorization: `Bearer ${storedToken}` },
-      cache: "no-store"
-    })
-      .then((response) => response.json())
-      .then((settings) => {
-        setOrdersPaused(Boolean(settings.ordersPaused));
-        setPrintSettings({
-          companyName: settings.companyName ?? "Delivery",
-          paperWidth: settings.printerPaperWidth === 80 ? 80 : 58,
-          printerName: settings.printerName ?? "",
-          enabled: Boolean(settings.printerEnabled),
-          autoPrint: Boolean(settings.printerAutoPrint)
-        });
-      });
   }, [router]);
 
   const can = useCallback(
