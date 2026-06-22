@@ -5,6 +5,7 @@ export type AdminUser = {
   name: string;
   email: string;
   role: "SUPER_ADMIN" | "ADMIN" | "MANAGER" | "ATTENDANT";
+  scope: "GLOBAL" | "COMPANY";
   permissions: string[];
 };
 

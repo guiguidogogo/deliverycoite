@@ -19,11 +19,21 @@ export async function login(req: Request, res: Response) {
     where: {
       email,
       active: true,
-      ...(req.tenant?.bound && req.companyId ? { companyId: req.companyId } : {}),
-      company: {
-        active: true,
-        ...(body.subdomain ? { subdomain: body.subdomain.toLowerCase() } : {})
-      }
+      ...(req.tenant?.source === "root-domain"
+        ? { role: "SUPER_ADMIN" as const }
+        : {
+          OR: [
+            { role: "SUPER_ADMIN" as const },
+            {
+              role: { not: "SUPER_ADMIN" as const },
+              ...(req.tenant?.bound && req.companyId ? { companyId: req.companyId } : {}),
+              company: {
+                active: true,
+                ...(body.subdomain ? { subdomain: body.subdomain.toLowerCase() } : {})
+              }
+            }
+          ]
+        })
     },
     include: {
       staffRole: true,
@@ -48,18 +58,26 @@ export async function login(req: Request, res: Response) {
     return res.status(401).json({ message: "Credenciais invalidas" });
   }
 
-  if (matchedUsers.length > 1 && !body.subdomain) {
+  const masterUser = matchedUsers.find((candidate) => candidate.role === "SUPER_ADMIN");
+  if (masterUser && matchedUsers.filter((candidate) => candidate.role === "SUPER_ADMIN").length > 1) {
+    return res.status(409).json({
+      message: "Existe mais de um usuario master com estas credenciais. Revise os administradores globais."
+    });
+  }
+
+  if (!masterUser && matchedUsers.length > 1 && !body.subdomain) {
     return res.status(409).json({
       message: "Este email existe em mais de uma empresa. Informe o subdominio da empresa."
     });
   }
 
-  const user = matchedUsers[0];
+  const user = masterUser ?? matchedUsers[0];
+  const isGlobalMaster = user.role === "SUPER_ADMIN";
   const permissions =
-    user.role === "SUPER_ADMIN" || user.role === "ADMIN"
+    isGlobalMaster || user.role === "ADMIN"
       ? ["*"]
       : (user.staffRole?.permissions ?? []);
-  const token = jwt.sign({ companyId: user.companyId }, env.jwtSecret, {
+  const token = jwt.sign(isGlobalMaster ? { scope: "GLOBAL" } : { companyId: user.companyId }, env.jwtSecret, {
     subject: user.id,
     expiresIn: "1d"
   });
@@ -72,8 +90,9 @@ export async function login(req: Request, res: Response) {
       email: user.email,
       phone: user.phone,
       role: user.role,
-      companyId: user.companyId,
-      company: user.company,
+      scope: isGlobalMaster ? "GLOBAL" : "COMPANY",
+      companyId: isGlobalMaster ? null : user.companyId,
+      company: isGlobalMaster ? null : user.company,
       permissions
     }
   });

@@ -81,7 +81,7 @@ export async function resolveCompany(req: Request, res: Response, next: NextFunc
   }
 
   const rootDomain = env.rootDomain;
-  if (host === rootDomain || host === `www.${rootDomain}`) {
+  if (host === rootDomain || host === `www.${rootDomain}` || host === `admin.${rootDomain}`) {
     req.companyId = DEFAULT_COMPANY_ID;
     req.tenant = { source: "root-domain", host, bound: false };
     return next();

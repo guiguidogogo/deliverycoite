@@ -38,8 +38,10 @@ export default function AdminLoginPage() {
     localStorage.setItem("delivery:admin-user", JSON.stringify(payload.user));
     if (payload.user.company?.subdomain) {
       localStorage.setItem("delivery:subdomain", payload.user.company.subdomain);
+    } else {
+      localStorage.removeItem("delivery:subdomain");
     }
-    router.push("/admin");
+    router.push(payload.user.role === "SUPER_ADMIN" ? "/admin/companies" : "/admin");
   }
 
   async function requestReset() {

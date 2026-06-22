@@ -52,9 +52,10 @@ export async function getCurrentStaff(req: Request, res: Response) {
     email: user.email,
     phone: user.phone,
     role: user.role,
+    scope: user.role === "SUPER_ADMIN" ? "GLOBAL" : "COMPANY",
     permissions: req.user!.permissions,
     staffRole: user.staffRole,
-    company: user.company
+    company: user.role === "SUPER_ADMIN" ? null : user.company
   });
 }
 

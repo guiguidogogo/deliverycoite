@@ -7,6 +7,7 @@ import type { Permission } from "../utils/permissions.js";
 type JwtPayload = {
   sub: string;
   companyId?: string;
+  scope?: "GLOBAL";
 };
 
 declare global {
@@ -42,23 +43,26 @@ export function auth() {
       if (!user || !user.active) {
         return res.status(401).json({ message: "Usuario inativo ou inexistente" });
       }
-      if (!user.company.active) {
+      const isGlobalMaster = user.role === "SUPER_ADMIN";
+      if (!isGlobalMaster && !user.company.active) {
         return res.status(401).json({ message: "Empresa inativa ou inexistente" });
       }
-      if (payload.companyId && payload.companyId !== user.companyId) {
+      if (!isGlobalMaster && payload.companyId && payload.companyId !== user.companyId) {
         return res.status(401).json({ message: "Token pertence a outra empresa" });
       }
-      if (req.tenant?.bound && req.companyId && req.companyId !== user.companyId) {
+      if (!isGlobalMaster && req.tenant?.bound && req.companyId && req.companyId !== user.companyId) {
         return res.status(403).json({ message: "Usuario nao pertence a empresa deste subdominio" });
       }
 
       req.user = {
         sub: user.id,
         role: user.role,
-        companyId: user.companyId,
-        permissions: user.role === "SUPER_ADMIN" || user.role === "ADMIN" ? ["*"] : (user.staffRole?.permissions ?? [])
+        companyId: isGlobalMaster ? null : user.companyId,
+        permissions: isGlobalMaster || user.role === "ADMIN" ? ["*"] : (user.staffRole?.permissions ?? [])
       };
-      req.companyId = user.companyId;
+      if (!isGlobalMaster) {
+        req.companyId = user.companyId;
+      }
       return next();
     } catch {
       return res.status(401).json({ message: "Token invalido" });
@@ -68,9 +72,13 @@ export function auth() {
 
 export function requirePermission(permission: Permission) {
   return (req: Request, res: Response, next: NextFunction) => {
+    if (req.user?.role === "SUPER_ADMIN") {
+      return res.status(403).json({
+        message: "O administrador master deve usar o painel global de empresas"
+      });
+    }
     if (
       req.user?.role === "ADMIN" ||
-      req.user?.role === "SUPER_ADMIN" ||
       req.user?.permissions.includes("*") ||
       req.user?.permissions.includes(permission)
     ) {
@@ -83,9 +91,13 @@ export function requirePermission(permission: Permission) {
 
 export function requireAnyPermission(permissions: Permission[]) {
   return (req: Request, res: Response, next: NextFunction) => {
+    if (req.user?.role === "SUPER_ADMIN") {
+      return res.status(403).json({
+        message: "O administrador master deve usar o painel global de empresas"
+      });
+    }
     if (
       req.user?.role === "ADMIN" ||
-      req.user?.role === "SUPER_ADMIN" ||
       req.user?.permissions.includes("*") ||
       permissions.some((permission) => req.user?.permissions.includes(permission))
     ) {

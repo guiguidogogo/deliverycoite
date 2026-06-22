@@ -31,6 +31,7 @@ async function validWebTenant(req) {
   const acceptsHtml = String(req.headers.accept ?? "").includes("text/html");
   if (!acceptsHtml) return true;
   const host = requestHost(req);
+  if (host === `admin.${rootDomain}`) return true;
   if (!host.endsWith(`.${rootDomain}`)) return true;
   const subdomain = host.slice(0, -(rootDomain.length + 1));
   if (!subdomain || subdomain.includes(".")) return false;
