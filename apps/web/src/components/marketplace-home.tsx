@@ -361,7 +361,7 @@ export function MarketplaceHome() {
             {[
               { icon: ShoppingBasket, label: "Para clientes", title: "Tudo da região na palma da mão", text: "Mais variedade, praticidade e conexão com os melhores negócios locais.", cta: "Peça agora", href: "#empresas" },
               { icon: Building2, label: "Para empresas", title: "Venda mais e alcance novos clientes", text: "Cardápio digital, gestão de pedidos, entregas e presença no marketplace regional.", cta: "Cadastrar empresa", href: "/admin/login" },
-              { icon: Bike, label: "Para motoboys", title: "Mais corridas, mais oportunidades", text: "Receba rotas, organize entregas e conecte-se às empresas da sua cidade.", cta: "Quero ser motoboy", href: "https://wa.me/5575999999999" }
+              { icon: Bike, label: "Para motoboys", title: "Mais corridas, mais oportunidades", text: "Receba rotas, organize entregas e conecte-se às empresas da sua cidade.", cta: "Quero ser motoboy", href: "mailto:contato@hubregional.com.br?subject=Quero%20ser%20motoboy" }
             ].map(({ icon: Icon, label, title, text, cta, href }) => (
               <article key={label} className="rounded-[28px] border border-white/25 bg-white/10 p-7 backdrop-blur">
                 <Icon size={30} />

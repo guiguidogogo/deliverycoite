@@ -8,8 +8,8 @@ const display = Bebas_Neue({ subsets: ["latin"], weight: "400", variable: "--fon
 const body = DM_Sans({ subsets: ["latin"], variable: "--font-body" });
 
 export const metadata: Metadata = {
-  title: "Delivery Lanchonete",
-  description: "Cardapio online com checkout no WhatsApp",
+  title: "HubRegional | Tudo perto de você",
+  description: "Marketplace regional de restaurantes, mercados, farmácias e serviços locais.",
   manifest: "/manifest.json"
 };
 
