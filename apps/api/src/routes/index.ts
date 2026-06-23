@@ -183,6 +183,7 @@ route.get("/integrations/future", getFutureIntegrations);
 router.use(auth());
 route.get("/admin/me", getCurrentStaff);
 route.get("/admin/companies/subdomain", requireSuperAdmin, generateCompanySubdomain);
+route.post("/admin/companies/upload", requireSuperAdmin, imageUpload.single("image"), uploadImage);
 route.get("/admin/companies", requireSuperAdmin, listCompanies);
 route.post("/admin/companies", requireSuperAdmin, createCompany);
 route.get("/admin/companies/:id", requireSuperAdmin, getCompany);

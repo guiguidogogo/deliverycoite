@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { adminApi } from "../lib/admin-api";
+import { adminApi, getAdminToken } from "../lib/admin-api";
+import { API_URL } from "../lib/api";
 
 export type CompanyFormValue = {
   companyName: string;
@@ -70,6 +71,7 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [subdomainEdited, setSubdomainEdited] = useState(false);
+  const [uploading, setUploading] = useState<"logoUrl" | "faviconUrl" | null>(null);
 
   useEffect(() => {
     setForm({ ...emptyCompany, ...initialValue });
@@ -113,6 +115,99 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
     }
   }
 
+  async function uploadImage(field: "logoUrl" | "faviconUrl", file?: File) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Selecione um arquivo de imagem");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("A imagem deve ter no máximo 5 MB");
+      return;
+    }
+
+    const token = getAdminToken();
+    if (!token) {
+      toast.error("Sessão expirada");
+      return;
+    }
+
+    setUploading(field);
+    try {
+      const data = new FormData();
+      data.append("image", file);
+      const response = await fetch(`${API_URL}/admin/companies/upload`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: data
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.message ?? "Falha ao enviar imagem");
+      setForm((value) => ({ ...value, [field]: result.absoluteUrl }));
+      toast.success(field === "logoUrl" ? "Logo enviada" : "Favicon enviado");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao enviar imagem");
+    } finally {
+      setUploading(null);
+    }
+  }
+
+  const imageUpload = (
+    field: "logoUrl" | "faviconUrl",
+    label: string,
+    help: string,
+    rounded = false
+  ) => (
+    <div className="rounded-2xl border border-black/10 p-4 dark:border-white/20">
+      <div className="flex items-center gap-4">
+        <div className={`grid h-20 w-20 shrink-0 place-items-center overflow-hidden border bg-slate-50 text-xs text-slate-400 ${rounded ? "rounded-full" : "rounded-2xl"}`}>
+          {form[field] ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={form[field]} alt={label} className="h-full w-full object-cover" />
+          ) : (
+            "Sem imagem"
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold">{label}</p>
+          <p className="mt-1 text-xs opacity-60">{help}</p>
+          <label className="mt-3 inline-flex cursor-pointer rounded-xl bg-ink px-4 py-2 text-sm font-semibold text-white dark:bg-ember">
+            {uploading === field ? "Enviando..." : "Escolher arquivo"}
+            <input
+              className="hidden"
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+              disabled={uploading !== null}
+              onChange={(event) => {
+                void uploadImage(field, event.target.files?.[0]);
+                event.target.value = "";
+              }}
+            />
+          </label>
+          {form[field] && (
+            <button
+              type="button"
+              className="ml-2 rounded-xl border border-red-200 px-3 py-2 text-sm text-red-600"
+              onClick={() => setForm((value) => ({ ...value, [field]: "" }))}
+            >
+              Remover
+            </button>
+          )}
+        </div>
+      </div>
+      <details className="mt-3">
+        <summary className="cursor-pointer text-xs font-semibold opacity-60">Ou informar URL manualmente</summary>
+        <input
+          className="mt-2 w-full rounded-xl border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/20"
+          type="url"
+          placeholder="https://..."
+          value={form[field]}
+          onChange={(event) => setForm((value) => ({ ...value, [field]: event.target.value }))}
+        />
+      </details>
+    </div>
+  );
+
   const input = (
     field: keyof CompanyFormValue,
     label: string,
@@ -143,8 +238,6 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
           {input("phone", "Telefone")}
           {input("whatsapp", "WhatsApp")}
           {input("instagram", "Instagram", { placeholder: "@empresa" })}
-          {input("logoUrl", "URL da logo", { type: "url" })}
-          {input("faviconUrl", "URL do favicon", { type: "url" })}
           {input("primaryColor", "Cor primaria", { type: "color" })}
           {input("secondaryColor", "Cor secundaria", { type: "color" })}
           <label className="grid gap-1 text-sm">
@@ -167,6 +260,10 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
             />
             Empresa ativa
           </label>
+        </div>
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          {imageUpload("logoUrl", "Logo da empresa", "PNG, JPG, WebP, GIF ou SVG. Máximo de 5 MB.")}
+          {imageUpload("faviconUrl", "Ícone da loja", "Imagem quadrada usada como ícone da página.", true)}
         </div>
       </section>
 
@@ -275,7 +372,7 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
 
       <button
         className="w-full rounded-xl bg-ember px-4 py-3 font-semibold text-white disabled:opacity-60"
-        disabled={saving}
+        disabled={saving || uploading !== null}
       >
         {saving ? "Salvando..." : submitLabel}
       </button>
