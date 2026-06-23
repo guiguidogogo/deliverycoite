@@ -102,7 +102,7 @@ import {
   sendToDelivery,
   updateOrderStatus
 } from "../controllers/orders-controller.js";
-import { uploadImage } from "../controllers/upload-controller.js";
+import { getPersistentImage, uploadImage, uploadPersistentImage } from "../controllers/upload-controller.js";
 import {
   createProduct,
   deleteProduct,
@@ -117,7 +117,7 @@ import { listMarketplaceCompanies, marketplaceSummary } from "../controllers/mar
 import { auth, requireAnyPermission, requirePermission, requireSuperAdmin } from "../middlewares/auth.js";
 import { customerAuth } from "../middlewares/customer-auth.js";
 import { driverAuth } from "../middlewares/driver-auth.js";
-import { imageUpload } from "../utils/upload.js";
+import { imageUpload, persistentImageUpload } from "../utils/upload.js";
 import { asyncHandler } from "../utils/async-handler.js";
 import { resolveCompany } from "../utils/tenant.js";
 
@@ -140,6 +140,7 @@ const route = {
 };
 
 route.post("/auth/login", login);
+route.get("/marketplace/assets/:id", getPersistentImage);
 route.get("/marketplace/companies", listMarketplaceCompanies);
 route.get("/marketplace/summary", marketplaceSummary);
 route.get("/company", getPublicCompany);
@@ -183,7 +184,7 @@ route.get("/integrations/future", getFutureIntegrations);
 router.use(auth());
 route.get("/admin/me", getCurrentStaff);
 route.get("/admin/companies/subdomain", requireSuperAdmin, generateCompanySubdomain);
-route.post("/admin/companies/upload", requireSuperAdmin, imageUpload.single("image"), uploadImage);
+route.post("/admin/companies/upload", requireSuperAdmin, persistentImageUpload.single("image"), uploadPersistentImage);
 route.get("/admin/companies", requireSuperAdmin, listCompanies);
 route.post("/admin/companies", requireSuperAdmin, createCompany);
 route.get("/admin/companies/:id", requireSuperAdmin, getCompany);

@@ -24,3 +24,15 @@ export const imageUpload = multer({
     cb(null, true);
   }
 });
+
+export const persistentImageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (!file.mimetype.startsWith("image/")) {
+      cb(new Error("Apenas imagens sao permitidas"));
+      return;
+    }
+    cb(null, true);
+  }
+});

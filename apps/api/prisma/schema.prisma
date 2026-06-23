@@ -70,6 +70,14 @@ model User {
   @@index([companyId])
 }
 
+model UploadedImage {
+  id           String   @id @default(cuid())
+  data         Bytes
+  mimeType     String
+  originalName String?
+  createdAt    DateTime @default(now())
+}
+
 model Company {
   id                     String                @id @default(cuid())
   companyName            String
