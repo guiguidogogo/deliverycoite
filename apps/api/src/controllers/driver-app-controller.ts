@@ -191,7 +191,8 @@ export async function listDriverRoutes(req: Request, res: Response) {
       where: {
         driverId: context.id,
         companyId: context.companyId,
-        status: history ? { in: ["COMPLETED", "CANCELED"] } : { in: ["CREATED", "IN_PROGRESS"] }
+        status: history ? { in: ["COMPLETED", "CANCELED"] } : { in: ["CREATED", "IN_PROGRESS"] },
+        orders: { every: { order: { fulfillmentType: "DELIVERY" } } }
       },
       include: routeInclude,
       orderBy: { createdAt: "desc" },
@@ -207,7 +208,12 @@ export async function getDriverRoute(req: Request, res: Response) {
   await expirePendingRouteOffers(context.companyId);
   const [route, origin] = await Promise.all([
     prisma.deliveryRoute.findFirst({
-      where: { id: req.params.id, driverId: context.id, companyId: context.companyId },
+      where: {
+        id: req.params.id,
+        driverId: context.id,
+        companyId: context.companyId,
+        orders: { every: { order: { fulfillmentType: "DELIVERY" } } }
+      },
       include: routeInclude
     }),
     getCompanyRouteOrigin(context.companyId)
@@ -220,9 +226,12 @@ export async function acceptDriverRoute(req: Request, res: Response) {
   const context = driverContext(req);
   const route = await prisma.deliveryRoute.findFirst({
     where: { id: req.params.id, driverId: context.id, companyId: context.companyId },
-    include: { orders: { select: { orderId: true } } }
+    include: { orders: { include: { order: { select: { fulfillmentType: true } } } } }
   });
   if (!route) return res.status(404).json({ message: "Rota nao encontrada para este motoboy" });
+  if (route.orders.some((item) => item.order.fulfillmentType !== "DELIVERY")) {
+    return res.status(409).json({ message: "Esta rota contem pedido de retirada e nao pode ser aceita" });
+  }
 
   const origin = await getCompanyRouteOrigin(context.companyId);
   if (route.status === "IN_PROGRESS") {
@@ -248,7 +257,11 @@ export async function acceptDriverRoute(req: Request, res: Response) {
     });
     if (accepted.count !== 1) return null;
     await transaction.order.updateMany({
-      where: { id: { in: route.orders.map((item) => item.orderId) }, companyId: context.companyId },
+      where: {
+        id: { in: route.orders.map((item) => item.orderId) },
+        companyId: context.companyId,
+        fulfillmentType: "DELIVERY"
+      },
       data: { status: "OUT_FOR_DELIVERY", sentToDelivery: true, deliverySentAt: new Date() }
     });
     return route.id;

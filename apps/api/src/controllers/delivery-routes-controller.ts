@@ -15,6 +15,7 @@ import { prisma } from "../utils/prisma.js";
 import { expirePendingRouteOffers, routeOfferExpiresAt } from "../utils/route-offers.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
 import { optimizeRoute } from "../utils/route-optimizer.js";
+import { isOrderEligibleForDeliveryRoute } from "../utils/delivery-order.js";
 
 const optionalText = z.preprocess(
   (value) => typeof value === "string" && !value.trim() ? null : value,
@@ -179,9 +180,11 @@ export async function createDeliveryRoute(req: Request, res: Response) {
   if (!driver) return res.status(404).json({ message: "Motoboy ativo nao encontrado" });
   if (orders.length !== orderIds.length) return res.status(400).json({ message: "Um ou mais pedidos nao pertencem a esta empresa" });
   const invalid = orders.find((order) =>
-    order.fulfillmentType !== "DELIVERY"
-    || order.status !== "PREPARING"
-    || order.deliveryRouteOrders.length > 0
+    !isOrderEligibleForDeliveryRoute({
+      fulfillmentType: order.fulfillmentType,
+      status: order.status,
+      activeRouteCount: order.deliveryRouteOrders.length
+    })
   );
   if (invalid) {
     return res.status(400).json({
