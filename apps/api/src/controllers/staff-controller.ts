@@ -30,7 +30,7 @@ async function ensureDefaultRoles(req: Request) {
           name: role.name
         }
       },
-      update: {},
+      update: { permissions: role.permissions },
       create: { ...role, companyId: getCompanyId(req) }
     });
   }

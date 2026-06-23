@@ -204,9 +204,17 @@ export async function createOrder(req: Request, res: Response) {
     },
     update: pickup
       ? {
-          name: body.customer.name
+          name: body.customer.name,
+          deletedAt: null,
+          deletedBy: null,
+          deletionReason: null
         }
-      : customerData
+      : {
+          ...customerData,
+          deletedAt: null,
+          deletedBy: null,
+          deletionReason: null
+        }
   });
 
   let discountNumber = 0;

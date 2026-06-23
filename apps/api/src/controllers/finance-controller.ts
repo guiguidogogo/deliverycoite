@@ -132,7 +132,7 @@ export async function getFinanceDashboard(req: Request, res: Response) {
   const month = new Date(now.getFullYear(), now.getMonth(), 1);
   const [orders, entries, openCount, closedCount, payables] = await Promise.all([
     prisma.order.findMany({
-      where: { companyId, paidAt: { gte: month }, status: { not: "CANCELED" } },
+      where: { companyId, paidAt: { gte: month }, status: { not: "CANCELED" }, deletedAt: null },
       select: { total: true, paidAt: true, paymentMethod: true, paidMethodDetail: true }
     }),
     prisma.cashEntry.findMany({
