@@ -65,3 +65,13 @@ body {
   border-radius: 50%;
   background: white;
 }
+
+@layer components {
+  .input {
+    @apply mt-1 w-full rounded-xl border border-black/15 bg-transparent px-3 py-2 font-normal outline-none focus:border-ember;
+  }
+
+  .btn-primary {
+    @apply w-full rounded-xl bg-ink px-4 py-3 font-bold text-white transition hover:bg-ember disabled:opacity-50;
+  }
+}

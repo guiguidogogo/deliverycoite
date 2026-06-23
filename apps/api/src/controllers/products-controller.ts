@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
+import { audit } from "../utils/audit.js";
 
 const schema = z.object({
   name: z.string().min(2),
@@ -117,7 +118,7 @@ export async function updateProduct(req: Request, res: Response) {
       await tx.productComplement.deleteMany({ where: { productId: id, ...companyWhere(req) } });
     }
 
-    return tx.product.update({
+    const updated = await tx.product.update({
       where: { id: existing.id },
       data: {
         ...productData,
@@ -139,6 +140,12 @@ export async function updateProduct(req: Request, res: Response) {
         complements: { include: { complement: true }, orderBy: { sortOrder: "asc" } }
       }
     });
+    await audit(req, {
+      action: "PRODUCT_UPDATED", entity: "Product", entityId: existing.id,
+      oldValue: { name: existing.name, price: Number(existing.price), active: existing.active, available: existing.available },
+      newValue: productData
+    }, tx);
+    return updated;
   });
 
   return res.json(product);
@@ -148,7 +155,14 @@ export async function deleteProduct(req: Request, res: Response) {
   const { id } = req.params;
   const existing = await prisma.product.findFirst({ where: { id, ...companyWhere(req) } });
   if (!existing) return res.status(404).json({ message: "Produto nao encontrado" });
-  await prisma.product.delete({ where: { id: existing.id } });
+  await prisma.$transaction(async (tx) => {
+    await tx.product.update({ where: { id: existing.id }, data: { active: false, available: false } });
+    await audit(req, {
+      action: "PRODUCT_ARCHIVED", entity: "Product", entityId: existing.id,
+      oldValue: { active: existing.active, available: existing.available },
+      newValue: { active: false, available: false }
+    }, tx);
+  });
   return res.status(204).send();
 }
 

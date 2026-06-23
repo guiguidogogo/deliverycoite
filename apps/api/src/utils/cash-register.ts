@@ -5,6 +5,7 @@ type PaymentEntry = {
   orderId: string;
   amount: Prisma.Decimal;
   paymentMethod: PaymentMethod;
+  paymentDetail?: string | null;
   description: string;
 };
 
@@ -34,6 +35,16 @@ export async function recordCashPayments(sessionId: string, companyId: string, p
         type: CashEntryType.MANUAL_INCOME,
         amount: payment.amount,
         paymentMethod: payment.paymentMethod,
+        paymentDetail: payment.paymentDetail,
+        direction: "IN",
+        category:
+          payment.paymentMethod === "CASH"
+            ? "SALE_CASH"
+            : payment.paymentMethod === "PIX"
+              ? "SALE_PIX"
+              : payment.paymentDetail === "Cartao Debito"
+                ? "SALE_DEBIT"
+                : "SALE_CREDIT",
         orderId: payment.orderId,
         description: payment.description
       }))

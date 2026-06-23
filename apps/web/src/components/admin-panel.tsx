@@ -413,7 +413,7 @@ export function AdminPanel() {
         {can("REPORTS") && <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/reports">
           Relatorios
         </a>}
-        {can("FINANCE") && <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/finance">
+        {(can("FINANCE") || can("CASH_MANAGE")) && <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/finance">
           Financeiro / Caixa
         </a>}
         {can("USERS") && <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/users">
@@ -638,11 +638,18 @@ export function AdminPanel() {
                   <button
                     className="rounded-lg bg-red-600 px-2 py-1 text-xs text-white"
                     onClick={() => {
-                      if (!window.confirm("Deseja apagar este pedido?")) return;
-                      void authApi(`/admin/orders/${order.id}`, token, { method: "DELETE" })
+                      const reason = window.prompt("Motivo para arquivar este pedido:");
+                      if (!reason || reason.trim().length < 5) {
+                        if (reason !== null) toast.error("Informe um motivo com pelo menos 5 caracteres");
+                        return;
+                      }
+                      void authApi(`/admin/orders/${order.id}`, token, {
+                        method: "DELETE",
+                        body: JSON.stringify({ reason })
+                      })
                         .then(async () => {
                           setOrders((prev) => prev.filter((item) => item.id !== order.id));
-                          toast.success("Pedido apagado");
+                          toast.success("Pedido arquivado com auditoria");
                           await refreshPanel(false);
                         })
                         .catch((error) => {
@@ -650,7 +657,7 @@ export function AdminPanel() {
                         });
                     }}
                   >
-                    Apagar pedido
+                    Arquivar pedido
                   </button>
                 )}
                 <button className="rounded-lg border border-black/20 px-2 py-1 text-xs dark:border-white/20" onClick={() => setExpandedOrderId((v) => (v === order.id ? null : order.id))}>

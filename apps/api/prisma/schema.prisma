@@ -134,6 +134,9 @@ model Company {
   deliveryRoutes         DeliveryRoute[]
   deliveryRouteOrders    DeliveryRouteOrder[]
   driverDeviceTokens     DriverDeviceToken[]
+  auditLogs              AuditLog[]
+  payables               AccountPayable[]
+  receivables            AccountReceivable[]
 }
 
 model StaffRole {
@@ -244,10 +247,14 @@ model Customer {
   passwordResets    PasswordReset[]
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
+  deletedAt         DateTime?
+  deletedBy         String?
+  deletionReason    String?
 
   @@unique([companyId, phone])
   @@unique([companyId, email])
   @@index([companyId])
+  @@index([companyId, deletedAt])
 }
 
 model PasswordReset {
@@ -273,16 +280,31 @@ model CashSession {
   companyId     String
   company       Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
   openedBy      String
+  operatorName  String?
+  openingIp     String?
+  openingDevice String?
   openingAmount Decimal     @db.Decimal(10, 2)
   openedAt      DateTime    @default(now())
   closedAt      DateTime?
   closingAmount Decimal?    @db.Decimal(10, 2)
+  expectedAmount Decimal?   @db.Decimal(10, 2)
+  difference     Decimal?   @db.Decimal(10, 2)
+  closingNotes   String?
+  closedBy       String?
+  closingIp      String?
+  closingDevice  String?
+  reopenedAt     DateTime?
+  reopenedBy     String?
+  reopenReason   String?
+  locked         Boolean    @default(false)
+  deletedAt      DateTime?
   notes         String?
   entries       CashEntry[]
 
   @@index([openedAt])
   @@index([closedAt])
   @@index([companyId])
+  @@index([companyId, openedBy, closedAt])
 }
 
 model CashEntry {
@@ -292,14 +314,82 @@ model CashEntry {
   sessionId     String
   session       CashSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   type          CashEntryType
+  category      String?
+  direction     String         @default("IN")
   amount        Decimal        @db.Decimal(10, 2)
   paymentMethod PaymentMethod?
+  paymentDetail String?
   orderId       String?
+  operatorId    String?
+  operatorName  String?
+  reason        String?
   description   String?
+  deletedAt     DateTime?
+  deletedBy     String?
+  deletionReason String?
   createdAt     DateTime       @default(now())
 
   @@index([sessionId, createdAt])
   @@index([companyId])
+  @@index([companyId, createdAt, direction])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  userId      String?
+  userName    String?
+  action      String
+  entity      String
+  entityId    String?
+  oldValue    Json?
+  newValue    Json?
+  ipAddress   String?
+  device      String?
+  createdAt   DateTime @default(now())
+
+  @@index([companyId, createdAt])
+  @@index([companyId, entity, entityId])
+  @@index([companyId, userId])
+}
+
+model AccountPayable {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  description String
+  category    String
+  amount      Decimal  @db.Decimal(10, 2)
+  dueDate     DateTime
+  status      String   @default("PENDING")
+  paidAt      DateTime?
+  notes       String?
+  createdBy   String?
+  deletedAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([companyId, dueDate, status])
+}
+
+model AccountReceivable {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customerName String
+  description String?
+  amount      Decimal  @db.Decimal(10, 2)
+  dueDate     DateTime
+  status      String   @default("OPEN")
+  receivedAt  DateTime?
+  notes       String?
+  createdBy   String?
+  deletedAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([companyId, dueDate, status])
 }
 
 model CustomerAddress {
@@ -371,6 +461,9 @@ model Order {
   viewedByStaff      Boolean           @default(false)
   sentToDelivery     Boolean           @default(false)
   deliverySentAt     DateTime?
+  deletedAt           DateTime?
+  deletedBy           String?
+  deletionReason      String?
   deliveryRouteOrders DeliveryRouteOrder[]
   items              OrderItem[]
   couponRedemption   CouponRedemption?
@@ -380,6 +473,7 @@ model Order {
   @@index([status])
   @@index([createdAt])
   @@index([companyId])
+  @@index([companyId, deletedAt])
 }
 
 model Driver {

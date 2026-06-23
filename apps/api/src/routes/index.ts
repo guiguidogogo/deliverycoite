@@ -85,9 +85,19 @@ import {
 import {
   closeCashSession,
   createCashEntry,
+  createPayable,
+  createReceivable,
+  deleteCashEntry,
+  getFinanceDashboard,
   getFinanceSummary,
+  listAuditLogs,
   listCashSessions,
-  openCashSession
+  listPayables,
+  listReceivables,
+  openCashSession,
+  payPayable,
+  receiveReceivable,
+  reopenCashSession
 } from "../controllers/finance-controller.js";
 import { getFutureIntegrations, testMenuiaIntegration } from "../controllers/integrations-controller.js";
 import { listNewOrders } from "../controllers/notifications-controller.js";
@@ -110,7 +120,7 @@ import {
   toggleFavorite,
   updateProduct
 } from "../controllers/products-controller.js";
-import { exportOrdersExcel, exportOrdersPdf } from "../controllers/reports-controller.js";
+import { exportFinanceExcel, exportFinancePdf, exportOrdersExcel, exportOrdersPdf } from "../controllers/reports-controller.js";
 import { listPrinters } from "../controllers/printer-controller.js";
 import { getSettings, updateSettings } from "../controllers/settings-controller.js";
 import { listMarketplaceCompanies, marketplaceSummary } from "../controllers/marketplace-controller.js";
@@ -214,14 +224,26 @@ route.get("/admin/deliveries/routes/:id", requirePermission("ORDERS"), getDelive
 route.patch("/admin/deliveries/routes/:id/status", requirePermission("ORDERS"), updateDeliveryRouteStatus);
 route.get("/admin/reports/orders.xlsx", requirePermission("REPORTS"), exportOrdersExcel);
 route.get("/admin/reports/orders.pdf", requirePermission("REPORTS"), exportOrdersPdf);
+route.get("/admin/reports/finance.xlsx", requirePermission("FINANCE_REPORTS"), exportFinanceExcel);
+route.get("/admin/reports/finance.pdf", requirePermission("FINANCE_REPORTS"), exportFinancePdf);
 route.get("/admin/customers", requirePermission("CUSTOMERS"), listCustomers);
 route.patch("/admin/customers/:id", requirePermission("CUSTOMERS"), updateCustomer);
 route.delete("/admin/customers/:id", requirePermission("CUSTOMERS"), deleteCustomer);
-route.get("/admin/finance/summary", requirePermission("FINANCE"), getFinanceSummary);
-route.get("/admin/finance/sessions", requirePermission("FINANCE"), listCashSessions);
+route.get("/admin/finance/summary", requireAnyPermission(["FINANCE", "CASH_MANAGE"]), getFinanceSummary);
+route.get("/admin/finance/dashboard", requirePermission("FINANCE"), getFinanceDashboard);
+route.get("/admin/finance/sessions", requireAnyPermission(["FINANCE", "CASH_MANAGE"]), listCashSessions);
+route.get("/admin/finance/audit", requirePermission("AUDIT_VIEW"), listAuditLogs);
+route.get("/admin/finance/payables", requirePermission("FINANCE"), listPayables);
+route.post("/admin/finance/payables", requirePermission("ACCOUNTS_MANAGE"), createPayable);
+route.post("/admin/finance/payables/:id/pay", requirePermission("ACCOUNTS_MANAGE"), payPayable);
+route.get("/admin/finance/receivables", requirePermission("FINANCE"), listReceivables);
+route.post("/admin/finance/receivables", requirePermission("ACCOUNTS_MANAGE"), createReceivable);
+route.post("/admin/finance/receivables/:id/receive", requirePermission("ACCOUNTS_MANAGE"), receiveReceivable);
 route.post("/admin/finance/open", requirePermission("CASH_MANAGE"), openCashSession);
 route.post("/admin/finance/entry", requirePermission("CASH_MANAGE"), createCashEntry);
+route.delete("/admin/finance/entry/:id", requirePermission("CASH_MANAGE"), deleteCashEntry);
 route.post("/admin/finance/close", requirePermission("CASH_MANAGE"), closeCashSession);
+route.post("/admin/finance/sessions/:id/reopen", requirePermission("CASH_REOPEN"), reopenCashSession);
 
 route.get("/admin/categories", requirePermission("CATALOG"), listCategories);
 route.post("/admin/categories", requirePermission("CATALOG"), createCategory);

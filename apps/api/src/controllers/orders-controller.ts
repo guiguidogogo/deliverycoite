@@ -9,6 +9,7 @@ import { formatOrderCode } from "../utils/order-code.js";
 import { recordCashPayments } from "../utils/cash-register.js";
 import { calculateDeliveryFee } from "../utils/delivery-fee.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
+import { audit } from "../utils/audit.js";
 
 function shouldSendStatusWhatsapp(
   settings: Awaited<ReturnType<typeof prisma.setting.findFirstOrThrow>>,
@@ -413,6 +414,7 @@ export async function listOrders(req: Request, res: Response) {
   const orders = await prisma.order.findMany({
     where: {
       ...companyWhere(req),
+      deletedAt: null,
       status: status ?? (includeFinished ? undefined : { not: "FINISHED" }),
       createdAt: {
         gte: startDate,
@@ -454,6 +456,13 @@ export async function updateOrderStatus(req: Request, res: Response) {
   const order = await prisma.order.update({
     where: { id: req.params.id },
     data: { status: body.status }
+  });
+  await audit(req, {
+    action: body.status === "CANCELED" ? "ORDER_CANCELED" : "ORDER_STATUS_CHANGED",
+    entity: "Order",
+    entityId: current.id,
+    oldValue: { status: current.status },
+    newValue: { status: body.status }
   });
 
   if (body.status === "CANCELED" && current.paidAt) {
@@ -587,42 +596,16 @@ export async function deleteOrder(req: Request, res: Response) {
     return res.status(400).json({ message: "Apague somente pedidos finalizados ou cancelados" });
   }
 
-  if (order.paidAt) {
-    const session = await prisma.cashSession.findFirst({ where: { ...companyWhere(req), closedAt: null } });
-    if (session) {
-      await prisma.cashEntry.create({
-        data: {
-          companyId: getCompanyId(req),
-          sessionId: session.id,
-          type: "EXPENSE",
-          amount: toDecimal(Number(order.total)),
-          orderId: order.id,
-          description: `Estorno por exclusao do pedido #${formatOrderCode(order.orderNumber)}`
-        }
-      });
-    }
-  }
-
+  const reason = z.object({ reason: z.string().min(5).max(300) }).parse(req.body).reason;
   await prisma.$transaction(async (transaction) => {
-    const routeLinks = await transaction.deliveryRouteOrder.findMany({
-      where: { orderId: order.id, companyId: getCompanyId(req) },
-      select: { routeId: true }
+    await transaction.order.update({
+      where: { id: order.id },
+      data: { deletedAt: new Date(), deletedBy: req.user!.sub, deletionReason: reason }
     });
-    await transaction.deliveryRouteOrder.deleteMany({
-      where: { orderId: order.id, companyId: getCompanyId(req) }
-    });
-    await transaction.order.delete({ where: { id: order.id } });
-    const routeIds = [...new Set(routeLinks.map((link) => link.routeId))];
-    for (const routeId of routeIds) {
-      const remaining = await transaction.deliveryRouteOrder.count({
-        where: { routeId, companyId: getCompanyId(req) }
-      });
-      if (remaining === 0) {
-        await transaction.deliveryRoute.deleteMany({
-          where: { id: routeId, companyId: getCompanyId(req) }
-        });
-      }
-    }
+    await audit(req, {
+      action: "ORDER_SOFT_DELETED", entity: "Order", entityId: order.id,
+      oldValue: { status: order.status, total: Number(order.total) }, newValue: { reason }
+    }, transaction);
   });
   return res.status(204).send();
 }
@@ -645,6 +628,19 @@ export async function markOrderPaid(req: Request, res: Response) {
 
   if (order.paidAt) {
     return res.status(400).json({ message: "Pedido ja foi marcado como pago" });
+  }
+
+  const session = await prisma.cashSession.findFirst({
+    where: {
+      ...companyWhere(req),
+      openedBy: req.user!.sub,
+      closedAt: null,
+      deletedAt: null,
+      locked: false
+    }
+  });
+  if (!session) {
+    return res.status(400).json({ message: "Abra seu caixa antes de registrar uma venda" });
   }
 
   const paymentMethod: PaymentMethod = body.method === "PIX" ? "PIX" : body.method === "CASH" ? "CASH" : "CARD";
@@ -670,15 +666,17 @@ export async function markOrderPaid(req: Request, res: Response) {
     }
   });
 
-  const session = await prisma.cashSession.findFirst({ where: { ...companyWhere(req), closedAt: null } });
-  if (session) {
-    await recordCashPayments(session.id, getCompanyId(req), [{
+  await recordCashPayments(session.id, getCompanyId(req), [{
         amount: toDecimal(Number(updated.total)),
         paymentMethod,
+        paymentDetail,
         orderId: updated.id,
         description: `Pagamento pedido #${formatOrderCode(updated.orderNumber)} via ${paymentDetail}`
-    }]);
-  }
+  }]);
+  await audit(req, {
+    action: "ORDER_PAID", entity: "Order", entityId: updated.id,
+    oldValue: { paidAt: order.paidAt }, newValue: { paidAt: updated.paidAt, paymentDetail }
+  });
 
   const orderWithCustomer = await prisma.order.findFirst({
     where: { id: req.params.id, ...companyWhere(req) },

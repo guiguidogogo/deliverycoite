@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { companyWhere } from "../utils/tenant.js";
+import { audit } from "../utils/audit.js";
 
 export async function lookupCustomer(req: Request, res: Response) {
   const phone = req.query.phone?.toString().trim() ?? "";
@@ -12,7 +13,7 @@ export async function lookupCustomer(req: Request, res: Response) {
   const digits = phone.replace(/\D/g, "");
   const candidates = Array.from(new Set([phone, digits, `+${digits}`]));
   const customer = await prisma.customer.findFirst({
-    where: { phone: { in: candidates }, ...companyWhere(req) },
+    where: { phone: { in: candidates }, deletedAt: null, ...companyWhere(req) },
     select: { name: true }
   });
 
@@ -35,6 +36,7 @@ export async function listCustomers(req: Request, res: Response) {
   const customers = await prisma.customer.findMany({
     where: {
       ...companyWhere(req),
+      deletedAt: null,
       ...(search
         ? {
             OR: [
@@ -75,17 +77,26 @@ export async function deleteCustomer(req: Request, res: Response) {
 
   const existing = await prisma.customer.findFirst({
     where: { id: customerId, ...companyWhere(req) },
-    select: { id: true }
+    select: { id: true, name: true }
   });
 
   if (!existing) {
     return res.status(404).json({ message: "Cliente nao encontrado" });
   }
 
+  const reason = z.object({ reason: z.string().min(5).max(300) }).parse(req.body).reason;
   await prisma.$transaction(async (tx) => {
-    await tx.order.deleteMany({ where: { customerId } });
-    await tx.customerAddress.deleteMany({ where: { customerId } });
-    await tx.customer.delete({ where: { id: customerId } });
+    await tx.customer.update({
+      where: { id: customerId },
+      data: { deletedAt: new Date(), deletedBy: req.user!.sub, deletionReason: reason }
+    });
+    await audit(req, {
+      action: "CUSTOMER_SOFT_DELETED",
+      entity: "Customer",
+      entityId: customerId,
+      oldValue: { name: existing.name },
+      newValue: { reason }
+    }, tx);
   });
 
   return res.status(204).send();

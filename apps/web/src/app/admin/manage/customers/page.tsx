@@ -79,11 +79,16 @@ export default function CustomersManagePage() {
   async function removeCustomer(id: string) {
     const token = localStorage.getItem("delivery:token");
     if (!token) return;
-    if (!window.confirm("Deseja realmente apagar este cliente e seus pedidos?")) return;
+    const reason = window.prompt("Motivo para arquivar este cliente:");
+    if (!reason || reason.trim().length < 5) {
+      if (reason !== null) toast.error("Informe um motivo com pelo menos 5 caracteres");
+      return;
+    }
 
     const res = await fetch(`${API_URL}/admin/customers/${id}`, {
       method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ reason })
     });
 
     if (!res.ok) {
@@ -92,7 +97,7 @@ export default function CustomersManagePage() {
       return;
     }
 
-    toast.success("Cliente apagado");
+    toast.success("Cliente arquivado; histórico preservado");
     setCustomers((prev) => prev.filter((item) => item.id !== id));
   }
 
