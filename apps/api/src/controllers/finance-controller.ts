@@ -130,9 +130,10 @@ export async function getFinanceDashboard(req: Request, res: Response) {
   const today = new Date(now); today.setHours(0, 0, 0, 0);
   const week = new Date(today); week.setDate(week.getDate() - 6);
   const month = new Date(now.getFullYear(), now.getMonth(), 1);
+  const sixMonths = new Date(now.getFullYear(), now.getMonth() - 5, 1);
   const [orders, entries, openCount, closedCount, payables] = await Promise.all([
     prisma.order.findMany({
-      where: { companyId, paidAt: { gte: month }, status: { not: "CANCELED" }, deletedAt: null },
+      where: { companyId, paidAt: { gte: sixMonths }, status: { not: "CANCELED" }, deletedAt: null },
       select: { total: true, paidAt: true, paymentMethod: true, paidMethodDetail: true }
     }),
     prisma.cashEntry.findMany({
@@ -165,6 +166,15 @@ export async function getFinanceDashboard(req: Request, res: Response) {
     acc[key] = (acc[key] ?? 0) + Number(order.total);
     return acc;
   }, {});
+  const monthly = Array.from({ length: 6 }, (_, index) => {
+    const start = new Date(now.getFullYear(), now.getMonth() - 5 + index, 1);
+    const end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
+    return {
+      month: start.toISOString().slice(0, 7),
+      sales: orders.filter((order) => order.paidAt && order.paidAt >= start && order.paidAt < end)
+        .reduce((total, order) => total + Number(order.total), 0)
+    };
+  });
   return res.json({
     revenueToday: salesToday,
     revenueWeek: sales(week),
@@ -180,6 +190,7 @@ export async function getFinanceDashboard(req: Request, res: Response) {
     overduePayables: payables.filter((item) => item.dueDate < now).length,
     dueSoonPayables: payables.filter((item) => item.dueDate >= now && item.dueDate <= new Date(now.getTime() + 3 * 86400000)).length,
     daily,
+    monthly,
     paymentMethods
   });
 }

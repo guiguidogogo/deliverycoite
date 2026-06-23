@@ -24,6 +24,7 @@ type Dashboard = {
   currentBalance: number; openCashRegisters: number; closedCashRegisters: number;
   overduePayables: number; dueSoonPayables: number;
   daily: Array<{ date: string; sales: number }>;
+  monthly: Array<{ month: string; sales: number }>;
   paymentMethods: Record<string, number>;
 };
 type Account = {
@@ -31,7 +32,7 @@ type Account = {
   dueDate: string; status: string; effectiveStatus: string; notes?: string;
 };
 type Session = {
-  id: string; operatorName?: string; openedAt: string; closedAt?: string;
+  id: string; openedBy: string; operatorName?: string; openedAt: string; closedAt?: string;
   openingAmount: number; closingAmount?: number; expectedAmount?: number; difference?: number;
   closingNotes?: string; locked: boolean; reopenReason?: string;
   totals: { totalSales: number; expenses: number; expectedCash: number };
@@ -60,6 +61,8 @@ export default function FinanceManagePage() {
   const [audits, setAudits] = useState<Audit[]>([]);
   const [dateFrom, setDateFrom] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10));
   const [dateTo, setDateTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [operatorId, setOperatorId] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("");
   const [opening, setOpening] = useState({ amount: "0", notes: "" });
   const [movement, setMovement] = useState({ category: "WITHDRAWAL", amount: "", reason: "", description: "" });
   const [closing, setClosing] = useState({ amount: "", justification: "" });
@@ -85,7 +88,11 @@ export default function FinanceManagePage() {
 
   async function load() {
     try {
-      const query = `dateFrom=${dateFrom}&dateTo=${dateTo}`;
+      const query = new URLSearchParams({
+        dateFrom, dateTo,
+        ...(operatorId ? { operatorId } : {}),
+        ...(paymentMethod ? { paymentMethod } : {})
+      }).toString();
       const me = await request<{ permissions: string[] }>("/admin/me");
       const allowed = (permission: string) => me.permissions.includes("*") || me.permissions.includes(permission);
       setPermissions(me.permissions);
@@ -108,7 +115,7 @@ export default function FinanceManagePage() {
     }
   }
 
-  useEffect(() => { void load(); }, [dateFrom, dateTo]);
+  useEffect(() => { void load(); }, [dateFrom, dateTo, operatorId, paymentMethod]);
 
   async function action(path: string, body?: unknown, method = "POST", success = "Operação realizada") {
     try {
@@ -120,9 +127,14 @@ export default function FinanceManagePage() {
   }
 
   const maxDaily = Math.max(1, ...(dashboard?.daily.map((item) => item.sales) ?? [1]));
+  const maxMonthly = Math.max(1, ...(dashboard?.monthly.map((item) => item.sales) ?? [1]));
   const paymentTotal = Object.values(dashboard?.paymentMethods ?? {}).reduce((sum, value) => sum + value, 0) || 1;
   const filteredEntries = useMemo(() => summary?.history.filter((entry) => !entry.deletedAt) ?? [], [summary]);
   const can = (permission: string) => permissions.includes("*") || permissions.includes(permission);
+  const operators = useMemo(
+    () => Array.from(new Map(sessions.filter((item) => item.operatorName).map((item) => [item.openedBy, { id: item.openedBy, name: item.operatorName! }])).values()),
+    [sessions]
+  );
 
   return (
     <main className="mx-auto max-w-7xl p-4 md:p-8">
@@ -154,8 +166,10 @@ export default function FinanceManagePage() {
       <section className="mt-4 flex flex-wrap items-end gap-2 rounded-2xl border bg-white/80 p-3">
         <label className="text-xs font-semibold">Data inicial<input className="mt-1 block rounded-lg border px-3 py-2" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} /></label>
         <label className="text-xs font-semibold">Data final<input className="mt-1 block rounded-lg border px-3 py-2" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} /></label>
-        {can("FINANCE_REPORTS") && <><a className="rounded-lg bg-emerald-700 px-3 py-2 text-sm text-white" href={`${API_URL}/admin/reports/finance.xlsx?dateFrom=${dateFrom}&dateTo=${dateTo}&token=${typeof window !== "undefined" ? localStorage.getItem("delivery:token") : ""}`} target="_blank">Excel</a>
-        <a className="rounded-lg bg-red-700 px-3 py-2 text-sm text-white" href={`${API_URL}/admin/reports/finance.pdf?dateFrom=${dateFrom}&dateTo=${dateTo}&token=${typeof window !== "undefined" ? localStorage.getItem("delivery:token") : ""}`} target="_blank">PDF</a></>}
+        <label className="text-xs font-semibold">Operador<select className="mt-1 block rounded-lg border px-3 py-2" value={operatorId} onChange={(e) => setOperatorId(e.target.value)}><option value="">Todos</option>{operators.map((operator) => <option key={operator.id} value={operator.id}>{operator.name}</option>)}</select></label>
+        <label className="text-xs font-semibold">Pagamento<select className="mt-1 block rounded-lg border px-3 py-2" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}><option value="">Todos</option><option value="CASH">Dinheiro</option><option value="PIX">PIX</option><option value="CARD">Cartão</option></select></label>
+        {can("FINANCE_REPORTS") && <><a className="rounded-lg bg-emerald-700 px-3 py-2 text-sm text-white" href={`${API_URL}/admin/reports/finance.xlsx?dateFrom=${dateFrom}&dateTo=${dateTo}&operatorId=${operatorId}&paymentMethod=${paymentMethod}&token=${typeof window !== "undefined" ? localStorage.getItem("delivery:token") : ""}`} target="_blank">Excel</a>
+        <a className="rounded-lg bg-red-700 px-3 py-2 text-sm text-white" href={`${API_URL}/admin/reports/finance.pdf?dateFrom=${dateFrom}&dateTo=${dateTo}&operatorId=${operatorId}&paymentMethod=${paymentMethod}&token=${typeof window !== "undefined" ? localStorage.getItem("delivery:token") : ""}`} target="_blank">PDF</a></>}
       </section>
 
       {loading ? <p className="mt-8">Carregando módulo financeiro...</p> : null}
@@ -199,6 +213,18 @@ export default function FinanceManagePage() {
                   </div>
                 ))}
               </div>
+            </div>
+          </section>
+          <section className="mt-5 rounded-2xl border bg-white/85 p-5">
+            <h2 className="font-bold">Evolução financeira mensal</h2>
+            <div className="mt-6 flex h-60 items-end gap-4">
+              {dashboard.monthly.map((item) => (
+                <div key={item.month} className="flex flex-1 flex-col items-center gap-2">
+                  <span className="text-[10px] font-semibold">{BRL.format(item.sales)}</span>
+                  <div className="w-full rounded-t-xl bg-gradient-to-t from-ink to-blue-400" style={{ height: `${Math.max(5, item.sales / maxMonthly * 180)}px` }} />
+                  <span className="text-xs">{new Date(`${item.month}-02T12:00`).toLocaleDateString("pt-BR", { month: "short" })}</span>
+                </div>
+              ))}
             </div>
           </section>
         </>
