@@ -54,7 +54,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [login, setLogin] = useState({ phone: "", password: "", subdomain: "" });
-  const [notificationStatus, setNotificationStatus] = useState("Configurando notificacoes...");
+  const [notificationStatus, setNotificationStatus] = useState("Configurando notificações...");
   const [pushReady, setPushReady] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
   const [autoAccept, setAutoAccept] = useState(false);
@@ -137,11 +137,11 @@ export default function App() {
       const pushToken = await registerPushNotifications(setNotificationStatus);
       setPushReady(Boolean(pushToken));
       setNotificationStatus(
-        pushToken ? "Push e som ativados neste aparelho" : "Permissao de notificacao nao concedida"
+        pushToken ? "Push e som ativados neste aparelho" : "Permissão de notificação não concedida"
       );
     } catch (error) {
       setPushReady(false);
-      const message = error instanceof Error ? error.message : "Falha ao configurar notificacoes";
+      const message = error instanceof Error ? error.message : "Falha ao configurar notificações";
       setNotificationStatus(`Push com erro: ${message}`);
     } finally {
       pushLoadingRef.current = false;
@@ -432,7 +432,7 @@ export default function App() {
         await Linking.openURL(nativeIntent);
         return;
       } catch {
-        // O link universal abaixo funciona quando o app Google Maps nao aceita o intent.
+        // O link universal abaixo funciona quando o app Google Maps não aceita o intent.
       }
     }
     await Linking.openURL(selectedRoute.navigationUrl ?? selectedRoute.googleMapsUrl);
@@ -489,7 +489,7 @@ export default function App() {
           <Text style={styles.title}>App do Motoboy</Text>
           <TextInput style={styles.input} placeholder="Telefone" keyboardType="phone-pad" value={login.phone} onChangeText={(phone) => setLogin((current) => ({ ...current, phone }))} />
           <TextInput style={styles.input} placeholder="Senha" secureTextEntry value={login.password} onChangeText={(password) => setLogin((current) => ({ ...current, password }))} />
-          <TextInput style={styles.input} placeholder="Subdominio da empresa" autoCapitalize="none" value={login.subdomain} onChangeText={(subdomain) => setLogin((current) => ({ ...current, subdomain }))} />
+          <TextInput style={styles.input} placeholder="Subdomínio da empresa" autoCapitalize="none" value={login.subdomain} onChangeText={(subdomain) => setLogin((current) => ({ ...current, subdomain }))} />
           <Pressable style={styles.primaryButton} onPress={() => void submitLogin()}>
             <Text style={styles.primaryButtonText}>Entrar</Text>
           </Pressable>
@@ -581,14 +581,14 @@ export default function App() {
           <Pressable onPress={() => void logout()}><Text style={styles.link}>Sair</Text></Pressable>
         </View>
         <View style={styles.availability}>
-          <View><Text style={styles.cardTitle}>Status</Text><Text style={styles.muted}>{driver?.available ? "Disponivel para corridas" : "Indisponivel"}</Text></View>
+          <View><Text style={styles.cardTitle}>Status</Text><Text style={styles.muted}>{driver?.available ? "Disponível para corridas" : "Indisponível"}</Text></View>
           <Switch value={Boolean(driver?.available)} onValueChange={(value) => void setAvailability(value)} />
         </View>
         <View style={styles.availability}>
           <View style={styles.switchText}>
-            <Text style={styles.cardTitle}>Aceite automatico</Text>
+            <Text style={styles.cardTitle}>Aceite automático</Text>
             <Text style={styles.muted}>
-              {autoAccept ? "Novas corridas serao aceitas automaticamente" : "Confirmar cada nova corrida"}
+              {autoAccept ? "Novas corridas serão aceitas automaticamente" : "Confirmar cada nova corrida"}
             </Text>
           </View>
           <Switch value={autoAccept} onValueChange={(value) => void setAutomaticAcceptance(value)} />
@@ -601,14 +601,14 @@ export default function App() {
             onPress={() => void setupPush()}
           >
             <Text style={styles.pushRetryText}>
-              {pushLoading ? "Ativando..." : "Ativar notificacoes"}
+              {pushLoading ? "Ativando..." : "Ativar notificações"}
             </Text>
           </Pressable>
         )}
         <Text style={styles.syncStatus}>{syncStatus}</Text>
         <View style={styles.tabs}>
           <Pressable style={screen === "routes" ? styles.activeTab : styles.tab} onPress={() => setScreen("routes")}><Text>Rotas</Text></Pressable>
-          <Pressable style={screen === "history" ? styles.activeTab : styles.tab} onPress={() => setScreen("history")}><Text>Historico</Text></Pressable>
+          <Pressable style={screen === "history" ? styles.activeTab : styles.tab} onPress={() => setScreen("history")}><Text>Histórico</Text></Pressable>
         </View>
         {!visibleRoutes.length && <Text style={styles.empty}>Nenhuma rota encontrada.</Text>}
         {visibleRoutes.map((route) => (

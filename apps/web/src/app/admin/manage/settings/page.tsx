@@ -122,7 +122,7 @@ export default function SettingsManagePage() {
       toast.success(`${found.length} impressora(s) encontrada(s)`);
     } catch {
       setAgentStatus("error");
-      toast.error("QZ Tray nao esta instalado ou nao esta aberto");
+      toast.error("QZ Tray não está instalado ou não está aberto");
     }
   }
 
@@ -163,7 +163,7 @@ export default function SettingsManagePage() {
 
   function locateStore() {
     if (!navigator.geolocation) {
-      toast.error("Geolocalizacao nao suportada");
+      toast.error("Geolocalização não suportada");
       return;
     }
 
@@ -325,7 +325,7 @@ export default function SettingsManagePage() {
 
       <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
         <h2 className="mb-1 text-xl font-bold">Mensagens por etapa</h2>
-        <p className="mb-3 text-sm opacity-70">Desative as etapas que nao devem consumir envios do WhatsApp.</p>
+        <p className="mb-3 text-sm opacity-70">Desative as etapas que não devem consumir envios do WhatsApp.</p>
         <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
           {[
             ["whatsappOnReceived", "Recebido"],
@@ -417,7 +417,7 @@ export default function SettingsManagePage() {
           Imprimir automaticamente quando chegar pedido
         </label>
         <p className="mt-2 text-xs opacity-70">
-          Status do agente: {agentStatus === "connected" ? "conectado" : agentStatus === "error" ? "nao encontrado" : "nao verificado"}.
+          Status do agente: {agentStatus === "connected" ? "conectado" : agentStatus === "error" ? "não encontrado" : "não verificado"}.
           O painel de pedidos precisa permanecer aberto.
         </p>
       </section>

@@ -218,7 +218,7 @@ export default function ProductsManagePage() {
         <h2 className="font-semibold">{editingId ? "Editar produto" : "Novo produto"}</h2>
         {categories.length === 0 && (
           <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-            <p className="font-semibold">Esta empresa ainda nao possui categorias.</p>
+            <p className="font-semibold">Esta empresa ainda não possui categorias.</p>
             <p>Crie a categoria inicial para liberar o cadastro de produtos.</p>
             <div className="mt-2 flex flex-wrap gap-2">
               <button className="rounded-lg bg-amber-600 px-3 py-2 text-white" onClick={() => void createInitialCategory()}>
@@ -242,7 +242,7 @@ export default function ProductsManagePage() {
           <input className="rounded-xl border px-3 py-2 dark:bg-slate-900 md:col-span-2" type="url" placeholder="URL da imagem" value={form.imageUrl} onChange={(e) => setForm((v) => ({ ...v, imageUrl: e.target.value }))} />
           <input className="rounded-xl border px-3 py-2 md:col-span-2" type="file" accept="image/*" onChange={(e) => setImageFile(e.target.files?.[0] ?? null)} />
           <label className="flex items-center gap-2 rounded-xl border px-3 py-2"><input type="checkbox" checked={form.active} onChange={(e) => setForm((v) => ({ ...v, active: e.target.checked }))} /> Ativo</label>
-          <label className="flex items-center gap-2 rounded-xl border px-3 py-2"><input type="checkbox" checked={form.available} onChange={(e) => setForm((v) => ({ ...v, available: e.target.checked }))} /> Disponivel</label>
+          <label className="flex items-center gap-2 rounded-xl border px-3 py-2"><input type="checkbox" checked={form.available} onChange={(e) => setForm((v) => ({ ...v, available: e.target.checked }))} /> Disponível</label>
         </div>
 
         <div className="mt-4">

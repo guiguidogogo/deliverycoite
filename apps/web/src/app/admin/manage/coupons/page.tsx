@@ -265,7 +265,7 @@ export default function CouponsManagePage() {
       <section className="rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
         <h2 className="text-lg font-semibold">Novo cupom</h2>
         <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
-          <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Codigo (ex: CLIENTE10)" value={form.code} onChange={(e) => setForm((v) => ({ ...v, code: e.target.value }))} />
+          <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Código (ex: CLIENTE10)" value={form.code} onChange={(e) => setForm((v) => ({ ...v, code: e.target.value }))} />
           <select className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" value={form.type} onChange={(e) => setForm((v) => ({ ...v, type: e.target.value }))}>
             <option value="PERCENT">Percentual</option>
             <option value="FIXED">Valor fixo</option>

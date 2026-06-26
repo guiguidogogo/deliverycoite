@@ -441,7 +441,7 @@ export function Storefront() {
 
   function locateDeliveryAddress() {
     if (!navigator.geolocation) {
-      toast.error("Geolocalizacao nao suportada");
+      toast.error("Geolocalização não suportada");
       return;
     }
 
@@ -466,7 +466,7 @@ export function Storefront() {
             setValue("district", data.address.suburb || data.address.neighbourhood || "");
           }
         } catch {
-          // O mapa continua utilizavel mesmo se o endereco textual nao for encontrado.
+          // O mapa continua utilizável mesmo se o endereço textual não for encontrado.
         }
         toast.success("Confira o ponto no mapa");
       },
@@ -492,7 +492,7 @@ export function Storefront() {
       setSelectedAddress("");
       toast.success("Endereco localizado. Confira o ponto no mapa.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Endereco nao encontrado");
+      toast.error(error instanceof Error ? error.message : "Endereço não encontrado");
     } finally {
       setLocatingAddress(false);
     }
@@ -603,7 +603,7 @@ export function Storefront() {
       }
 
       if (response.sendError) {
-        toast.warning(`Pedido criado, mas houve falha no envio automatico: ${response.sendError}`);
+        toast.warning(`Pedido criado, mas houve falha no envio automático: ${response.sendError}`);
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao finalizar pedido");

@@ -219,7 +219,7 @@ export default function CustomerAuthPage() {
             ) : (
               <div className="space-y-2 rounded-xl border border-black/10 p-3 dark:border-white/20">
                 <p className="text-sm">Digite o codigo recebido no WhatsApp.</p>
-                <input className="w-full rounded-xl border px-3 py-2" placeholder="Codigo" value={resetCode} onChange={(e) => setResetCode(e.target.value)} />
+                <input className="w-full rounded-xl border px-3 py-2" placeholder="Código" value={resetCode} onChange={(e) => setResetCode(e.target.value)} />
                 <input className="w-full rounded-xl border px-3 py-2" type="password" placeholder="Nova senha" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} />
                 <button type="button" className="w-full rounded-xl bg-ember px-3 py-2 text-white" onClick={() => void confirmPasswordReset()}>
                   Alterar senha

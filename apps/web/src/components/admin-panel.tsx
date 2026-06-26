@@ -344,7 +344,7 @@ export function AdminPanel() {
     const AudioContextClass = window.AudioContext
       ?? (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioContextClass) {
-      toast.error("Este navegador nao permite aviso sonoro");
+      toast.error("Este navegador não permite aviso sonoro");
       return;
     }
 

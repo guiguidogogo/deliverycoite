@@ -37,7 +37,7 @@ export default function AdminLoginPage() {
 
     if (!res.ok) {
       const payload = await res.json().catch(() => ({}));
-      toast.error(payload.message ?? "Credenciais invalidas");
+      toast.error(payload.message ?? "Credenciais inválidas");
       return;
     }
 
@@ -81,7 +81,7 @@ export default function AdminLoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center p-4">
       <form onSubmit={handleSubmit} className="w-full max-w-sm rounded-2xl border border-black/10 bg-white/85 p-5 dark:border-white/10 dark:bg-slate-900/70">
-        <h1 className="font-display text-4xl">{masterAccess ? "Painel Master SaaS" : "Admin Login"}</h1>
+        <h1 className="font-display text-4xl">{masterAccess ? "Painel Master SaaS" : "Login Administrativo"}</h1>
         <p className="text-sm opacity-70">
           {masterAccess ? "Acesso global para gerenciamento das empresas" : "Administrador / Atendente"}
         </p>
@@ -93,7 +93,7 @@ export default function AdminLoginPage() {
             <>
               <input
                 className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/20"
-                placeholder="Subdominio da empresa (opcional)"
+                placeholder="Subdomínio da empresa (opcional)"
                 value={subdomain}
                 onChange={(e) => setSubdomain(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
               />
@@ -111,8 +111,8 @@ export default function AdminLoginPage() {
             </button>
           ) : (
             <div className="space-y-2 rounded-xl border border-black/10 p-3 dark:border-white/20">
-              <p className="text-sm font-semibold">Codigo enviado ao WhatsApp cadastrado</p>
-              <input className="w-full rounded-xl border px-3 py-2" placeholder="Codigo de 6 digitos" value={code} onChange={(e) => setCode(e.target.value)} />
+              <p className="text-sm font-semibold">Código enviado ao WhatsApp cadastrado</p>
+              <input className="w-full rounded-xl border px-3 py-2" placeholder="Código de 6 dígitos" value={code} onChange={(e) => setCode(e.target.value)} />
               <input className="w-full rounded-xl border px-3 py-2" type="password" placeholder="Nova senha" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
               <button type="button" className="w-full rounded-xl bg-ember px-3 py-2 text-white" onClick={() => void resetPassword()}>
                 Redefinir senha

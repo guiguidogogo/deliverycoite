@@ -24,7 +24,7 @@ export default function EditCompanyPage() {
       .then(() => adminApi<CompanyDetail>(`/admin/companies/${params.id}`))
       .then(setCompany)
       .catch((error) => {
-        toast.error(error instanceof Error ? error.message : "Empresa nao encontrada");
+        toast.error(error instanceof Error ? error.message : "Empresa não encontrada");
         router.replace("/admin/companies");
       });
   }, [params.id, router]);

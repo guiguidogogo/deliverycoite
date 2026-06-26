@@ -148,7 +148,7 @@ export default function FinanceManagePage() {
 
       <div className="mt-5 flex flex-wrap gap-2">
         {([
-          ["dashboard", "Dashboard"], ["cash", "Caixa"], ["payables", "Contas a pagar"],
+          ["dashboard", "Painel"], ["cash", "Caixa"], ["payables", "Contas a pagar"],
           ["receivables", "Contas a receber"], ["history", "Fechamentos"], ["audit", "Auditoria"]
         ] as Array<[Tab, string]>).filter(([value]) => {
           if (value === "cash" || value === "history") return can("CASH_MANAGE") || can("FINANCE");

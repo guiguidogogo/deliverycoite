@@ -167,7 +167,7 @@ export default function DeliveriesPage() {
         toast.warning(
           route.push?.errors?.[0]
             ? `Rota criada, mas o push falhou: ${route.push.errors[0]}`
-            : "Rota criada. O motoboy ainda nao registrou um aparelho para push."
+            : "Rota criada. O motoboy ainda não registrou um aparelho para push."
         );
       }
       await load();
@@ -314,7 +314,7 @@ export default function DeliveriesPage() {
                 <p className="text-sm">{driver.vehicle}{driver.licensePlate ? ` - ${driver.licensePlate}` : ""}</p>
                 <p className="text-xs opacity-60">WhatsApp: {driver.whatsapp}</p>
                 <p className={`text-xs font-semibold ${driver.available ? "text-emerald-600" : "text-amber-600"}`}>
-                  {driver.available ? "Disponivel" : "Indisponivel"}
+                  {driver.available ? "Disponível" : "Indisponível"}
                 </p>
               </div>
               <div className="flex flex-col gap-2">

@@ -42,7 +42,7 @@ export async function findAddressCoordinates(
     if (location) return location;
   }
 
-  throw new Error("Endereco nao encontrado. Confira rua e bairro.");
+  throw new Error("Endereço não encontrado. Confira rua e bairro.");
 }
 
 export async function findAddressFromCoordinates(

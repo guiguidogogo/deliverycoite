@@ -196,7 +196,7 @@ export default function UsersManagePage() {
           <article key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-white/80 p-3 dark:bg-slate-900/70">
             <div>
               <p className="font-semibold">{item.name}</p>
-              <p className="text-sm opacity-70">{item.email} | {item.phone || "WhatsApp nao cadastrado"}</p>
+              <p className="text-sm opacity-70">{item.email} | {item.phone || "WhatsApp não cadastrado"}</p>
               <p className="text-xs">{item.role === "ADMIN" ? "Administrador total" : item.staffRole?.name || item.role}</p>
             </div>
             <button className={`rounded-lg px-3 py-2 text-sm text-white ${item.active ? "bg-red-600" : "bg-emerald-600"}`} onClick={() => void toggleUser(item)}>

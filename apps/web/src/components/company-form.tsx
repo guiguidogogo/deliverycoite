@@ -319,7 +319,7 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
       <section className="rounded-2xl border border-black/10 bg-white/85 p-5 dark:border-white/10 dark:bg-slate-900/70">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h2 className="text-xl font-bold">Subdominio</h2>
+            <h2 className="text-xl font-bold">Subdomínio</h2>
             <p className="text-sm opacity-70">Endereco publico futuro da empresa.</p>
           </div>
           <button
