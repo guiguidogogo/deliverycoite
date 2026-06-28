@@ -127,7 +127,7 @@ import { listMarketplaceCompanies, marketplaceSummary } from "../controllers/mar
 import { auth, requireAnyPermission, requirePermission, requireSuperAdmin } from "../middlewares/auth.js";
 import { customerAuth } from "../middlewares/customer-auth.js";
 import { driverAuth } from "../middlewares/driver-auth.js";
-import { imageUpload, persistentImageUpload } from "../utils/upload.js";
+import { persistentImageUpload } from "../utils/upload.js";
 import { asyncHandler } from "../utils/async-handler.js";
 import { resolveCompany } from "../utils/tenant.js";
 
@@ -252,7 +252,7 @@ route.delete("/admin/categories/:id", requirePermission("CATALOG"), deleteCatego
 
 route.get("/admin/products", requirePermission("CATALOG"), listProducts);
 route.post("/admin/products", requirePermission("CATALOG"), createProduct);
-route.post("/admin/uploads/image", requireAnyPermission(["CATALOG", "COUPONS", "SETTINGS"]), imageUpload.single("image"), uploadImage);
+route.post("/admin/uploads/image", requireAnyPermission(["CATALOG", "COUPONS", "SETTINGS"]), persistentImageUpload.single("image"), uploadImage);
 route.patch("/admin/products/:id", requirePermission("CATALOG"), updateProduct);
 route.delete("/admin/products/:id", requirePermission("CATALOG"), deleteProduct);
 

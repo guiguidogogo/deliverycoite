@@ -2,11 +2,19 @@ import type { Request, Response } from "express";
 import { prisma } from "../utils/prisma.js";
 
 export async function uploadImage(req: Request, res: Response) {
-  if (!req.file) {
+  if (!req.file?.buffer) {
     return res.status(400).json({ message: "Arquivo nao enviado" });
   }
 
-  const filePath = `/uploads/${req.file.filename}`;
+  const image = await prisma.uploadedImage.create({
+    data: {
+      data: req.file.buffer,
+      mimeType: req.file.mimetype,
+      originalName: req.file.originalname
+    },
+    select: { id: true }
+  });
+  const filePath = `/api/marketplace/assets/${image.id}`;
   return res.status(201).json({ url: filePath, absoluteUrl: filePath });
 }
 
