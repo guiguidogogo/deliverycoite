@@ -25,6 +25,8 @@ export default function SettingsManagePage() {
     menuiaApiKey: "",
     menuiaStoreId: "",
     menuiaEnabled: false,
+    mercadoPagoPublicKey: "",
+    mercadoPagoAccessToken: "",
     whatsappOnReceived: true,
     whatsappOnPreparing: true,
     whatsappOnOutForDelivery: true,
@@ -68,6 +70,8 @@ export default function SettingsManagePage() {
           menuiaApiKey: data.menuiaApiKey ?? "",
           menuiaStoreId: data.menuiaStoreId ?? "",
           menuiaEnabled: data.menuiaEnabled ?? false,
+          mercadoPagoPublicKey: data.mercadoPagoPublicKey ?? "",
+          mercadoPagoAccessToken: data.mercadoPagoAccessToken ?? "",
           whatsappOnReceived: data.whatsappOnReceived ?? true,
           whatsappOnPreparing: data.whatsappOnPreparing ?? true,
           whatsappOnOutForDelivery: data.whatsappOnOutForDelivery ?? true,
@@ -358,6 +362,37 @@ export default function SettingsManagePage() {
             Adicionar faixa
           </button>
         </div>
+      </section>
+
+      <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
+        <h2 className="mb-1 text-xl font-bold">Mercado Pago</h2>
+        <p className="mb-3 text-sm opacity-70">
+          Configure as credenciais da conta Mercado Pago desta loja para receber pagamentos online.
+        </p>
+        <div className="grid grid-cols-1 gap-2">
+          <label>
+            <span className="mb-1 block text-xs font-semibold">Public Key</span>
+            <input
+              className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
+              placeholder="APP_USR-..."
+              value={form.mercadoPagoPublicKey}
+              onChange={(e) => setForm((v) => ({ ...v, mercadoPagoPublicKey: e.target.value }))}
+            />
+          </label>
+          <label>
+            <span className="mb-1 block text-xs font-semibold">Access Token</span>
+            <input
+              className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
+              placeholder="APP_USR-..."
+              type="password"
+              value={form.mercadoPagoAccessToken}
+              onChange={(e) => setForm((v) => ({ ...v, mercadoPagoAccessToken: e.target.value }))}
+            />
+          </label>
+        </div>
+        <p className="mt-2 text-xs opacity-70">
+          Essas chaves ficam vinculadas apenas à empresa logada e não aparecem para outras lojas.
+        </p>
       </section>
 
       <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">

@@ -41,7 +41,9 @@ const settingsSchema = z.object({
   printerEnabled: z.boolean().optional(),
   printerName: z.string().optional(),
   printerPaperWidth: z.union([z.literal(58), z.literal(80)]).optional(),
-  printerAutoPrint: z.boolean().optional()
+  printerAutoPrint: z.boolean().optional(),
+  mercadoPagoPublicKey: z.string().trim().optional(),
+  mercadoPagoAccessToken: z.string().trim().optional()
 });
 
 async function ensureDefaultSettings(req: Request) {
@@ -71,13 +73,25 @@ async function ensureDefaultSettings(req: Request) {
 
 export async function getSettings(req: Request, res: Response) {
   const settings = await ensureDefaultSettings(req);
-  return res.json(settings);
+  const company = await prisma.company.findUnique({
+    where: { id: getCompanyId(req) },
+    select: {
+      mercadoPagoPublicKey: true,
+      mercadoPagoAccessToken: true
+    }
+  });
+
+  return res.json({
+    ...settings,
+    mercadoPagoPublicKey: company?.mercadoPagoPublicKey ?? null,
+    mercadoPagoAccessToken: company?.mercadoPagoAccessToken ?? null
+  });
 }
 
 export async function updateSettings(req: Request, res: Response) {
   const body = settingsSchema.parse(req.body);
   const current = await ensureDefaultSettings(req);
-  const { deliveryFeeTiers, ...settingsData } = body;
+  const { deliveryFeeTiers, mercadoPagoPublicKey, mercadoPagoAccessToken, ...settingsData } = body;
 
   const settings = await prisma.$transaction(async (transaction) => {
     const updated = await transaction.setting.update({
@@ -108,6 +122,20 @@ export async function updateSettings(req: Request, res: Response) {
       });
     }
 
+    if (mercadoPagoPublicKey !== undefined || mercadoPagoAccessToken !== undefined) {
+      await transaction.company.update({
+        where: { id: getCompanyId(req) },
+        data: {
+          ...(mercadoPagoPublicKey !== undefined
+            ? { mercadoPagoPublicKey: mercadoPagoPublicKey.trim() || null }
+            : {}),
+          ...(mercadoPagoAccessToken !== undefined
+            ? { mercadoPagoAccessToken: mercadoPagoAccessToken.trim() || null }
+            : {})
+        }
+      });
+    }
+
     if (deliveryFeeTiers !== undefined) {
       await transaction.deliveryFeeTier.deleteMany({ where: { settingId: current.id } });
       if (deliveryFeeTiers.length) {
@@ -126,10 +154,24 @@ export async function updateSettings(req: Request, res: Response) {
       }
     }
 
-    return transaction.setting.findUniqueOrThrow({
+    const savedSettings = await transaction.setting.findUniqueOrThrow({
       where: { id: updated.id },
       include: { deliveryFeeTiers: { orderBy: { sortOrder: "asc" } } }
     });
+
+    const savedCompany = await transaction.company.findUnique({
+      where: { id: getCompanyId(req) },
+      select: {
+        mercadoPagoPublicKey: true,
+        mercadoPagoAccessToken: true
+      }
+    });
+
+    return {
+      ...savedSettings,
+      mercadoPagoPublicKey: savedCompany?.mercadoPagoPublicKey ?? null,
+      mercadoPagoAccessToken: savedCompany?.mercadoPagoAccessToken ?? null
+    };
   });
 
   return res.json(settings);
