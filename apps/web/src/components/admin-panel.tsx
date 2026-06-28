@@ -138,6 +138,13 @@ export function AdminPanel() {
   const initializedOrdersRef = useRef(false);
   const autoPrintedOrdersRef = useRef<Set<string>>(new Set());
   const autoPrintOrderRef = useRef<(orderId: string) => Promise<void>>(async () => undefined);
+  const refreshInFlightRef = useRef(false);
+  const pendingRefreshRef = useRef(false);
+  const soundEnabledRef = useRef(false);
+
+  useEffect(() => {
+    soundEnabledRef.current = soundEnabled;
+  }, [soundEnabled]);
 
   useEffect(() => {
     const storedToken = localStorage.getItem("delivery:token");
@@ -201,7 +208,12 @@ export function AdminPanel() {
 
   const refreshPanel = useCallback(async (notifyNewOrders = false) => {
     if (!token) return;
+    if (refreshInFlightRef.current) {
+      pendingRefreshRef.current = pendingRefreshRef.current || notifyNewOrders;
+      return;
+    }
 
+    refreshInFlightRef.current = true;
     try {
       const [dash, list, notify] = await Promise.all([
         authApi<Dashboard>("/admin/dashboard", token),
@@ -222,7 +234,7 @@ export function AdminPanel() {
       const newOrders = notify.orders.filter((order) => !knownNewOrdersRef.current.has(order.id));
 
       if (initializedOrdersRef.current && notifyNewOrders && newOrders.length > 0) {
-        if (audioRef.current && soundEnabled) {
+        if (audioRef.current && soundEnabledRef.current) {
           void audioRef.current.resume().then(() => beep(audioRef.current!)).catch(() => undefined);
         }
         toast.success(
@@ -243,14 +255,20 @@ export function AdminPanel() {
         return;
       }
       toast.error(message || "Nao foi possivel conectar ao servidor.");
+    } finally {
+      refreshInFlightRef.current = false;
+      if (pendingRefreshRef.current) {
+        pendingRefreshRef.current = false;
+        window.setTimeout(() => void refreshPanel(true), 800);
+      }
     }
-  }, [token, filterStatus, search, dateFrom, dateTo, router, soundEnabled]);
+  }, [token, filterStatus, search, dateFrom, dateTo, router]);
 
   useEffect(() => {
     if (!token) return;
     void refreshPanel(false);
 
-    const timer = window.setInterval(() => void refreshPanel(true), 5000);
+    const timer = window.setInterval(() => void refreshPanel(true), 15000);
     const onFocus = () => void refreshPanel(true);
     const onVisibility = () => {
       if (document.visibilityState === "visible") void refreshPanel(true);

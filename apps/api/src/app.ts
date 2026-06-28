@@ -45,7 +45,9 @@ app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
 app.use(
   rateLimit({
     windowMs: 15 * 60 * 1000,
-    limit: 500
+    limit: 3000,
+    standardHeaders: true,
+    legacyHeaders: false
   })
 );
 

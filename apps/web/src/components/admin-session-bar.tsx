@@ -36,7 +36,7 @@ export function AdminSessionBar() {
     void apiFetch(`/admin/me`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store"
-    })
+    }, { skipSubdomain: true })
       .then((response) => response.ok ? response.json() : null)
       .then((data) => setSession(data));
   }, [pathname]);
