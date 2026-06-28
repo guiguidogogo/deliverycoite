@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { api } from "../lib/api";
+import { api, resolveAssetUrl } from "../lib/api";
 import { money } from "../lib/format";
 import type { CartItem, Category, Product, PublicCompany, SelectedComplement, Settings } from "../lib/types";
 import { LocationPicker } from "./location-picker";
@@ -148,7 +148,7 @@ export function Storefront() {
             favicon.rel = "icon";
             document.head.appendChild(favicon);
           }
-          favicon.href = tenantCompany.faviconUrl;
+          favicon.href = resolveAssetUrl(tenantCompany.faviconUrl);
         }
         document.title = tenantCompany.tradeName;
       })
@@ -618,7 +618,7 @@ export function Storefront() {
             <div className="flex items-center gap-3">
               {company?.logoUrl && (
                 <Image
-                  src={company.logoUrl}
+                  src={resolveAssetUrl(company.logoUrl)}
                   alt={`Logo ${company.tradeName}`}
                   width={56}
                   height={56}
@@ -722,7 +722,7 @@ export function Storefront() {
             <article key={product.id} className="card-surface reveal overflow-hidden" style={{ animationDelay: `${index * 60}ms` }}>
               <div className="relative h-36 w-full bg-slate-200/40">
                 <Image
-                  src={product.imageUrl ?? "https://images.unsplash.com/photo-1550547660-d9450f859349"}
+                  src={resolveAssetUrl(product.imageUrl) || "https://images.unsplash.com/photo-1550547660-d9450f859349"}
                   alt={product.name}
                   fill
                   className="object-cover"
@@ -998,7 +998,7 @@ export function Storefront() {
                     <article key={link.id} className={`flex gap-3 rounded-xl border p-3 ${quantity > 0 ? "border-ember" : "border-black/10 dark:border-white/10"}`}>
                       <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-black/5">
                         {link.complement.imageUrl ? (
-                          <Image src={link.complement.imageUrl} alt={link.complement.name} fill unoptimized className="object-cover" />
+                          <Image src={resolveAssetUrl(link.complement.imageUrl)} alt={link.complement.name} fill unoptimized className="object-cover" />
                         ) : null}
                       </div>
                       <div className="min-w-0 flex-1">

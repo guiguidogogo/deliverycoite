@@ -62,6 +62,8 @@ const labels: Record<Order["status"], string> = {
   CANCELED: "Cancelado"
 };
 
+const ADMIN_SOUND_KEY = "delivery:admin-sound-enabled";
+
 async function authApi<T>(path: string, token: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
@@ -121,7 +123,9 @@ export function AdminPanel() {
   const [dateTo, setDateTo] = useState(() => toInputDate(new Date()));
   const [payingOrderId, setPayingOrderId] = useState<string | null>(null);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
-  const [soundEnabled, setSoundEnabled] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(() =>
+    typeof window !== "undefined" && localStorage.getItem(ADMIN_SOUND_KEY) === "true"
+  );
   const [connected, setConnected] = useState(false);
   const [permissions, setPermissions] = useState<string[]>([]);
   const [userRole, setUserRole] = useState<string>("");
@@ -144,6 +148,32 @@ export function AdminPanel() {
 
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
+    if (soundEnabled) {
+      localStorage.setItem(ADMIN_SOUND_KEY, "true");
+    }
+  }, [soundEnabled]);
+
+  useEffect(() => {
+    if (!soundEnabled) return;
+
+    const AudioContextClass = window.AudioContext
+      ?? (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextClass) return;
+
+    audioRef.current = audioRef.current ?? new AudioContextClass();
+
+    const unlockAudio = () => {
+      if (!audioRef.current) return;
+      void audioRef.current.resume().catch(() => undefined);
+    };
+
+    window.addEventListener("pointerdown", unlockAudio, { once: true });
+    window.addEventListener("keydown", unlockAudio, { once: true });
+
+    return () => {
+      window.removeEventListener("pointerdown", unlockAudio);
+      window.removeEventListener("keydown", unlockAudio);
+    };
   }, [soundEnabled]);
 
   useEffect(() => {
@@ -371,6 +401,7 @@ export function AdminPanel() {
     await audio.resume();
     beep(audio);
     setSoundEnabled(true);
+    localStorage.setItem(ADMIN_SOUND_KEY, "true");
     toast.success("Aviso sonoro ativado");
   }
 

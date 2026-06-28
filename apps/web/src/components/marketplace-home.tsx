@@ -23,7 +23,7 @@ import {
   X
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { API_URL, apiFetch } from "../lib/api";
+import { API_URL, apiFetch, resolveAssetUrl } from "../lib/api";
 import { money } from "../lib/format";
 
 type MarketplaceCompany = {
@@ -81,7 +81,7 @@ function CompanyCard({ company, compact = false }: { company: MarketplaceCompany
         <div className="absolute -bottom-14 -left-8 h-32 w-32 rounded-full bg-white/25" />
         {company.logo ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={company.logo} alt={`Logo ${company.name}`} className="relative h-24 w-24 rounded-3xl object-cover shadow-lg ring-4 ring-white/80" />
+          <img src={resolveAssetUrl(company.logo)} alt={`Logo ${company.name}`} className="relative h-24 w-24 rounded-3xl object-cover shadow-lg ring-4 ring-white/80" />
         ) : (
           <div className="relative grid h-24 w-24 place-items-center rounded-3xl bg-white text-3xl font-black text-slate-800 shadow-lg">
             {company.name.slice(0, 2).toUpperCase()}

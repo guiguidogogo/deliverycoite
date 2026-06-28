@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { API_URL, apiFetch } from "../../../../lib/api";
+import { apiFetch, resolveAssetUrl } from "../../../../lib/api";
 
 type Complement = {
   id: string;
@@ -87,7 +87,7 @@ export default function ComplementsManagePage() {
       body: data
     }, { json: false });
     const payload = await responseJson(res);
-    return `${window.location.origin}${payload.url}`;
+    return payload.url ?? null;
   }
 
   async function save() {
@@ -103,13 +103,13 @@ export default function ComplementsManagePage() {
       if (name.length < 2) throw new Error("Informe o nome do complemento");
       if (description.length < 2) throw new Error("Informe a descricao do complemento");
       if (!Number.isFinite(price) || price < 0) throw new Error("Informe um preco valido, por exemplo 2,00");
-      if (typedImageUrl && !/^https?:\/\//i.test(typedImageUrl)) {
-        throw new Error("A URL da imagem deve comecar com http:// ou https://");
+      if (typedImageUrl && !/^https?:\/\//i.test(typedImageUrl) && !typedImageUrl.startsWith("/")) {
+        throw new Error("A URL da imagem deve comecar com http://, https:// ou /uploads/");
       }
 
       const imageUrl = await upload(token);
-      const res = await fetch(
-        editingId ? `${API_URL}/admin/complements/${editingId}` : `${API_URL}/admin/complements`,
+      const res = await apiFetch(
+        editingId ? `/admin/complements/${editingId}` : `/admin/complements`,
         {
           method: editingId ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -182,7 +182,7 @@ export default function ComplementsManagePage() {
         {items.map((item) => (
           <article key={item.id} className="flex gap-3 rounded-xl border border-black/10 bg-white/80 p-3 dark:border-white/10 dark:bg-slate-900/70">
             <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-black/5">
-              {item.imageUrl ? <Image src={item.imageUrl} alt={item.name} fill unoptimized className="object-cover" /> : null}
+              {item.imageUrl ? <Image src={resolveAssetUrl(item.imageUrl)} alt={item.name} fill unoptimized className="object-cover" /> : null}
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex justify-between gap-2">

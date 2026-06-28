@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { API_URL, apiFetch } from "../../../../lib/api";
+import { apiFetch, resolveAssetUrl } from "../../../../lib/api";
 
 type Coupon = {
   id: string;
@@ -86,9 +86,7 @@ export default function CouponsManagePage() {
         if (!upload.ok) {
           throw new Error(uploadPayload.message ?? "Falha ao enviar imagem");
         }
-        imageUrl =
-          uploadPayload.absoluteUrl ??
-          `${window.location.origin}${uploadPayload.url}`;
+        imageUrl = uploadPayload.url ?? imageUrl;
       }
 
       const response = await apiFetch(`/admin/settings`, {
@@ -213,7 +211,7 @@ export default function CouponsManagePage() {
           <div className="relative min-h-40 overflow-hidden rounded-xl bg-gradient-to-r from-ember to-lime">
             {banner.imageUrl && (
               <Image
-                src={banner.imageUrl}
+                src={resolveAssetUrl(banner.imageUrl)}
                 alt="Banner promocional"
                 fill
                 unoptimized

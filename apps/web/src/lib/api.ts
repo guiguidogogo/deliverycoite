@@ -58,4 +58,20 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
+export function resolveAssetUrl(value?: string | null) {
+  if (!value) return "";
+  if (value.startsWith("/")) return value;
+
+  try {
+    const url = new URL(value);
+    if (url.pathname.startsWith("/uploads/") || url.pathname.startsWith("/api/marketplace/assets/")) {
+      return url.pathname;
+    }
+  } catch {
+    return value;
+  }
+
+  return value;
+}
+
 export { API_URL };

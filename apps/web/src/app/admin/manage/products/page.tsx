@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { API_URL, apiFetch } from "../../../../lib/api";
+import { apiFetch, resolveAssetUrl } from "../../../../lib/api";
 
 type Category = { id: string; name: string };
 type Complement = { id: string; name: string; price: number; active: boolean };
@@ -131,7 +131,7 @@ export default function ProductsManagePage() {
       body: data
     }, { json: false });
     const payload = await responseJson(res);
-return `${window.location.origin}${payload.url}`;
+    return payload.url ?? null;
   }
 
   async function save() {
@@ -144,8 +144,8 @@ return `${window.location.origin}${payload.url}`;
     setSaving(true);
     try {
       const imageUrl = await upload(token);
-      const res = await fetch(
-        editingId ? `${API_URL}/admin/products/${editingId}` : `${API_URL}/admin/products`,
+      const res = await apiFetch(
+        editingId ? `/admin/products/${editingId}` : `/admin/products`,
         {
           method: editingId ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -280,7 +280,7 @@ return `${window.location.origin}${payload.url}`;
         {products.map((product) => (
           <article key={product.id} className="flex gap-3 rounded-xl border border-black/10 bg-white/80 p-3 dark:border-white/10 dark:bg-slate-900/70">
             <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-black/5">
-              {product.imageUrl ? <Image src={product.imageUrl} alt={product.name} fill unoptimized className="object-cover" /> : null}
+              {product.imageUrl ? <Image src={resolveAssetUrl(product.imageUrl)} alt={product.name} fill unoptimized className="object-cover" /> : null}
             </div>
             <div className="min-w-0 flex-1">
               <p className="font-semibold">{product.name}</p>

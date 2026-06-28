@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { adminApi, getAdminToken } from "../lib/admin-api";
-import { API_URL, apiFetch } from "../lib/api";
+import { apiFetch, resolveAssetUrl } from "../lib/api";
 
 export type CompanyFormValue = {
   companyName: string;
@@ -163,7 +163,7 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
         <div className={`grid h-20 w-20 shrink-0 place-items-center overflow-hidden border bg-slate-50 text-xs text-slate-400 ${rounded ? "rounded-full" : "rounded-2xl"}`}>
           {form[field] ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={form[field]} alt={label} className="h-full w-full object-cover" />
+            <img src={resolveAssetUrl(form[field])} alt={label} className="h-full w-full object-cover" />
           ) : (
             "Sem imagem"
           )}
