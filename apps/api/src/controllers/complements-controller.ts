@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
+import { optionalImageUrl } from "../utils/image-url.js";
 
 const complementSchema = z.object({
   name: z.string().trim().min(2, "Informe um nome com pelo menos 2 caracteres"),
@@ -11,10 +12,7 @@ const complementSchema = z.object({
     (value) => typeof value === "string" ? value.replace(",", ".") : value,
     z.coerce.number({ invalid_type_error: "Informe um preco valido" }).min(0, "O preco nao pode ser negativo")
   ),
-  imageUrl: z.preprocess(
-    (value) => typeof value === "string" && !value.trim() ? null : value,
-    z.string().url("Informe uma URL de imagem valida").nullable().optional()
-  ),
+  imageUrl: optionalImageUrl("Informe uma URL de imagem valida"),
   active: z.boolean().optional()
 });
 

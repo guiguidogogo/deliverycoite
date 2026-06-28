@@ -673,7 +673,7 @@ export function Storefront() {
           style={
             settings?.promoBannerImageUrl
               ? {
-                  backgroundImage: `linear-gradient(90deg, rgba(15,23,42,.82), rgba(15,23,42,.28)), url("${settings.promoBannerImageUrl}")`,
+                  backgroundImage: `linear-gradient(90deg, rgba(15,23,42,.82), rgba(15,23,42,.28)), url("${resolveAssetUrl(settings.promoBannerImageUrl)}")`,
                   backgroundPosition: "center",
                   backgroundSize: "cover"
                 }

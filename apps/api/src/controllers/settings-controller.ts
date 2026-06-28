@@ -3,11 +3,12 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { getCompanyId } from "../utils/tenant.js";
+import { optionalImageUrl } from "../utils/image-url.js";
 
 const settingsSchema = z.object({
   companyName: z.string().min(2).optional(),
-  logoUrl: z.string().url().optional(),
-  promoBannerImageUrl: z.string().url().nullable().optional(),
+  logoUrl: optionalImageUrl(),
+  promoBannerImageUrl: optionalImageUrl(),
   promoBannerTitle: z.string().max(80).optional(),
   promoBannerText: z.string().max(200).optional(),
   whatsappNumber: z.string().min(8).optional(),

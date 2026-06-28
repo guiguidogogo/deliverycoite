@@ -4,13 +4,14 @@ import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
 import { audit } from "../utils/audit.js";
+import { optionalImageUrl } from "../utils/image-url.js";
 
 const schema = z.object({
   name: z.string().min(2),
   description: z.string().min(2),
   price: z.coerce.number().positive(),
   promoPrice: z.coerce.number().positive().optional(),
-  imageUrl: z.string().url().nullable().optional(),
+  imageUrl: optionalImageUrl(),
   categoryId: z.string().min(1),
   active: z.boolean().optional(),
   available: z.boolean().optional(),

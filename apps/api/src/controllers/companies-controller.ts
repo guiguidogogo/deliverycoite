@@ -4,16 +4,14 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { env } from "../utils/env.js";
+import { optionalImageUrl } from "../utils/image-url.js";
 
 const optionalText = z.preprocess(
   (value) => typeof value === "string" && !value.trim() ? null : value,
   z.string().trim().nullable().optional()
 );
 
-const optionalUrl = (message: string) => z.preprocess(
-  (value) => typeof value === "string" && !value.trim() ? null : value,
-  z.string().trim().url(message).nullable().optional()
-);
+const optionalUrl = (message: string) => optionalImageUrl(message);
 
 const brandColor = z.string()
   .trim()
