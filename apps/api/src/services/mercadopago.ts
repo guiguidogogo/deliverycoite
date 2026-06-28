@@ -76,7 +76,6 @@ export async function createMercadoPagoPreference(params: {
         failure: params.failureUrl,
         pending: params.pendingUrl
       },
-      auto_return: "approved",
       statement_descriptor: "HUBREGIONAL"
     })
   });

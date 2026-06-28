@@ -933,12 +933,19 @@ export function Storefront() {
                 </>
               )}
 
-              <select className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" {...register("paymentMethod")}>
+              <select
+                className={`rounded-xl border px-3 py-2 font-semibold dark:border-white/20 ${
+                  paymentMethod === "MERCADO_PAGO"
+                    ? "border-blue-500 bg-blue-50 text-blue-700 ring-2 ring-blue-200 dark:bg-blue-950/40 dark:text-blue-200"
+                    : "border-black/10 bg-transparent"
+                }`}
+                {...register("paymentMethod")}
+              >
                 <option value="CASH">Dinheiro</option>
                 <option value="PIX">PIX</option>
                 <option value="CARD">Cartao</option>
                 {settings?.mercadoPagoEnabled && settings.mercadoPagoPublicKey && (
-                  <option value="MERCADO_PAGO">Mercado Pago</option>
+                  <option className="font-bold text-blue-700" value="MERCADO_PAGO">Mercado Pago online</option>
                 )}
               </select>
 
@@ -981,9 +988,14 @@ export function Storefront() {
             )}
 
             {paymentMethod === "MERCADO_PAGO" && (
-              <div className="mt-4 rounded-xl border border-dashed border-blue-500/60 p-3 text-sm">
-                <p className="font-semibold">Pagamento online Mercado Pago</p>
-                <p>Ao confirmar, voce sera redirecionado para pagar com Pix, cartao ou saldo Mercado Pago.</p>
+              <div className="mt-4 rounded-2xl border-2 border-blue-500 bg-blue-600 p-4 text-sm text-white shadow-lg shadow-blue-500/20">
+                <p className="text-base font-black">Pagamento online Mercado Pago</p>
+                <p className="mt-1 opacity-95">
+                  Ao confirmar o pedido, voce sera encaminhado para pagar com Pix, cartao ou saldo Mercado Pago.
+                </p>
+                <p className="mt-2 rounded-xl bg-white/15 px-3 py-2 text-xs font-semibold">
+                  Finalize o pagamento na tela segura do Mercado Pago para a loja confirmar mais rapido.
+                </p>
               </div>
             )}
 
