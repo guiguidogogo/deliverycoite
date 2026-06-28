@@ -37,6 +37,16 @@ function normalizeSubdomain(value?: string) {
 }
 
 function bodySubdomain(req: Request) {
+  const path = req.path.toLowerCase();
+  const bodyCanResolveTenant = [
+    "/auth/login",
+    "/auth/password/request",
+    "/auth/password/reset",
+    "/driver/auth/login"
+  ].includes(path);
+
+  if (!bodyCanResolveTenant) return "";
+
   return typeof req.body === "object" && req.body && "subdomain" in req.body
     ? normalizeSubdomain(String((req.body as { subdomain?: unknown }).subdomain ?? ""))
     : "";
@@ -81,7 +91,7 @@ export function companyWhere(req: Request) {
 export async function resolveCompany(req: Request, res: Response, next: NextFunction) {
   const host = requestHost(req);
   const requestedSubdomain = normalizeSubdomain(
-    req.headers["x-company-subdomain"]?.toString() || req.query.subdomain?.toString() || bodySubdomain(req)
+    req.headers["x-company-subdomain"]?.toString() || req.query.subdomain?.toString()
   );
   if (requestedSubdomain) {
     const company = await findActiveCompany(requestedSubdomain);
@@ -100,6 +110,20 @@ export async function resolveCompany(req: Request, res: Response, next: NextFunc
   if (tokenCompanyId) {
     req.companyId = tokenCompanyId;
     req.tenant = { source: "default", host, bound: false };
+    return next();
+  }
+
+  const requestedBodySubdomain = bodySubdomain(req);
+  if (requestedBodySubdomain) {
+    const company = await findActiveCompany(requestedBodySubdomain);
+    if (!company) return tenantNotFound(res, requestedBodySubdomain);
+    req.companyId = company.id;
+    req.tenant = {
+      source: "homologation",
+      host,
+      subdomain: company.subdomain,
+      bound: true
+    };
     return next();
   }
 
