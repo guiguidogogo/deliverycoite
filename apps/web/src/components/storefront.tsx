@@ -22,7 +22,7 @@ const checkoutSchema = z
     number: z.string().optional(),
     district: z.string().optional(),
     complement: z.string().optional(),
-    paymentMethod: z.enum(["CASH", "PIX", "CARD"]),
+    paymentMethod: z.enum(["CASH", "PIX", "CARD", "MERCADO_PAGO"]),
     needChange: z.boolean().optional(),
     changeFor: z.string().optional(),
     couponCode: z.string().optional(),
@@ -62,7 +62,7 @@ type CheckoutPayload = {
     longitude?: number;
   };
   fulfillmentType: "DELIVERY" | "PICKUP";
-  paymentMethod: "CASH" | "PIX" | "CARD";
+  paymentMethod: "CASH" | "PIX" | "CARD" | "MERCADO_PAGO";
   changeFor?: number;
   couponCode?: string;
   notes?: string;
@@ -578,10 +578,27 @@ export function Storefront() {
     };
 
     try {
-      const response = await api<{ whatsappUrl: string | null; sentByServer?: boolean; sendError?: string | null }>("/orders", {
+      const response = await api<{
+        orderId: string;
+        whatsappUrl: string | null;
+        sentByServer?: boolean;
+        sendError?: string | null;
+      }>("/orders", {
         method: "POST",
         body: JSON.stringify(payload)
       });
+
+      if (values.paymentMethod === "MERCADO_PAGO") {
+        const preference = await api<{ initPoint: string | null; sandboxInitPoint: string | null }>(
+          `/orders/${response.orderId}/mercadopago/preference`,
+          { method: "POST" }
+        );
+        const paymentUrl = preference.initPoint ?? preference.sandboxInitPoint;
+        if (!paymentUrl) throw new Error("Mercado Pago nao retornou link de pagamento");
+        toast.success("Pedido criado. Abrindo Mercado Pago...");
+        window.location.href = paymentUrl;
+        return;
+      }
 
       setOpenCart(false);
       setCart([]);
@@ -920,6 +937,9 @@ export function Storefront() {
                 <option value="CASH">Dinheiro</option>
                 <option value="PIX">PIX</option>
                 <option value="CARD">Cartao</option>
+                {settings?.mercadoPagoEnabled && settings.mercadoPagoPublicKey && (
+                  <option value="MERCADO_PAGO">Mercado Pago</option>
+                )}
               </select>
 
               {paymentMethod === "CASH" ? (
@@ -957,6 +977,13 @@ export function Storefront() {
                 <a className="underline" href={settings.pixQrCodeUrl} target="_blank" rel="noreferrer">
                   Abrir QR Code
                 </a>
+              </div>
+            )}
+
+            {paymentMethod === "MERCADO_PAGO" && (
+              <div className="mt-4 rounded-xl border border-dashed border-blue-500/60 p-3 text-sm">
+                <p className="font-semibold">Pagamento online Mercado Pago</p>
+                <p>Ao confirmar, voce sera redirecionado para pagar com Pix, cartao ou saldo Mercado Pago.</p>
               </div>
             )}
 

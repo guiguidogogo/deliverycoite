@@ -98,7 +98,7 @@ async function financialEntries(req: Request) {
         }
       } : {}),
       ...(operatorId ? { operatorId } : {}),
-      ...(paymentMethod ? { paymentMethod: paymentMethod as "CASH" | "PIX" | "CARD" } : {})
+      ...(paymentMethod ? { paymentMethod: paymentMethod as "CASH" | "PIX" | "CARD" | "MERCADO_PAGO" } : {})
     },
     include: { session: { select: { operatorName: true, openedAt: true } } },
     orderBy: { createdAt: "desc" }

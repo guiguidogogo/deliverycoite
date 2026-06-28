@@ -9,7 +9,7 @@ export type ReceiptOrder = {
   orderNumber: number;
   createdAt: string;
   fulfillmentType: "DELIVERY" | "PICKUP";
-  paymentMethod?: "CASH" | "PIX" | "CARD";
+  paymentMethod?: "CASH" | "PIX" | "CARD" | "MERCADO_PAGO";
   paidMethodDetail?: string | null;
   changeFor?: number | null;
   subtotal?: number;
@@ -90,7 +90,7 @@ export function orderReceiptHtml(
       ).join("")}
     </div>`).join("");
   const payment = order.paidMethodDetail
-    ?? (order.paymentMethod === "CASH" ? "Dinheiro" : order.paymentMethod === "PIX" ? "PIX" : "Cartao");
+    ?? (order.paymentMethod === "CASH" ? "Dinheiro" : order.paymentMethod === "PIX" ? "PIX" : order.paymentMethod === "MERCADO_PAGO" ? "Mercado Pago" : "Cartao");
 
   return `
     <h1>${escapeHtml(options.companyName).toUpperCase()}</h1>

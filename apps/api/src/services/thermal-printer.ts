@@ -55,6 +55,8 @@ function receiptText(order: PrintableOrder, settings: Setting) {
       ? "Dinheiro"
       : order.paymentMethod === "PIX"
         ? "PIX"
+        : order.paymentMethod === "MERCADO_PAGO"
+          ? "Mercado Pago"
         : "Cartao";
   const lines = [
     settings.companyName.toUpperCase(),

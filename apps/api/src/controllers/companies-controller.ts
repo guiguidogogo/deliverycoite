@@ -43,6 +43,7 @@ const companySchema = z.object({
   deliveryFee: z.coerce.number().min(0).max(999).default(5),
   deliveryTimeMin: z.coerce.number().int().min(5).max(240).default(35),
   rating: z.coerce.number().min(0).max(5).default(5),
+  mercadoPagoEnabled: z.boolean().default(false),
   mercadoPagoPublicKey: optionalText,
   mercadoPagoAccessToken: optionalText
 });
@@ -135,6 +136,7 @@ function companyData(data: z.infer<typeof companySchema>) {
     phone: onlyDigits(data.phone),
     whatsapp: onlyDigits(data.whatsapp),
     email: data.email?.toLowerCase() ?? null,
+    mercadoPagoEnabled: data.mercadoPagoEnabled,
     mercadoPagoPublicKey: data.mercadoPagoPublicKey || null,
     mercadoPagoAccessToken: data.mercadoPagoAccessToken || null,
     subdomain
@@ -334,7 +336,10 @@ export async function updateCompany(req: Request, res: Response) {
     isOpen: body.isOpen ?? existing.isOpen,
     deliveryFee: body.deliveryFee ?? Number(existing.deliveryFee),
     deliveryTimeMin: body.deliveryTimeMin ?? existing.deliveryTimeMin,
-    rating: body.rating ?? Number(existing.rating)
+    rating: body.rating ?? Number(existing.rating),
+    mercadoPagoEnabled: body.mercadoPagoEnabled ?? existing.mercadoPagoEnabled,
+    mercadoPagoPublicKey: body.mercadoPagoPublicKey === undefined ? existing.mercadoPagoPublicKey : body.mercadoPagoPublicKey,
+    mercadoPagoAccessToken: body.mercadoPagoAccessToken === undefined ? existing.mercadoPagoAccessToken : body.mercadoPagoAccessToken
   });
   try {
     const company = await prisma.$transaction(async (transaction) => {

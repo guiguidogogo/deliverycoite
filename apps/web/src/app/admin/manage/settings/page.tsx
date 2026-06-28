@@ -25,6 +25,7 @@ export default function SettingsManagePage() {
     menuiaApiKey: "",
     menuiaStoreId: "",
     menuiaEnabled: false,
+    mercadoPagoEnabled: false,
     mercadoPagoPublicKey: "",
     mercadoPagoAccessToken: "",
     whatsappOnReceived: true,
@@ -70,6 +71,7 @@ export default function SettingsManagePage() {
           menuiaApiKey: data.menuiaApiKey ?? "",
           menuiaStoreId: data.menuiaStoreId ?? "",
           menuiaEnabled: data.menuiaEnabled ?? false,
+          mercadoPagoEnabled: data.mercadoPagoEnabled ?? false,
           mercadoPagoPublicKey: data.mercadoPagoPublicKey ?? "",
           mercadoPagoAccessToken: data.mercadoPagoAccessToken ?? "",
           whatsappOnReceived: data.whatsappOnReceived ?? true,
@@ -369,6 +371,14 @@ export default function SettingsManagePage() {
         <p className="mb-3 text-sm opacity-70">
           Configure as credenciais da conta Mercado Pago desta loja para receber pagamentos online.
         </p>
+        <label className="mb-3 flex items-center gap-2 rounded-xl border border-black/10 px-3 py-2 dark:border-white/20">
+          <input
+            type="checkbox"
+            checked={form.mercadoPagoEnabled}
+            onChange={(e) => setForm((v) => ({ ...v, mercadoPagoEnabled: e.target.checked }))}
+          />
+          Ativar Mercado Pago no checkout da loja
+        </label>
         <div className="grid grid-cols-1 gap-2">
           <label>
             <span className="mb-1 block text-xs font-semibold">Public Key</span>

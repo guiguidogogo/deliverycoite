@@ -42,6 +42,7 @@ const settingsSchema = z.object({
   printerName: z.string().optional(),
   printerPaperWidth: z.union([z.literal(58), z.literal(80)]).optional(),
   printerAutoPrint: z.boolean().optional(),
+  mercadoPagoEnabled: z.boolean().optional(),
   mercadoPagoPublicKey: z.string().trim().optional(),
   mercadoPagoAccessToken: z.string().trim().optional()
 });
@@ -77,21 +78,24 @@ export async function getSettings(req: Request, res: Response) {
     where: { id: getCompanyId(req) },
     select: {
       mercadoPagoPublicKey: true,
-      mercadoPagoAccessToken: true
+      mercadoPagoAccessToken: true,
+      mercadoPagoEnabled: true
     }
   });
 
+  const isAdminRequest = Boolean(req.user);
   return res.json({
     ...settings,
     mercadoPagoPublicKey: company?.mercadoPagoPublicKey ?? null,
-    mercadoPagoAccessToken: company?.mercadoPagoAccessToken ?? null
+    ...(isAdminRequest ? { mercadoPagoAccessToken: company?.mercadoPagoAccessToken ?? null } : {}),
+    mercadoPagoEnabled: company?.mercadoPagoEnabled ?? false
   });
 }
 
 export async function updateSettings(req: Request, res: Response) {
   const body = settingsSchema.parse(req.body);
   const current = await ensureDefaultSettings(req);
-  const { deliveryFeeTiers, mercadoPagoPublicKey, mercadoPagoAccessToken, ...settingsData } = body;
+  const { deliveryFeeTiers, mercadoPagoEnabled, mercadoPagoPublicKey, mercadoPagoAccessToken, ...settingsData } = body;
 
   const settings = await prisma.$transaction(async (transaction) => {
     const updated = await transaction.setting.update({
@@ -122,10 +126,15 @@ export async function updateSettings(req: Request, res: Response) {
       });
     }
 
-    if (mercadoPagoPublicKey !== undefined || mercadoPagoAccessToken !== undefined) {
+    if (
+      mercadoPagoEnabled !== undefined ||
+      mercadoPagoPublicKey !== undefined ||
+      mercadoPagoAccessToken !== undefined
+    ) {
       await transaction.company.update({
         where: { id: getCompanyId(req) },
         data: {
+          ...(mercadoPagoEnabled !== undefined ? { mercadoPagoEnabled } : {}),
           ...(mercadoPagoPublicKey !== undefined
             ? { mercadoPagoPublicKey: mercadoPagoPublicKey.trim() || null }
             : {}),
@@ -163,14 +172,16 @@ export async function updateSettings(req: Request, res: Response) {
       where: { id: getCompanyId(req) },
       select: {
         mercadoPagoPublicKey: true,
-        mercadoPagoAccessToken: true
+        mercadoPagoAccessToken: true,
+        mercadoPagoEnabled: true
       }
     });
 
     return {
       ...savedSettings,
       mercadoPagoPublicKey: savedCompany?.mercadoPagoPublicKey ?? null,
-      mercadoPagoAccessToken: savedCompany?.mercadoPagoAccessToken ?? null
+      mercadoPagoAccessToken: savedCompany?.mercadoPagoAccessToken ?? null,
+      mercadoPagoEnabled: savedCompany?.mercadoPagoEnabled ?? false
     };
   });
 

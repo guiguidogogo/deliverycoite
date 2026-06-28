@@ -110,6 +110,20 @@ export async function createOrder(req: Request, res: Response) {
     });
   }
 
+  if (body.paymentMethod === PaymentMethod.MERCADO_PAGO) {
+    const company = await prisma.company.findUnique({
+      where: { id: getCompanyId(req) },
+      select: {
+        mercadoPagoEnabled: true,
+        mercadoPagoPublicKey: true,
+        mercadoPagoAccessToken: true
+      }
+    });
+    if (!company?.mercadoPagoEnabled || !company.mercadoPagoPublicKey || !company.mercadoPagoAccessToken) {
+      return res.status(400).json({ message: "Mercado Pago nao configurado para esta loja" });
+    }
+  }
+
   if (!isStoreOpen(settings.openTime ?? "00:00", settings.closeTime ?? "23:59")) {
     return res.status(400).json({
       message: `Loja fechada no momento. Funcionamento: ${settings.openTime} ate ${settings.closeTime}`
@@ -591,7 +605,7 @@ export async function sendToDelivery(req: Request, res: Response) {
     `${order.customer.complement ? `Complemento: ${order.customer.complement}\n` : ''}` +
     `${order.deliveryDistanceKm ? `Distancia aproximada: ${order.deliveryDistanceKm.toFixed(2)} km\n` : ""}` +
     `\n💰 *Total:* R$ ${Number(order.total).toFixed(2)}\n` +
-    `💳 *Pagamento:* ${order.paymentMethod === 'CASH' ? 'Dinheiro' : order.paymentMethod === 'PIX' ? 'PIX' : 'Cartão'}\n` +
+    `💳 *Pagamento:* ${order.paymentMethod === 'CASH' ? 'Dinheiro' : order.paymentMethod === 'PIX' ? 'PIX' : order.paymentMethod === 'MERCADO_PAGO' ? 'Mercado Pago' : 'Cartão'}\n` +
     `${order.changeFor ? `💵 *Troco para:* R$ ${Number(order.changeFor).toFixed(2)}\n` : ''}` +
     `\n📍 *Clique para abrir no Google Maps:*\n${googleMapsUrl}`;
 

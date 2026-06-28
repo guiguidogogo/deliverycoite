@@ -32,7 +32,7 @@ type Order = {
   orderNumber: number;
   status: "RECEIVED" | "PREPARING" | "OUT_FOR_DELIVERY" | "DELIVERED" | "FINISHED" | "CANCELED";
   fulfillmentType: "DELIVERY" | "PICKUP";
-  paymentMethod?: "CASH" | "PIX" | "CARD";
+  paymentMethod?: "CASH" | "PIX" | "CARD" | "MERCADO_PAGO";
   paidMethodDetail?: string | null;
   changeFor?: number | null;
   subtotal?: number;

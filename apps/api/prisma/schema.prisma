@@ -27,6 +27,7 @@ enum PaymentMethod {
   CASH
   PIX
   CARD
+  MERCADO_PAGO
 }
 
 enum FulfillmentType {
@@ -106,6 +107,7 @@ model Company {
   plan                   String                @default("basico")
   mercadoPagoPublicKey   String?
   mercadoPagoAccessToken String?
+  mercadoPagoEnabled     Boolean               @default(false)
   menuiaApiKey           String?
   menuiaStoreId          String?
   printerName            String?

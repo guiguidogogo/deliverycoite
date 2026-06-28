@@ -30,11 +30,12 @@ function storeBaseUrl(req: Request, subdomain: string) {
 export async function getMercadoPagoPublicConfig(req: Request, res: Response) {
   const company = await prisma.company.findUnique({
     where: { id: getCompanyId(req) },
-    select: { mercadoPagoPublicKey: true }
+    select: { mercadoPagoEnabled: true, mercadoPagoPublicKey: true }
   });
+  const enabled = Boolean(company?.mercadoPagoEnabled && company.mercadoPagoPublicKey);
   return res.json({
-    enabled: Boolean(company?.mercadoPagoPublicKey),
-    publicKey: company?.mercadoPagoPublicKey ?? null
+    enabled,
+    publicKey: enabled ? company?.mercadoPagoPublicKey ?? null : null
   });
 }
 
@@ -48,7 +49,7 @@ export async function createOrderMercadoPagoPreference(req: Request, res: Respon
   if (!order) return res.status(404).json({ message: "Pedido nao encontrado" });
   if (order.status === "CANCELED") return res.status(400).json({ message: "Pedido cancelado nao pode ser pago" });
   if (order.paidAt) return res.status(400).json({ message: "Pedido ja esta pago" });
-  if (!order.company.mercadoPagoAccessToken) {
+  if (!order.company.mercadoPagoEnabled || !order.company.mercadoPagoAccessToken) {
     return res.status(400).json({ message: "Mercado Pago nao configurado para esta empresa" });
   }
 
@@ -131,7 +132,7 @@ export async function mercadoPagoWebhook(req: Request, res: Response) {
       ...(approved && !order.paidAt
         ? {
             paidAt: new Date(),
-            paymentMethod: PaymentMethod.CARD,
+            paymentMethod: PaymentMethod.MERCADO_PAGO,
             paidMethodDetail: `Mercado Pago (${payment.payment_type_id ?? payment.payment_method_id ?? "online"})`,
             status: order.status === "RECEIVED" ? "PREPARING" : order.status
           }

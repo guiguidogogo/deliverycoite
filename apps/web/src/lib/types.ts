@@ -56,6 +56,8 @@ export type Settings = {
   }>;
   pixKey?: string | null;
   pixQrCodeUrl?: string | null;
+  mercadoPagoEnabled?: boolean;
+  mercadoPagoPublicKey?: string | null;
   darkModeEnabled: boolean;
 };
 

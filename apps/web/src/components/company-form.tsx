@@ -28,6 +28,7 @@ export type CompanyFormValue = {
   deliveryFee: number;
   deliveryTimeMin: number;
   rating: number;
+  mercadoPagoEnabled: boolean;
   mercadoPagoPublicKey: string;
   mercadoPagoAccessToken: string;
 };
@@ -64,6 +65,7 @@ const emptyCompany: CompanyFormValue = {
   deliveryFee: 5,
   deliveryTimeMin: 35,
   rating: 5,
+  mercadoPagoEnabled: false,
   mercadoPagoPublicKey: "",
   mercadoPagoAccessToken: ""
 };
@@ -348,6 +350,23 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
         <p className="mt-2 rounded-xl bg-slate-100 px-3 py-2 font-mono text-sm dark:bg-slate-800">
           https://{form.subdomain || "subdominio"}.{ROOT_DOMAIN}
         </p>
+      </section>
+
+      <section className="rounded-2xl border border-black/10 bg-white/85 p-5 dark:border-white/10 dark:bg-slate-900/70">
+        <h2 className="text-xl font-bold">Mercado Pago</h2>
+        <p className="text-sm opacity-70">Credenciais e ativacao do pagamento online desta empresa.</p>
+        <div className="mt-4 grid gap-3">
+          <label className="flex items-center gap-2 rounded-xl border border-black/10 px-3 py-2 dark:border-white/20">
+            <input
+              type="checkbox"
+              checked={form.mercadoPagoEnabled}
+              onChange={(event) => setForm((value) => ({ ...value, mercadoPagoEnabled: event.target.checked }))}
+            />
+            Ativar Mercado Pago no checkout
+          </label>
+          {input("mercadoPagoPublicKey", "Public Key", { placeholder: "APP_USR-..." })}
+          {input("mercadoPagoAccessToken", "Access Token", { type: "password", placeholder: "APP_USR-..." })}
+        </div>
       </section>
 
       {includeAdmin && (
