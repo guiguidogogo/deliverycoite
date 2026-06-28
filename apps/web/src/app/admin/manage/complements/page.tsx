@@ -87,7 +87,7 @@ export default function ComplementsManagePage() {
       body: data
     }, { json: false });
     const payload = await responseJson(res);
-    return payload.absoluteUrl ?? `${window.location.origin}${payload.url}`;
+    return `${window.location.origin}${payload.url}`;
   }
 
   async function save() {

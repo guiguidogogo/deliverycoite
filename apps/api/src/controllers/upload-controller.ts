@@ -27,12 +27,11 @@ export async function uploadPersistentImage(req: Request, res: Response) {
     select: { id: true }
   });
   const path = `/api/marketplace/assets/${image.id}`;
-  const forwardedProtocol = req.get("x-forwarded-proto")?.split(",")[0];
-  const protocol = forwardedProtocol || req.protocol;
-  return res.status(201).json({
-    url: path,
-    absoluteUrl: `${protocol}://${req.get("host")}${path}`
-  });
+
+return res.status(201).json({
+  url: path,
+  absoluteUrl: path
+});
 }
 
 export async function getPersistentImage(req: Request, res: Response) {

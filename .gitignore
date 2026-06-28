@@ -9,3 +9,7 @@ backups
 *.log
 firebase-service-account*.json
 *-firebase-adminsdk-*.json
+*.rar
+*.zip
+*.rar
+*.zip
