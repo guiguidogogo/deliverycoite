@@ -10,6 +10,7 @@ import { recordCashPayments } from "../utils/cash-register.js";
 import { calculateDeliveryFee } from "../utils/delivery-fee.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
 import { audit } from "../utils/audit.js";
+import { linkCustomerToCompany, normalizeEmail, normalizePhone, recordCompanyCustomerPurchase } from "../utils/customer-linking.js";
 
 function shouldSendStatusWhatsapp(
   settings: Awaited<ReturnType<typeof prisma.setting.findFirstOrThrow>>,
@@ -188,16 +189,28 @@ export async function createOrder(req: Request, res: Response) {
     longitude: _longitude,
     ...customerData
   } = body.customer;
+  const phone = normalizePhone(body.customer.phone);
+  const email = normalizeEmail((body.customer as any).email);
+  const linkedCustomer = await linkCustomerToCompany({
+    companyId: getCompanyId(req),
+    name: body.customer.name,
+    phone,
+    email
+  });
   const customer = await prisma.customer.upsert({
     where: {
       companyId_phone: {
         companyId: getCompanyId(req),
-        phone: body.customer.phone
+        phone
       }
     },
     create: {
       companyId: getCompanyId(req),
+      globalCustomerId: linkedCustomer.globalCustomer.id,
+      companyCustomerId: linkedCustomer.companyCustomer.id,
       ...customerData,
+      phone,
+      email,
       address: pickup ? "Retirada na loja" : body.customer.address,
       number: pickup ? "S/N" : body.customer.number,
       district: pickup ? "Retirada" : body.customer.district
@@ -205,12 +218,18 @@ export async function createOrder(req: Request, res: Response) {
     update: pickup
       ? {
           name: body.customer.name,
+          globalCustomerId: linkedCustomer.globalCustomer.id,
+          companyCustomerId: linkedCustomer.companyCustomer.id,
           deletedAt: null,
           deletedBy: null,
           deletionReason: null
         }
       : {
           ...customerData,
+          phone,
+          email,
+          globalCustomerId: linkedCustomer.globalCustomer.id,
+          companyCustomerId: linkedCustomer.companyCustomer.id,
           deletedAt: null,
           deletedBy: null,
           deletionReason: null
@@ -348,6 +367,12 @@ export async function createOrder(req: Request, res: Response) {
       customer: true,
       items: { include: { product: true, complements: true } }
     }
+  });
+
+  await recordCompanyCustomerPurchase({
+    companyCustomerId: linkedCustomer.companyCustomer.id,
+    orderTotal: total,
+    orderDate: order.createdAt
   });
 
   if (couponIdUsed) {

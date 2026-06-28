@@ -5,6 +5,7 @@ import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { env } from "../utils/env.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
+import { linkCustomerToCompany, normalizeEmail, normalizePhone } from "../utils/customer-linking.js";
 
 const registerSchema = z.object({
   name: z.string().min(2),
@@ -37,47 +38,62 @@ const addressSchema = z.object({
 
 export async function registerCustomer(req: Request, res: Response) {
   const body = registerSchema.parse(req.body);
-
-  // Verificar se já existe
-  const existing = await prisma.customer.findFirst({
-    where: { phone: body.phone, ...companyWhere(req) }
-  });
-
-  if (existing) {
-    return res.status(400).json({ message: "Telefone ja cadastrado" });
-  }
-
-  if (body.email) {
-    const existingEmail = await prisma.customer.findFirst({
-      where: { email: body.email, ...companyWhere(req) }
-    });
-    if (existingEmail) {
-      return res.status(400).json({ message: "Email ja cadastrado" });
-    }
-  }
+  const companyId = getCompanyId(req);
+  const phone = normalizePhone(body.phone);
+  const email = normalizeEmail(body.email);
 
   const passwordHash = body.password ? await bcrypt.hash(body.password, 10) : null;
-
-  const customer = await prisma.customer.create({
-    data: {
-      name: body.name,
-      companyId: getCompanyId(req),
-      phone: body.phone,
-      email: body.email,
-      passwordHash,
-      address: body.address || "",
-      number: body.number || "",
-      district: body.district || "",
-      complement: body.complement
-    }
+  const linked = await linkCustomerToCompany({
+    companyId,
+    name: body.name,
+    phone,
+    email,
+    passwordHash
   });
 
-  // Se forneceu endereço, criar como primeiro endereço
+  const existingCustomer = await prisma.customer.findFirst({
+    where: { phone, ...companyWhere(req) }
+  });
+
+  if (existingCustomer?.passwordHash && body.password) {
+    return res.status(400).json({ message: "Telefone ja cadastrado nesta loja" });
+  }
+
+  const customer = existingCustomer
+    ? await prisma.customer.update({
+        where: { id: existingCustomer.id },
+        data: {
+          name: body.name,
+          email,
+          ...(passwordHash && !existingCustomer.passwordHash ? { passwordHash } : {}),
+          globalCustomerId: linked.globalCustomer.id,
+          companyCustomerId: linked.companyCustomer.id,
+          deletedAt: null,
+          deletedBy: null,
+          deletionReason: null
+        }
+      })
+    : await prisma.customer.create({
+        data: {
+          name: body.name,
+          companyId,
+          globalCustomerId: linked.globalCustomer.id,
+          companyCustomerId: linked.companyCustomer.id,
+          phone,
+          email,
+          passwordHash,
+          address: body.address || "",
+          number: body.number || "",
+          district: body.district || "",
+          complement: body.complement
+        }
+      });
+
   if (body.address && body.number && body.district) {
     await prisma.customerAddress.create({
       data: {
         customerId: customer.id,
-        companyId: getCompanyId(req),
+        companyId,
         label: "Principal",
         address: body.address,
         number: body.number,
@@ -90,7 +106,7 @@ export async function registerCustomer(req: Request, res: Response) {
     });
   }
 
-  const token = jwt.sign({ customerId: customer.id, phone: customer.phone, companyId: getCompanyId(req) }, env.jwtSecret, {
+  const token = jwt.sign({ customerId: customer.id, globalCustomerId: linked.globalCustomer.id, companyCustomerId: linked.companyCustomer.id, phone: customer.phone, companyId }, env.jwtSecret, {
     expiresIn: "30d"
   });
 
@@ -98,6 +114,8 @@ export async function registerCustomer(req: Request, res: Response) {
     token,
     customer: {
       id: customer.id,
+      globalCustomerId: linked.globalCustomer.id,
+      companyCustomerId: linked.companyCustomer.id,
       name: customer.name,
       phone: customer.phone,
       email: customer.email
@@ -107,21 +125,59 @@ export async function registerCustomer(req: Request, res: Response) {
 
 export async function loginCustomer(req: Request, res: Response) {
   const body = loginSchema.parse(req.body);
+  const companyId = getCompanyId(req);
+  const phone = normalizePhone(body.phone);
 
-  const customer = await prisma.customer.findFirst({
-    where: { phone: body.phone, ...companyWhere(req) }
-  });
+  const globalCustomer = await prisma.globalCustomer.findUnique({ where: { phone } });
+  const legacyCustomer = !globalCustomer
+    ? await prisma.customer.findFirst({ where: { phone, ...companyWhere(req) } })
+    : null;
+  const passwordHash = globalCustomer?.passwordHash ?? legacyCustomer?.passwordHash;
 
-  if (!customer || !customer.passwordHash) {
+  if (!passwordHash) {
     return res.status(401).json({ message: "Credenciais invalidas" });
   }
 
-  const valid = await bcrypt.compare(body.password, customer.passwordHash);
+  const valid = await bcrypt.compare(body.password, passwordHash);
   if (!valid) {
     return res.status(401).json({ message: "Credenciais invalidas" });
   }
 
-  const token = jwt.sign({ customerId: customer.id, phone: customer.phone, companyId: customer.companyId }, env.jwtSecret, {
+  const linked = await linkCustomerToCompany({
+    companyId,
+    name: globalCustomer?.name ?? legacyCustomer!.name,
+    phone,
+    email: globalCustomer?.email ?? legacyCustomer?.email,
+    passwordHash
+  });
+
+  const customer = await prisma.customer.upsert({
+    where: { companyId_phone: { companyId, phone } },
+    create: {
+      companyId,
+      globalCustomerId: linked.globalCustomer.id,
+      companyCustomerId: linked.companyCustomer.id,
+      name: linked.globalCustomer.name,
+      phone,
+      email: linked.globalCustomer.email,
+      passwordHash,
+      address: legacyCustomer?.address ?? "",
+      number: legacyCustomer?.number ?? "",
+      district: legacyCustomer?.district ?? "",
+      complement: legacyCustomer?.complement ?? null
+    },
+    update: {
+      globalCustomerId: linked.globalCustomer.id,
+      companyCustomerId: linked.companyCustomer.id,
+      name: linked.globalCustomer.name,
+      email: linked.globalCustomer.email,
+      deletedAt: null,
+      deletedBy: null,
+      deletionReason: null
+    }
+  });
+
+  const token = jwt.sign({ customerId: customer.id, globalCustomerId: linked.globalCustomer.id, companyCustomerId: linked.companyCustomer.id, phone: customer.phone, companyId }, env.jwtSecret, {
     expiresIn: "30d"
   });
 
@@ -129,6 +185,8 @@ export async function loginCustomer(req: Request, res: Response) {
     token,
     customer: {
       id: customer.id,
+      globalCustomerId: linked.globalCustomer.id,
+      companyCustomerId: linked.companyCustomer.id,
       name: customer.name,
       phone: customer.phone,
       email: customer.email
@@ -170,7 +228,10 @@ export async function updateCustomerProfile(req: Request, res: Response) {
   if (!existing) return res.status(404).json({ message: "Cliente nao encontrado" });
   const customer = await prisma.customer.update({
     where: { id: existing.id },
-    data: body
+    data: {
+      ...body,
+      ...(body.email !== undefined ? { email: normalizeEmail(body.email) } : {})
+    }
   });
 
   return res.json({

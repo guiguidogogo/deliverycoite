@@ -117,6 +117,7 @@ model Company {
   products               Product[]
   complements            Complement[]
   customers              Customer[]
+  companyCustomers       CompanyCustomer[]
   settings               Setting[]
   coupons                Coupon[]
   orders                 Order[]
@@ -231,6 +232,10 @@ model ProductComplement {
 
 model Customer {
   id                String             @id @default(cuid())
+  globalCustomerId  String?
+  globalCustomer    GlobalCustomer?    @relation(fields: [globalCustomerId], references: [id], onDelete: SetNull)
+  companyCustomerId String?
+  companyCustomer   CompanyCustomer?   @relation(fields: [companyCustomerId], references: [id], onDelete: SetNull)
   companyId         String
   company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
   name              String
@@ -251,10 +256,54 @@ model Customer {
   deletedBy         String?
   deletionReason    String?
 
+  @@index([globalCustomerId])
+  @@index([companyCustomerId])
   @@unique([companyId, phone])
   @@unique([companyId, email])
   @@index([companyId])
   @@index([companyId, deletedAt])
+}
+
+model GlobalCustomer {
+  id               String            @id @default(cuid())
+  name             String
+  email            String?           @unique
+  phone            String            @unique
+  whatsapp         String?
+  passwordHash     String?
+  lastAccessAt     DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  companyCustomers CompanyCustomer[]
+  customers        Customer[]
+
+  @@index([phone])
+  @@index([email])
+}
+
+model CompanyCustomer {
+  id                  String            @id @default(cuid())
+  companyId           String
+  company             Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  globalCustomerId    String
+  globalCustomer      GlobalCustomer    @relation(fields: [globalCustomerId], references: [id], onDelete: Cascade)
+  firstPurchaseAt     DateTime?
+  lastPurchaseAt      DateTime?
+  ordersCount         Int               @default(0)
+  totalSpent          Decimal           @default(0) @db.Decimal(12, 2)
+  averageTicket       Decimal           @default(0) @db.Decimal(12, 2)
+  notes               String?
+  loyaltyPoints       Int               @default(0)
+  active              Boolean           @default(true)
+  preferences         Json?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  customers           Customer[]
+
+  @@unique([companyId, globalCustomerId])
+  @@index([companyId, active])
+  @@index([companyId, lastPurchaseAt])
+  @@index([globalCustomerId])
 }
 
 model PasswordReset {

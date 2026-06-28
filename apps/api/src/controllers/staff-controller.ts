@@ -6,6 +6,15 @@ import { prisma } from "../utils/prisma.js";
 import { DEFAULT_STAFF_ROLES, PERMISSIONS } from "../utils/permissions.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
 
+function normalizeOptionalPhone(value?: string | null) {
+  const phone = value?.replace(/\D/g, "") || value?.trim();
+  return phone || null;
+}
+
+function normalizeEmail(value: string) {
+  return value.trim().toLowerCase();
+}
+
 const roleSchema = z.object({
   name: z.string().min(2),
   permissions: z.array(z.enum(PERMISSIONS))
@@ -14,7 +23,7 @@ const roleSchema = z.object({
 const userSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
-  phone: z.string().min(8),
+  phone: z.string().optional().nullable(),
   password: z.string().min(6).optional(),
   role: z.enum(["ADMIN", "MANAGER", "ATTENDANT"]).default("ATTENDANT"),
   staffRoleId: z.string().nullable().optional(),
@@ -63,13 +72,14 @@ export async function updateCurrentStaff(req: Request, res: Response) {
   const body = z.object({
     name: z.string().min(2).optional(),
     email: z.string().email().optional(),
-    phone: z.string().min(8).nullable().optional()
+    phone: z.string().nullable().optional()
   }).parse(req.body);
   const user = await prisma.user.update({
     where: { id: req.user!.sub },
     data: {
       ...body,
-      ...(body.email ? { email: body.email.toLowerCase() } : {})
+      ...(body.email ? { email: normalizeEmail(body.email) } : {}),
+      ...(body.phone !== undefined ? { phone: normalizeOptionalPhone(body.phone) } : {})
     },
     include: { staffRole: true }
   });
@@ -133,8 +143,8 @@ export async function createStaffUser(req: Request, res: Response) {
     const user = await prisma.user.create({
       data: {
         name: body.name,
-        email: body.email.toLowerCase(),
-        phone: body.phone,
+        email: normalizeEmail(body.email),
+        phone: normalizeOptionalPhone(body.phone),
         passwordHash: await bcrypt.hash(body.password, 10),
         role: body.role,
         companyId: getCompanyId(req),
@@ -189,7 +199,8 @@ export async function updateStaffUser(req: Request, res: Response) {
     where: { id: req.params.id },
     data: {
       ...userData,
-      ...(body.email ? { email: body.email.toLowerCase() } : {}),
+      ...(body.email ? { email: normalizeEmail(body.email) } : {}),
+      ...(body.phone !== undefined ? { phone: normalizeOptionalPhone(body.phone) } : {}),
       ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {}),
       ...(body.role === "ADMIN" ? { staffRoleId: null } : {})
     },
