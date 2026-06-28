@@ -167,6 +167,11 @@ export default function SettingsManagePage() {
       return;
     }
 
+    if (typeof window !== "undefined" && !window.isSecureContext) {
+      toast.error("O navegador bloqueia a localizacao em HTTP. Use HTTPS ou preencha latitude/longitude manualmente.");
+      return;
+    }
+
     navigator.geolocation.getCurrentPosition(
       (position) => {
         setForm((value) => ({
@@ -176,8 +181,26 @@ export default function SettingsManagePage() {
         }));
         toast.success("Localizacao da loja encontrada");
       },
-      () => toast.error("Nao foi possivel obter a localizacao")
+      (error) => {
+        if (error.code === error.PERMISSION_DENIED) {
+          toast.error("Permissao de localizacao negada no navegador");
+          return;
+        }
+        if (error.code === error.TIMEOUT) {
+          toast.error("Tempo esgotado ao buscar a localizacao");
+          return;
+        }
+        toast.error("Nao foi possivel obter a localizacao. Preencha as coordenadas manualmente.");
+      },
+      { enableHighAccuracy: true, maximumAge: 60000, timeout: 15000 }
     );
+  }
+
+  function updateCoordinate(field: "storeLatitude" | "storeLongitude", value: string) {
+    setForm((current) => ({
+      ...current,
+      [field]: value.trim() === "" ? null : Number(value)
+    }));
   }
 
   function addDeliveryTier() {
@@ -224,6 +247,41 @@ export default function SettingsManagePage() {
         >
           Usar localizacao atual da loja
         </button>
+
+        <p className="mt-2 text-xs opacity-60">
+          Em endereco HTTP o navegador pode bloquear a localizacao atual. Se isso acontecer, informe as coordenadas
+          manualmente ou acesse pelo dominio com HTTPS.
+        </p>
+
+        <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-[1fr_1fr_auto]">
+          <input
+            className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
+            type="number"
+            step="0.000001"
+            min="-90"
+            max="90"
+            placeholder="Latitude da loja"
+            value={form.storeLatitude ?? ""}
+            onChange={(event) => updateCoordinate("storeLatitude", event.target.value)}
+          />
+          <input
+            className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
+            type="number"
+            step="0.000001"
+            min="-180"
+            max="180"
+            placeholder="Longitude da loja"
+            value={form.storeLongitude ?? ""}
+            onChange={(event) => updateCoordinate("storeLongitude", event.target.value)}
+          />
+          <button
+            type="button"
+            className="rounded-xl border border-black/10 px-3 py-2 text-sm dark:border-white/20"
+            onClick={() => setForm((value) => ({ ...value, storeLatitude: null, storeLongitude: null }))}
+          >
+            Limpar
+          </button>
+        </div>
 
         {form.storeLatitude !== null && form.storeLongitude !== null && (
           <div className="mt-3">
