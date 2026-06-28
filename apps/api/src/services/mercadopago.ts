@@ -15,6 +15,13 @@ export type MercadoPagoPaymentResponse = {
   payment_type_id?: string;
   transaction_amount?: number;
   metadata?: { order_id?: string; company_id?: string };
+  point_of_interaction?: {
+    transaction_data?: {
+      qr_code?: string;
+      qr_code_base64?: string;
+      ticket_url?: string;
+    };
+  };
 };
 
 async function mpFetch<T>(path: string, accessToken: string, init?: RequestInit): Promise<T> {
@@ -83,4 +90,39 @@ export async function createMercadoPagoPreference(params: {
 
 export async function getMercadoPagoPayment(accessToken: string, paymentId: string) {
   return mpFetch<MercadoPagoPaymentResponse>(`/v1/payments/${encodeURIComponent(paymentId)}`, accessToken);
+}
+
+export async function createMercadoPagoPixPayment(params: {
+  accessToken: string;
+  orderId: string;
+  companyId: string;
+  orderNumber: number;
+  description: string;
+  amount: number;
+  payer: { name: string; email?: string | null; phone?: string | null };
+  notificationUrl: string;
+}) {
+  return mpFetch<MercadoPagoPaymentResponse>("/v1/payments", params.accessToken, {
+    method: "POST",
+    headers: {
+      "X-Idempotency-Key": `order-pix-${params.orderId}`
+    },
+    body: JSON.stringify({
+      transaction_amount: Number(params.amount.toFixed(2)),
+      description: params.description,
+      payment_method_id: "pix",
+      external_reference: params.orderId,
+      notification_url: params.notificationUrl,
+      metadata: {
+        order_id: params.orderId,
+        company_id: params.companyId,
+        order_number: params.orderNumber
+      },
+      payer: {
+        email: params.payer.email || `cliente-${params.orderId}@hubregional.com.br`,
+        first_name: params.payer.name,
+        phone: params.payer.phone ? { number: params.payer.phone.replace(/\D/g, "") } : undefined
+      }
+    })
+  });
 }

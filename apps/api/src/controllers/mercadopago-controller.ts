@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { PaymentMethod } from "@prisma/client";
 import { z } from "zod";
-import { createMercadoPagoPreference, getMercadoPagoPayment } from "../services/mercadopago.js";
+import { createMercadoPagoPixPayment, createMercadoPagoPreference, getMercadoPagoPayment } from "../services/mercadopago.js";
 import { prisma } from "../utils/prisma.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
 import { formatOrderCode } from "../utils/order-code.js";
@@ -85,6 +85,56 @@ export async function createOrderMercadoPagoPreference(req: Request, res: Respon
     preferenceId: preference.id,
     initPoint: preference.init_point ?? null,
     sandboxInitPoint: preference.sandbox_init_point ?? null
+  });
+}
+
+export async function createOrderMercadoPagoPix(req: Request, res: Response) {
+  const { orderId } = z.object({ orderId: z.string().min(1) }).parse(req.params);
+  const order = await prisma.order.findFirst({
+    where: { id: orderId, ...companyWhere(req) },
+    include: { customer: true, company: true }
+  });
+
+  if (!order) return res.status(404).json({ message: "Pedido nao encontrado" });
+  if (order.status === "CANCELED") return res.status(400).json({ message: "Pedido cancelado nao pode ser pago" });
+  if (order.paidAt) return res.status(400).json({ message: "Pedido ja esta pago" });
+  if (!order.company.mercadoPagoEnabled || !order.company.mercadoPagoAccessToken) {
+    return res.status(400).json({ message: "Mercado Pago nao configurado para esta empresa" });
+  }
+
+  const baseUrl = requestBaseUrl(req);
+  const payment = await createMercadoPagoPixPayment({
+    accessToken: order.company.mercadoPagoAccessToken,
+    orderId: order.id,
+    companyId: order.companyId,
+    orderNumber: order.orderNumber,
+    description: `${order.company.tradeName} - Pedido #${formatOrderCode(order.orderNumber)}`,
+    amount: Number(order.total),
+    payer: {
+      name: order.customer.name,
+      email: order.customer.email,
+      phone: order.customer.phone
+    },
+    notificationUrl: `${baseUrl}/api/mercadopago/webhook`
+  });
+
+  await prisma.order.update({
+    where: { id: order.id },
+    data: {
+      mercadoPagoPaymentId: String(payment.id),
+      mercadoPagoStatus: payment.status ?? "pending",
+      mercadoPagoStatusDetail: payment.status_detail ?? null
+    }
+  });
+
+  const transactionData = payment.point_of_interaction?.transaction_data;
+  return res.status(201).json({
+    paymentId: String(payment.id),
+    status: payment.status ?? null,
+    statusDetail: payment.status_detail ?? null,
+    qrCode: transactionData?.qr_code ?? null,
+    qrCodeBase64: transactionData?.qr_code_base64 ?? null,
+    ticketUrl: transactionData?.ticket_url ?? null
   });
 }
 

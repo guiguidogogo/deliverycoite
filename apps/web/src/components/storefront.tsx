@@ -22,7 +22,7 @@ const checkoutSchema = z
     number: z.string().optional(),
     district: z.string().optional(),
     complement: z.string().optional(),
-    paymentMethod: z.enum(["CASH", "PIX", "CARD", "MERCADO_PAGO"]),
+    paymentMethod: z.enum(["CASH", "PIX", "CARD", "MERCADO_PAGO_PIX", "MERCADO_PAGO_CARD"]),
     needChange: z.boolean().optional(),
     changeFor: z.string().optional(),
     couponCode: z.string().optional(),
@@ -113,6 +113,12 @@ export function Storefront() {
   const [addressMode, setAddressMode] = useState<"MANUAL" | "LOCATION">("MANUAL");
   const [locatingAddress, setLocatingAddress] = useState(false);
   const [updatingAddressFromMap, setUpdatingAddressFromMap] = useState(false);
+  const [mercadoPagoPix, setMercadoPagoPix] = useState<{
+    orderId: string;
+    qrCode: string | null;
+    qrCodeBase64: string | null;
+    ticketUrl: string | null;
+  } | null>(null);
   const skipNextManualSearchRef = useRef(false);
   const {
     register,
@@ -560,7 +566,7 @@ export function Storefront() {
         longitude: deliveryLocation?.longitude
       },
       fulfillmentType: values.fulfillmentType,
-      paymentMethod: values.paymentMethod,
+      paymentMethod: values.paymentMethod === "MERCADO_PAGO_PIX" || values.paymentMethod === "MERCADO_PAGO_CARD" ? "MERCADO_PAGO" : values.paymentMethod,
       changeFor:
         values.paymentMethod === "CASH" && values.needChange && values.changeFor
           ? Number(values.changeFor)
@@ -588,7 +594,26 @@ export function Storefront() {
         body: JSON.stringify(payload)
       });
 
-      if (values.paymentMethod === "MERCADO_PAGO") {
+      if (values.paymentMethod === "MERCADO_PAGO_PIX") {
+        const pix = await api<{
+          qrCode: string | null;
+          qrCodeBase64: string | null;
+          ticketUrl: string | null;
+        }>(`/orders/${response.orderId}/mercadopago/pix`, { method: "POST" });
+        setMercadoPagoPix({
+          orderId: response.orderId,
+          qrCode: pix.qrCode,
+          qrCodeBase64: pix.qrCodeBase64,
+          ticketUrl: pix.ticketUrl
+        });
+        setCart([]);
+        setCouponDiscount(0);
+        setCouponMessage("");
+        toast.success("Pedido criado. Pague o Pix para confirmar.");
+        return;
+      }
+
+      if (values.paymentMethod === "MERCADO_PAGO_CARD") {
         const preference = await api<{ initPoint: string | null; sandboxInitPoint: string | null }>(
           `/orders/${response.orderId}/mercadopago/preference`,
           { method: "POST" }
@@ -935,7 +960,7 @@ export function Storefront() {
 
               <select
                 className={`rounded-xl border px-3 py-2 font-semibold dark:border-white/20 ${
-                  paymentMethod === "MERCADO_PAGO"
+                  paymentMethod === "MERCADO_PAGO_PIX" || paymentMethod === "MERCADO_PAGO_CARD"
                     ? "border-blue-500 bg-blue-50 text-blue-700 ring-2 ring-blue-200 dark:bg-blue-950/40 dark:text-blue-200"
                     : "border-black/10 bg-transparent"
                 }`}
@@ -945,7 +970,10 @@ export function Storefront() {
                 <option value="PIX">PIX</option>
                 <option value="CARD">Cartao</option>
                 {settings?.mercadoPagoEnabled && settings.mercadoPagoPublicKey && (
-                  <option className="font-bold text-blue-700" value="MERCADO_PAGO">Mercado Pago online</option>
+                  <>
+                    <option className="font-bold text-blue-700" value="MERCADO_PAGO_PIX">Pix Mercado Pago</option>
+                    <option className="font-bold text-blue-700" value="MERCADO_PAGO_CARD">Cartao Mercado Pago</option>
+                  </>
                 )}
               </select>
 
@@ -987,15 +1015,22 @@ export function Storefront() {
               </div>
             )}
 
-            {paymentMethod === "MERCADO_PAGO" && (
+            {(paymentMethod === "MERCADO_PAGO_PIX" || paymentMethod === "MERCADO_PAGO_CARD") && (
               <div className="mt-4 rounded-2xl border-2 border-blue-500 bg-blue-600 p-4 text-sm text-white shadow-lg shadow-blue-500/20">
-                <p className="text-base font-black">Pagamento online Mercado Pago</p>
-                <p className="mt-1 opacity-95">
-                  Ao confirmar o pedido, voce sera encaminhado para pagar com Pix, cartao ou saldo Mercado Pago.
+                <p className="text-base font-black">
+                  {paymentMethod === "MERCADO_PAGO_PIX" ? "Pix Mercado Pago" : "Cartao Mercado Pago"}
                 </p>
-                <p className="mt-2 rounded-xl bg-white/15 px-3 py-2 text-xs font-semibold">
-                  Finalize o pagamento na tela segura do Mercado Pago para a loja confirmar mais rapido.
-                </p>
+                {paymentMethod === "MERCADO_PAGO_PIX" ? (
+                  <>
+                    <p className="mt-1 opacity-95">Ao confirmar, o QR Code e o copia-e-cola Pix aparecem aqui mesmo na loja.</p>
+                    <p className="mt-2 rounded-xl bg-white/15 px-3 py-2 text-xs font-semibold">Pague o Pix para a loja confirmar seu pedido mais rapido.</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="mt-1 opacity-95">Nesta primeira etapa, o cartao ainda abre a tela segura do Mercado Pago.</p>
+                    <p className="mt-2 rounded-xl bg-white/15 px-3 py-2 text-xs font-semibold">Na proxima etapa vamos colocar o formulario de cartao dentro da loja com tokenizacao segura.</p>
+                  </>
+                )}
               </div>
             )}
 
@@ -1012,6 +1047,73 @@ export function Storefront() {
               onClick={() => void handleSubmit(finishOrder)()}
             >
               {settings?.ordersPaused ? "Loja pausada" : isSubmitting ? "Enviando pedido..." : "Confirmar Pedido"}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {mercadoPagoPix && (
+        <section className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-3">
+          <div className="w-full max-w-md rounded-3xl bg-white p-5 text-slate-900 shadow-2xl">
+            <div className="rounded-2xl bg-blue-600 p-4 text-white">
+              <p className="text-sm font-bold uppercase tracking-wide opacity-90">Mercado Pago</p>
+              <h2 className="mt-1 text-2xl font-black">Pague com Pix</h2>
+              <p className="mt-1 text-sm opacity-95">Escaneie o QR Code ou copie o codigo Pix abaixo.</p>
+            </div>
+
+            {mercadoPagoPix.qrCodeBase64 ? (
+              <img
+                className="mx-auto mt-4 h-56 w-56 rounded-2xl border object-contain p-2"
+                src={`data:image/png;base64,${mercadoPagoPix.qrCodeBase64}`}
+                alt="QR Code Pix Mercado Pago"
+              />
+            ) : (
+              <div className="mt-4 rounded-2xl border border-dashed p-5 text-center text-sm text-slate-500">
+                QR Code indisponivel. Use o copia-e-cola abaixo.
+              </div>
+            )}
+
+            {mercadoPagoPix.qrCode && (
+              <div className="mt-4">
+                <p className="mb-1 text-xs font-bold uppercase text-slate-500">Pix copia e cola</p>
+                <textarea
+                  className="h-24 w-full rounded-2xl border bg-slate-50 p-3 text-xs"
+                  readOnly
+                  value={mercadoPagoPix.qrCode}
+                />
+                <button
+                  type="button"
+                  className="mt-2 w-full rounded-xl bg-blue-600 px-4 py-3 font-bold text-white"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(mercadoPagoPix.qrCode ?? "");
+                    toast.success("Codigo Pix copiado");
+                  }}
+                >
+                  Copiar codigo Pix
+                </button>
+              </div>
+            )}
+
+            {mercadoPagoPix.ticketUrl && (
+              <a
+                className="mt-2 block rounded-xl border border-blue-200 px-4 py-3 text-center font-semibold text-blue-700"
+                href={mercadoPagoPix.ticketUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Abrir no Mercado Pago
+              </a>
+            )}
+
+            <button
+              type="button"
+              className="mt-3 w-full rounded-xl border px-4 py-3 font-semibold"
+              onClick={() => {
+                setMercadoPagoPix(null);
+                setOpenCart(false);
+              }}
+            >
+              Fechar
             </button>
           </div>
         </section>
