@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { API_URL } from "../lib/api";
+import { API_URL, apiFetch } from "../lib/api";
 
 type Session = {
   name: string;
@@ -33,7 +33,7 @@ export function AdminSessionBar() {
     if (pathname === "/admin/login") return;
     const token = localStorage.getItem("delivery:token");
     if (!token) return;
-    void fetch(`${API_URL}/admin/me`, {
+    void apiFetch(`/admin/me`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store"
     })

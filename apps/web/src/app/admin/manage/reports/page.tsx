@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { API_URL } from "../../../../lib/api";
+import { API_URL, apiFetch } from "../../../../lib/api";
 
 type Order = {
   id: string;
@@ -33,7 +33,7 @@ export default function ReportsManagePage() {
     setToken(currentToken);
     if (!currentToken) return;
 
-    const res = await fetch(`${API_URL}/admin/orders?dateFrom=${dateFrom}&dateTo=${dateTo}&includeFinished=true`, {
+    const res = await apiFetch(`/admin/orders?dateFrom=${dateFrom}&dateTo=${dateTo}&includeFinished=true`, {
       headers: { Authorization: `Bearer ${currentToken}` },
       cache: "no-store"
     });

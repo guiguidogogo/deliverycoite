@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { API_URL } from "../../../lib/api";
+import { API_URL, apiFetch } from "../../../lib/api";
 
 type StaffAccount = {
   name: string;
@@ -21,7 +21,7 @@ export default function AdminAccountPage() {
 
   async function request(path: string, init?: RequestInit) {
     const token = localStorage.getItem("delivery:token");
-    const response = await fetch(`${API_URL}${path}`, {
+    const response = await apiFetch(path, {
       ...init,
       headers: {
         "Content-Type": "application/json",

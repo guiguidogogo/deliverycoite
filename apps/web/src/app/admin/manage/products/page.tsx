@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { API_URL } from "../../../../lib/api";
+import { API_URL, apiFetch } from "../../../../lib/api";
 
 type Category = { id: string; name: string };
 type Complement = { id: string; name: string; price: number; active: boolean };
@@ -55,9 +55,9 @@ export default function ProductsManagePage() {
     if (!token) return;
     const headers = { Authorization: `Bearer ${token}` };
     const [productsRes, categoriesRes, complementsRes] = await Promise.all([
-      fetch(`${API_URL}/admin/products`, { headers, cache: "no-store" }),
-      fetch(`${API_URL}/admin/categories`, { headers, cache: "no-store" }),
-      fetch(`${API_URL}/admin/complements`, { headers, cache: "no-store" })
+      apiFetch(`/admin/products`, { headers, cache: "no-store" }),
+      apiFetch(`/admin/categories`, { headers, cache: "no-store" }),
+      apiFetch(`/admin/complements`, { headers, cache: "no-store" })
     ]);
     const [productData, categoryData, complementData] = await Promise.all([
       responseJson(productsRes),
@@ -125,11 +125,11 @@ export default function ProductsManagePage() {
     if (!imageFile) return form.imageUrl || null;
     const data = new FormData();
     data.append("image", imageFile);
-    const res = await fetch(`${API_URL}/admin/uploads/image`, {
+    const res = await apiFetch(`/admin/uploads/image`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
       body: data
-    });
+    }, { json: false });
     const payload = await responseJson(res);
     return payload.absoluteUrl ?? `${window.location.origin}${payload.url}`;
   }
@@ -173,7 +173,7 @@ export default function ProductsManagePage() {
     const token = localStorage.getItem("delivery:token");
     if (!token) return;
     try {
-      const response = await fetch(`${API_URL}/admin/categories`, {
+      const response = await apiFetch(`/admin/categories`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ name: "Geral", description: "Categoria inicial", active: true })
@@ -192,7 +192,7 @@ export default function ProductsManagePage() {
     const token = localStorage.getItem("delivery:token");
     if (!token) return;
     try {
-      const res = await fetch(`${API_URL}/admin/products/${product.id}`, {
+      const res = await apiFetch(`/admin/products/${product.id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` }
       });

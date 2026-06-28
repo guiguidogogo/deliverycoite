@@ -1,4 +1,4 @@
-import { API_URL } from "./api";
+import { apiFetch } from "./api";
 
 export type AdminUser = {
   id: string;
@@ -16,14 +16,12 @@ export function getAdminToken() {
 export async function adminApi<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getAdminToken();
   if (!token) throw new Error("Sessao expirada");
-  const response = await fetch(`${API_URL}${path}`, {
+  const response = await apiFetch(path, {
     ...init,
     headers: {
-      "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
       ...(init?.headers ?? {})
-    },
-    cache: "no-store"
+    }
   });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));

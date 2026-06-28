@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
+import jwt from "jsonwebtoken";
 import { prisma } from "./prisma.js";
 import { env } from "./env.js";
 
@@ -35,6 +36,27 @@ function normalizeSubdomain(value?: string) {
   return (value ?? "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
 }
 
+function bodySubdomain(req: Request) {
+  return typeof req.body === "object" && req.body && "subdomain" in req.body
+    ? normalizeSubdomain(String((req.body as { subdomain?: unknown }).subdomain ?? ""))
+    : "";
+}
+
+function authenticatedCompanyId(req: Request) {
+  const headerToken = req.headers.authorization?.startsWith("Bearer ")
+    ? req.headers.authorization.slice(7)
+    : "";
+  const token = headerToken || req.query.token?.toString() || "";
+  if (!token) return "";
+
+  try {
+    const payload = jwt.verify(token, env.jwtSecret) as { companyId?: string; scope?: "GLOBAL" };
+    return payload.scope === "GLOBAL" ? "" : payload.companyId ?? "";
+  } catch {
+    return "";
+  }
+}
+
 async function findActiveCompany(subdomain: string) {
   return prisma.company.findFirst({
     where: { subdomain, active: true },
@@ -59,7 +81,7 @@ export function companyWhere(req: Request) {
 export async function resolveCompany(req: Request, res: Response, next: NextFunction) {
   const host = requestHost(req);
   const requestedSubdomain = normalizeSubdomain(
-    req.headers["x-company-subdomain"]?.toString() || req.query.subdomain?.toString()
+    req.headers["x-company-subdomain"]?.toString() || req.query.subdomain?.toString() || bodySubdomain(req)
   );
   if (requestedSubdomain) {
     const company = await findActiveCompany(requestedSubdomain);
@@ -71,6 +93,13 @@ export async function resolveCompany(req: Request, res: Response, next: NextFunc
       subdomain: company.subdomain,
       bound: true
     };
+    return next();
+  }
+
+  const tokenCompanyId = authenticatedCompanyId(req);
+  if (tokenCompanyId) {
+    req.companyId = tokenCompanyId;
+    req.tenant = { source: "default", host, bound: false };
     return next();
   }
 

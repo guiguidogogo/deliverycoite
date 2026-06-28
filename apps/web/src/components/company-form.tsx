@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { adminApi, getAdminToken } from "../lib/admin-api";
-import { API_URL } from "../lib/api";
+import { API_URL, apiFetch } from "../lib/api";
 
 export type CompanyFormValue = {
   companyName: string;
@@ -136,11 +136,11 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
     try {
       const data = new FormData();
       data.append("image", file);
-      const response = await fetch(`${API_URL}/admin/companies/upload`, {
+      const response = await apiFetch(`/admin/companies/upload`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: data
-      });
+      }, { json: false });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.message ?? "Falha ao enviar imagem");
       setForm((value) => ({ ...value, [field]: result.absoluteUrl }));

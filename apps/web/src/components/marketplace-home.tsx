@@ -23,7 +23,7 @@ import {
   X
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { API_URL } from "../lib/api";
+import { API_URL, apiFetch } from "../lib/api";
 import { money } from "../lib/format";
 
 type MarketplaceCompany = {
@@ -144,7 +144,7 @@ export function MarketplaceHome() {
     if (activeCategory) params.set("category", activeCategory);
     const timer = window.setTimeout(() => {
       setLoading(true);
-      void fetch(`${API_URL}/marketplace/companies?${params}`, { cache: "no-store" })
+      void apiFetch(`/marketplace/companies?${params}`, { cache: "no-store" })
         .then((response) => response.ok ? response.json() : Promise.reject(new Error("Falha ao carregar empresas")))
         .then(setCompanies)
         .catch(() => setCompanies([]))

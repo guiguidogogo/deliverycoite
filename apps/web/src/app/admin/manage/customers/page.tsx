@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { API_URL } from "../../../../lib/api";
+import { API_URL, apiFetch } from "../../../../lib/api";
 
 type Customer = {
   id: string;
@@ -29,7 +29,7 @@ export default function CustomersManagePage() {
     const token = localStorage.getItem("delivery:token");
     if (!token) return;
 
-    const res = await fetch(`${API_URL}/admin/customers?search=${encodeURIComponent(search)}`, {
+    const res = await apiFetch(`/admin/customers?search=${encodeURIComponent(search)}`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store"
     });
@@ -51,7 +51,7 @@ export default function CustomersManagePage() {
     const token = localStorage.getItem("delivery:token");
     if (!token) return;
 
-    const res = await fetch(`${API_URL}/admin/customers/${editing.id}`, {
+    const res = await apiFetch(`/admin/customers/${editing.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({
@@ -85,7 +85,7 @@ export default function CustomersManagePage() {
       return;
     }
 
-    const res = await fetch(`${API_URL}/admin/customers/${id}`, {
+    const res = await apiFetch(`/admin/customers/${id}`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ reason })

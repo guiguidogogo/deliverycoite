@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { API_URL } from "../../../../lib/api";
+import { API_URL, apiFetch } from "../../../../lib/api";
 import { LocationPicker } from "../../../../components/location-picker";
 import { printTestReceipt, testReceiptHtml } from "../../../../lib/browser-print";
 import { findLocalPrinters, printAgentInstallUrl, printHtmlWithAgent } from "../../../../lib/qz-print";
@@ -43,7 +43,7 @@ export default function SettingsManagePage() {
     const token = localStorage.getItem("delivery:token");
     if (!token) return;
 
-    void fetch(`${API_URL}/admin/settings`, {
+    void apiFetch(`/admin/settings`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store"
     })
@@ -88,7 +88,7 @@ export default function SettingsManagePage() {
     const token = localStorage.getItem("delivery:token");
     if (!token) return;
 
-    const res = await fetch(`${API_URL}/admin/settings`, {
+    const res = await apiFetch(`/admin/settings`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({
@@ -147,7 +147,7 @@ export default function SettingsManagePage() {
     const token = localStorage.getItem("delivery:token");
     if (!token) return;
 
-    const res = await fetch(`${API_URL}/admin/integrations/menuia/test`, {
+    const res = await apiFetch(`/admin/integrations/menuia/test`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` }
     });

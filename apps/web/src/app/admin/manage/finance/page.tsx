@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { API_URL } from "../../../../lib/api";
+import { API_URL, apiFetch } from "../../../../lib/api";
 
 type Tab = "dashboard" | "cash" | "payables" | "receivables" | "history" | "audit";
 type Summary = {
@@ -74,7 +74,7 @@ export default function FinanceManagePage() {
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const token = localStorage.getItem("delivery:token");
     if (!token) throw new Error("Sessão expirada");
-    const response = await fetch(`${API_URL}${path}`, {
+    const response = await apiFetch(path, {
       ...init,
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...(init?.headers ?? {}) },
       cache: "no-store"

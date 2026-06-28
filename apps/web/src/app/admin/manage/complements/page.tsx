@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { API_URL } from "../../../../lib/api";
+import { API_URL, apiFetch } from "../../../../lib/api";
 
 type Complement = {
   id: string;
@@ -46,7 +46,7 @@ export default function ComplementsManagePage() {
   async function load() {
     const token = localStorage.getItem("delivery:token");
     if (!token) return;
-    const res = await fetch(`${API_URL}/admin/complements`, {
+    const res = await apiFetch(`/admin/complements`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store"
     });
@@ -81,11 +81,11 @@ export default function ComplementsManagePage() {
     if (!imageFile) return form.imageUrl || null;
     const data = new FormData();
     data.append("image", imageFile);
-    const res = await fetch(`${API_URL}/admin/uploads/image`, {
+    const res = await apiFetch(`/admin/uploads/image`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
       body: data
-    });
+    }, { json: false });
     const payload = await responseJson(res);
     return payload.absoluteUrl ?? `${window.location.origin}${payload.url}`;
   }
@@ -138,7 +138,7 @@ export default function ComplementsManagePage() {
     const token = localStorage.getItem("delivery:token");
     if (!token) return;
     try {
-      const res = await fetch(`${API_URL}/admin/complements/${item.id}`, {
+      const res = await apiFetch(`/admin/complements/${item.id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` }
       });

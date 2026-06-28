@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { API_URL } from "../../../lib/api";
+import { apiFetch, normalizeSubdomain } from "../../../lib/api";
 
 const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? "hubregional.com.br";
 
@@ -24,16 +24,16 @@ export default function AdminLoginPage() {
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
+    const typedSubdomain = normalizeSubdomain(subdomain);
 
-    const res = await fetch(`${API_URL}/auth/login`, {
+    const res = await apiFetch("/auth/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         email,
         password,
-        ...(subdomain.trim() ? { subdomain: subdomain.trim().toLowerCase() } : {})
+        ...(typedSubdomain ? { subdomain: typedSubdomain } : {})
       })
-    });
+    }, { subdomain: typedSubdomain });
 
     if (!res.ok) {
       const payload = await res.json().catch(() => ({}));
@@ -53,11 +53,11 @@ export default function AdminLoginPage() {
   }
 
   async function requestReset() {
-    const res = await fetch(`${API_URL}/auth/password/request`, {
+    const typedSubdomain = normalizeSubdomain(subdomain);
+    const res = await apiFetch("/auth/password/request", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email })
-    });
+    }, { subdomain: typedSubdomain });
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) return toast.error(payload.message ?? "Falha ao enviar codigo");
     setRecovering(true);
@@ -65,11 +65,11 @@ export default function AdminLoginPage() {
   }
 
   async function resetPassword() {
-    const res = await fetch(`${API_URL}/auth/password/reset`, {
+    const typedSubdomain = normalizeSubdomain(subdomain);
+    const res = await apiFetch("/auth/password/reset", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, code, newPassword })
-    });
+    }, { subdomain: typedSubdomain });
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) return toast.error(payload.message ?? "Falha ao redefinir senha");
     setRecovering(false);

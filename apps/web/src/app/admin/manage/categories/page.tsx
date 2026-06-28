@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { API_URL } from "../../../../lib/api";
+import { API_URL, apiFetch } from "../../../../lib/api";
 
 type Category = { id: string; name: string; description?: string; active: boolean };
 
@@ -23,7 +23,7 @@ export default function CategoriesManagePage() {
       return;
     }
 
-    const res = await fetch(`${API_URL}/admin/categories`, {
+    const res = await apiFetch(`/admin/categories`, {
       headers: { Authorization: `Bearer ${token}` }
     });
 
@@ -51,7 +51,7 @@ export default function CategoriesManagePage() {
       return;
     }
 
-    const res = await fetch(`${API_URL}/admin/categories`, {
+    const res = await apiFetch(`/admin/categories`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ name, active: true })
@@ -86,7 +86,7 @@ export default function CategoriesManagePage() {
       return;
     }
 
-    const res = await fetch(`${API_URL}/admin/categories/${id}`, {
+    const res = await apiFetch(`/admin/categories/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ name: editingName.trim(), active: editingActive })
@@ -118,7 +118,7 @@ export default function CategoriesManagePage() {
     const confirmed = window.confirm("Deseja realmente excluir esta categoria?");
     if (!confirmed) return;
 
-    const res = await fetch(`${API_URL}/admin/categories/${id}`, {
+    const res = await apiFetch(`/admin/categories/${id}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` }
     });

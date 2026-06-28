@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { API_URL } from "../lib/api";
+import { API_URL, apiFetch } from "../lib/api";
 import { orderReceiptHtml, printOrderInBrowser, type ReceiptOrder } from "../lib/browser-print";
 import { printHtmlWithAgent } from "../lib/qz-print";
 
@@ -65,7 +65,7 @@ const labels: Record<Order["status"], string> = {
 async function authApi<T>(path: string, token: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${API_URL}${path}`, {
+    res = await apiFetch(path, {
       ...init,
       headers: {
         "Content-Type": "application/json",
@@ -154,7 +154,7 @@ export function AdminPanel() {
         }
         setPermissions(me.permissions);
         setUserRole(me.role);
-        return fetch(`${API_URL}/admin/settings`, {
+        return apiFetch(`/admin/settings`, {
           headers: { Authorization: `Bearer ${storedToken}` },
           cache: "no-store"
         })

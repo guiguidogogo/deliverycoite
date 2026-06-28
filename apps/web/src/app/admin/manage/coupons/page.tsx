@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { API_URL } from "../../../../lib/api";
+import { API_URL, apiFetch } from "../../../../lib/api";
 
 type Coupon = {
   id: string;
@@ -43,7 +43,7 @@ export default function CouponsManagePage() {
     const token = localStorage.getItem("delivery:token");
     if (!token) return;
 
-    const res = await fetch(`${API_URL}/admin/coupons`, {
+    const res = await apiFetch(`/admin/coupons`, {
       headers: { Authorization: `Bearer ${token}` }
     });
 
@@ -57,7 +57,7 @@ export default function CouponsManagePage() {
 
   useEffect(() => {
     void load();
-    void fetch(`${API_URL}/settings`)
+    void apiFetch(`/settings`)
       .then((response) => response.json())
       .then((settings) =>
         setBanner({
@@ -77,11 +77,11 @@ export default function CouponsManagePage() {
       if (bannerFile) {
         const data = new FormData();
         data.append("image", bannerFile);
-        const upload = await fetch(`${API_URL}/admin/uploads/image`, {
+        const upload = await apiFetch(`/admin/uploads/image`, {
           method: "POST",
           headers: { Authorization: `Bearer ${token}` },
           body: data
-        });
+        }, { json: false });
         const uploadPayload = await upload.json().catch(() => ({}));
         if (!upload.ok) {
           throw new Error(uploadPayload.message ?? "Falha ao enviar imagem");
@@ -91,7 +91,7 @@ export default function CouponsManagePage() {
           `${window.location.origin}${uploadPayload.url}`;
       }
 
-      const response = await fetch(`${API_URL}/admin/settings`, {
+      const response = await apiFetch(`/admin/settings`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -123,7 +123,7 @@ export default function CouponsManagePage() {
     const token = localStorage.getItem("delivery:token");
     if (!token) return;
 
-    const res = await fetch(`${API_URL}/admin/coupons`, {
+    const res = await apiFetch(`/admin/coupons`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({
@@ -163,7 +163,7 @@ export default function CouponsManagePage() {
     const token = localStorage.getItem("delivery:token");
     if (!token) return;
 
-    const res = await fetch(`${API_URL}/admin/coupons/${coupon.id}`, {
+    const res = await apiFetch(`/admin/coupons/${coupon.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ active: !coupon.active })
@@ -181,7 +181,7 @@ export default function CouponsManagePage() {
     const token = localStorage.getItem("delivery:token");
     if (!token) return;
 
-    const res = await fetch(`${API_URL}/admin/coupons/${id}`, {
+    const res = await apiFetch(`/admin/coupons/${id}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` }
     });
