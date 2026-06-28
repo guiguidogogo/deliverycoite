@@ -505,6 +505,10 @@ model Order {
   customerNotes      String?
   paidAt             DateTime?
   paidMethodDetail   String?
+  mercadoPagoPreferenceId String?
+  mercadoPagoPaymentId    String?
+  mercadoPagoStatus       String?
+  mercadoPagoStatusDetail String?
   notes              String?
   whatsappLink       String?
   viewedByStaff      Boolean           @default(false)
@@ -523,6 +527,8 @@ model Order {
   @@index([createdAt])
   @@index([companyId])
   @@index([companyId, deletedAt])
+  @@index([mercadoPagoPreferenceId])
+  @@index([mercadoPagoPaymentId])
 }
 
 model Driver {

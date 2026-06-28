@@ -28,6 +28,8 @@ export type CompanyFormValue = {
   deliveryFee: number;
   deliveryTimeMin: number;
   rating: number;
+  mercadoPagoPublicKey: string;
+  mercadoPagoAccessToken: string;
 };
 
 type Props = {
@@ -61,7 +63,9 @@ const emptyCompany: CompanyFormValue = {
   isOpen: true,
   deliveryFee: 5,
   deliveryTimeMin: 35,
-  rating: 5
+  rating: 5,
+  mercadoPagoPublicKey: "",
+  mercadoPagoAccessToken: ""
 };
 const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? "hubregional.com.br";
 

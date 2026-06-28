@@ -42,7 +42,9 @@ const companySchema = z.object({
   isOpen: z.boolean().default(true),
   deliveryFee: z.coerce.number().min(0).max(999).default(5),
   deliveryTimeMin: z.coerce.number().int().min(5).max(240).default(35),
-  rating: z.coerce.number().min(0).max(5).default(5)
+  rating: z.coerce.number().min(0).max(5).default(5),
+  mercadoPagoPublicKey: optionalText,
+  mercadoPagoAccessToken: optionalText
 });
 
 const createCompanySchema = companySchema.extend({
@@ -133,6 +135,8 @@ function companyData(data: z.infer<typeof companySchema>) {
     phone: onlyDigits(data.phone),
     whatsapp: onlyDigits(data.whatsapp),
     email: data.email?.toLowerCase() ?? null,
+    mercadoPagoPublicKey: data.mercadoPagoPublicKey || null,
+    mercadoPagoAccessToken: data.mercadoPagoAccessToken || null,
     subdomain
   };
 }

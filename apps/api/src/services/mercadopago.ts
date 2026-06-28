@@ -1,0 +1,87 @@
+const MP_API = "https://api.mercadopago.com";
+
+export type MercadoPagoPreferenceResponse = {
+  id: string;
+  init_point?: string;
+  sandbox_init_point?: string;
+};
+
+export type MercadoPagoPaymentResponse = {
+  id: number | string;
+  status?: string;
+  status_detail?: string;
+  external_reference?: string;
+  payment_method_id?: string;
+  payment_type_id?: string;
+  transaction_amount?: number;
+  metadata?: { order_id?: string; company_id?: string };
+};
+
+async function mpFetch<T>(path: string, accessToken: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${MP_API}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      ...(init?.headers ?? {})
+    }
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = payload?.message ?? payload?.error ?? "Falha na comunicacao com Mercado Pago";
+    throw new Error(message);
+  }
+  return payload as T;
+}
+
+export async function createMercadoPagoPreference(params: {
+  accessToken: string;
+  orderId: string;
+  companyId: string;
+  orderNumber: number;
+  description: string;
+  amount: number;
+  payer?: { name?: string; email?: string | null; phone?: string | null };
+  notificationUrl: string;
+  successUrl: string;
+  failureUrl: string;
+  pendingUrl: string;
+}) {
+  return mpFetch<MercadoPagoPreferenceResponse>("/checkout/preferences", params.accessToken, {
+    method: "POST",
+    body: JSON.stringify({
+      items: [
+        {
+          id: params.orderId,
+          title: `Pedido #${String(params.orderNumber).padStart(5, "0")}`,
+          description: params.description,
+          quantity: 1,
+          currency_id: "BRL",
+          unit_price: Number(params.amount.toFixed(2))
+        }
+      ],
+      payer: {
+        name: params.payer?.name,
+        email: params.payer?.email || undefined,
+        phone: params.payer?.phone ? { number: params.payer.phone.replace(/\D/g, "") } : undefined
+      },
+      external_reference: params.orderId,
+      metadata: {
+        order_id: params.orderId,
+        company_id: params.companyId
+      },
+      notification_url: params.notificationUrl,
+      back_urls: {
+        success: params.successUrl,
+        failure: params.failureUrl,
+        pending: params.pendingUrl
+      },
+      auto_return: "approved",
+      statement_descriptor: "HUBREGIONAL"
+    })
+  });
+}
+
+export async function getMercadoPagoPayment(accessToken: string, paymentId: string) {
+  return mpFetch<MercadoPagoPaymentResponse>(`/v1/payments/${encodeURIComponent(paymentId)}`, accessToken);
+}

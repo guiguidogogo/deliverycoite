@@ -100,6 +100,7 @@ import {
   reopenCashSession
 } from "../controllers/finance-controller.js";
 import { getFutureIntegrations, testMenuiaIntegration } from "../controllers/integrations-controller.js";
+import { createOrderMercadoPagoPreference, getMercadoPagoPublicConfig, mercadoPagoWebhook } from "../controllers/mercadopago-controller.js";
 import { listNewOrders } from "../controllers/notifications-controller.js";
 import {
   createOrder,
@@ -190,6 +191,10 @@ route.get("/coupons/validate", validateCoupon);
 route.post("/favorites/toggle", toggleFavorite);
 route.post("/orders", createOrder);
 route.get("/integrations/future", getFutureIntegrations);
+route.get("/mercadopago/config", getMercadoPagoPublicConfig);
+route.post("/orders/:orderId/mercadopago/preference", createOrderMercadoPagoPreference);
+route.post("/mercadopago/webhook", mercadoPagoWebhook);
+route.get("/mercadopago/webhook", mercadoPagoWebhook);
 
 router.use(auth());
 route.get("/admin/me", getCurrentStaff);
