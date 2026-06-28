@@ -22,7 +22,7 @@ export async function adminApi<T>(path: string, init?: RequestInit): Promise<T> 
       Authorization: `Bearer ${token}`,
       ...(init?.headers ?? {})
     }
-  });
+  }, { skipSubdomain: true });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
     throw new Error(payload.message ?? "Erro na requisicao");

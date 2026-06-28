@@ -140,7 +140,7 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: data
-      }, { json: false });
+      }, { json: false, skipSubdomain: true });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.message ?? "Falha ao enviar imagem");
       setForm((value) => ({ ...value, [field]: result.absoluteUrl }));

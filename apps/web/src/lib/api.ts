@@ -16,9 +16,9 @@ export function getBrowserSubdomain() {
   return normalizeSubdomain(localStorage.getItem("delivery:subdomain"));
 }
 
-function buildHeaders(headers?: HeadersInit, options?: { json?: boolean; subdomain?: string | null }) {
+function buildHeaders(headers?: HeadersInit, options?: { json?: boolean; subdomain?: string | null; skipSubdomain?: boolean }) {
   const nextHeaders = new Headers(headers);
-  const subdomain = normalizeSubdomain(options?.subdomain) || getBrowserSubdomain();
+  const subdomain = options?.skipSubdomain ? "" : normalizeSubdomain(options?.subdomain) || getBrowserSubdomain();
 
   if (options?.json !== false && !nextHeaders.has("Content-Type")) {
     nextHeaders.set("Content-Type", "application/json");
@@ -30,7 +30,7 @@ function buildHeaders(headers?: HeadersInit, options?: { json?: boolean; subdoma
   return nextHeaders;
 }
 
-export async function apiFetch(path: string, init?: RequestInit, options?: { json?: boolean; subdomain?: string | null }) {
+export async function apiFetch(path: string, init?: RequestInit, options?: { json?: boolean; subdomain?: string | null; skipSubdomain?: boolean }) {
   return fetch(`${API_URL}${path}`, {
     ...init,
     headers: buildHeaders(init?.headers, options),
