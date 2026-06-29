@@ -4,6 +4,7 @@ import { z } from "zod";
 import { publishNewOrder } from "../services/realtime.js";
 import { printOrder } from "../services/thermal-printer.js";
 import { buildOrderStatusWhatsappMessage, buildWhatsappMessage, dispatchWhatsappMessage } from "../services/whatsapp.js";
+import { getMercadoPagoPayment, searchMercadoPagoPayments, type MercadoPagoPaymentResponse } from "../services/mercadopago.js";
 import { prisma } from "../utils/prisma.js";
 import { formatOrderCode } from "../utils/order-code.js";
 import { recordCashPayments } from "../utils/cash-register.js";
@@ -71,6 +72,59 @@ const checkoutSchema = z
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["customer", "district"], message: "Bairro obrigatorio" });
     }
   });
+
+function chooseApprovedMercadoPagoPayment(payments: MercadoPagoPaymentResponse[]) {
+  return payments.find((payment) => payment.status === "approved") ?? null;
+}
+
+async function reconcileMercadoPagoPendingOrders(
+  orders: Array<{
+    id: string;
+    paymentMethod: PaymentMethod;
+    paidAt: Date | null;
+    mercadoPagoStatus: string | null;
+    mercadoPagoPaymentId: string | null;
+    mercadoPagoPreferenceId: string | null;
+    company: { mercadoPagoAccessToken: string | null };
+  }>
+) {
+  const pending = orders.filter((order) =>
+    order.paymentMethod === PaymentMethod.MERCADO_PAGO
+    && !order.paidAt
+    && order.mercadoPagoStatus !== "refunded"
+    && order.company.mercadoPagoAccessToken
+  );
+  if (!pending.length) return;
+
+  await Promise.all(pending.map(async (order) => {
+    const accessToken = order.company.mercadoPagoAccessToken;
+    if (!accessToken) return;
+
+    let payment: MercadoPagoPaymentResponse | null = null;
+    if (order.mercadoPagoPaymentId) {
+      payment = await getMercadoPagoPayment(accessToken, order.mercadoPagoPaymentId).catch(() => null);
+    }
+    if (!payment && order.mercadoPagoPreferenceId) {
+      const search = await searchMercadoPagoPayments(accessToken, { externalReference: order.id }).catch(() => null);
+      payment = chooseApprovedMercadoPagoPayment(search?.results ?? []);
+    }
+    if (payment?.status !== "approved") return;
+
+    await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        mercadoPagoPaymentId: String(payment.id),
+        mercadoPagoStatus: payment.status,
+        mercadoPagoStatusDetail: payment.status_detail ?? null,
+        paidAt: new Date(),
+        paymentMethod: PaymentMethod.MERCADO_PAGO,
+        paidMethodDetail: `Mercado Pago (${payment.payment_type_id ?? payment.payment_method_id ?? "online"})`,
+        status: "PREPARING",
+        notes: { set: `[PAGO: Mercado Pago em ${new Date().toLocaleString("pt-BR")}]` }
+      }
+    });
+  }));
+}
 
 function toDecimal(value: number) {
   return new Prisma.Decimal(value.toFixed(2));
@@ -471,20 +525,41 @@ export async function listOrders(req: Request, res: Response) {
   const startDate = dateFrom ? new Date(`${dateFrom}T00:00:00-03:00`) : defaultStart;
   const endDate = dateTo ? new Date(`${dateTo}T23:59:59.999-03:00`) : defaultEnd;
 
-  const orders = await prisma.order.findMany({
-    where: {
-      ...companyWhere(req),
-      deletedAt: null,
-      status: status ?? (includeFinished ? undefined : { not: "FINISHED" }),
-      createdAt: {
-        gte: startDate,
-        lte: endDate
-      },
-      customer: {
-        ...(customer ? { name: { contains: customer } } : {}),
-        ...(phone ? { phone: { contains: phone } } : {})
-      }
+  const where: Prisma.OrderWhereInput = {
+    ...companyWhere(req),
+    deletedAt: null,
+    status: status ?? (includeFinished ? undefined : { not: OrderStatus.FINISHED }),
+    createdAt: {
+      gte: startDate,
+      lte: endDate
     },
+    customer: {
+      ...(customer ? { name: { contains: customer } } : {}),
+      ...(phone ? { phone: { contains: phone } } : {})
+    }
+  };
+
+  const reconciliationRows = await prisma.order.findMany({
+    where: {
+      ...where,
+      paymentMethod: PaymentMethod.MERCADO_PAGO,
+      paidAt: null
+    },
+    select: {
+      id: true,
+      paymentMethod: true,
+      paidAt: true,
+      mercadoPagoStatus: true,
+      mercadoPagoPaymentId: true,
+      mercadoPagoPreferenceId: true,
+      company: { select: { mercadoPagoAccessToken: true } }
+    }
+  });
+
+  await reconcileMercadoPagoPendingOrders(reconciliationRows);
+
+  const orders = await prisma.order.findMany({
+    where,
     include: { customer: true, items: { include: { product: true, complements: true } } },
     orderBy: { createdAt: "desc" }
   });

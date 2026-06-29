@@ -25,6 +25,7 @@ type Config = {
   startWithWindows: boolean;
   minimizeToTray: boolean;
   pollIntervalSeconds: number;
+  printCopies: number;
   printFromNowAt?: string;
 };
 
@@ -45,6 +46,7 @@ const defaultConfig: Config = {
   startWithWindows: false,
   minimizeToTray: true,
   pollIntervalSeconds: 5,
+  printCopies: 1,
   printFromNowAt: ""
 };
 
@@ -172,9 +174,12 @@ async function handleOrder(order: AgentOrder) {
   inMemoryPrinted.add(order.id);
 
   try {
-    await printText(config.printerName, order.receipt);
+    const copies = Math.min(5, Math.max(1, Number(config.printCopies || 1)));
+    for (let copy = 0; copy < copies; copy += 1) {
+      await printText(config.printerName, order.receipt);
+    }
     await markPrinted(order.id, true);
-    addLog(`Pedido #${order.code} impresso para ${order.customer.name}`);
+    addLog(`Pedido #${order.code} impresso para ${order.customer.name} (${copies} via${copies > 1 ? "s" : ""})`);
   } catch (error) {
     inMemoryPrinted.delete(order.id);
     const message = error instanceof Error ? error.message : "Falha desconhecida";
@@ -265,6 +270,7 @@ ipcMain.handle("save-config", (_event, config: Config) => {
     ...defaultConfig,
     ...config,
     apiUrl: normalizeApiUrl(config.apiUrl),
+    printCopies: Math.min(5, Math.max(1, Number(config.printCopies || 1))),
     printFromNowAt: config.printFromNowAt || current.printFromNowAt || new Date().toISOString()
   });
   restartPolling();

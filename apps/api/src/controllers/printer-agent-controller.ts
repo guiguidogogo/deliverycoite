@@ -58,6 +58,7 @@ async function findPrintableOrders(companyId: string, since?: Date) {
     where: {
       companyId,
       deletedAt: null,
+      printerQueuedAt: null,
       printerPrintedAt: null,
       createdAt: { gte: createdSince },
       status: { notIn: [OrderStatus.CANCELED, OrderStatus.FINISHED] },
@@ -147,6 +148,17 @@ export async function listPrinterAgentOrders(req: Request, res: Response) {
     where: { id: company.id },
     data: { printerAgentLastSeenAt: new Date() }
   });
+
+  if (orders.length) {
+    await prisma.order.updateMany({
+      where: {
+        companyId: company.id,
+        id: { in: orders.map((order) => order.id) },
+        printerQueuedAt: null
+      },
+      data: { printerQueuedAt: new Date() }
+    });
+  }
 
   return res.json({
     company: { id: company.id, tradeName: company.tradeName, subdomain: company.subdomain },

@@ -177,6 +177,16 @@
               <option value="15">15 segundos</option>
             </select>
           </div>
+          <div>
+            <label for="printCopies">Vias por pedido</label>
+            <select id="printCopies">
+              <option value="1">1 via</option>
+              <option value="2">2 vias</option>
+              <option value="3">3 vias</option>
+              <option value="4">4 vias</option>
+              <option value="5">5 vias</option>
+            </select>
+          </div>
         </div>
         <div class="checks">
           <label class="check"><input id="autoPrint" type="checkbox" /> Impressao automatica</label>
@@ -199,7 +209,7 @@
 
     <script>
       const api = window.hubPrinter;
-      const fields = ["apiUrl", "token", "printerName", "autoPrint", "startWithWindows", "minimizeToTray", "pollIntervalSeconds"];
+      const fields = ["apiUrl", "token", "printerName", "autoPrint", "startWithWindows", "minimizeToTray", "pollIntervalSeconds", "printCopies"];
       let currentPrinters = [];
       let formDirty = false;
       let initialLoaded = false;
@@ -215,7 +225,8 @@
           autoPrint: el("autoPrint").checked,
           startWithWindows: el("startWithWindows").checked,
           minimizeToTray: el("minimizeToTray").checked,
-          pollIntervalSeconds: Number(el("pollIntervalSeconds").value || 5)
+          pollIntervalSeconds: Number(el("pollIntervalSeconds").value || 5),
+          printCopies: Number(el("printCopies").value || 1)
         };
       }
 
@@ -227,6 +238,7 @@
         el("startWithWindows").checked = Boolean(config.startWithWindows);
         el("minimizeToTray").checked = Boolean(config.minimizeToTray);
         el("pollIntervalSeconds").value = String(config.pollIntervalSeconds || 5);
+        el("printCopies").value = String(config.printCopies || 1);
         renderPrinters(currentPrinters, config.printerName || "");
       }
 
