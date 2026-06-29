@@ -29,7 +29,7 @@ function normalizeHost(host?: string) {
 }
 
 function requestHost(req: Request) {
-  return normalizeHost(req.hostname || req.headers["x-forwarded-host"]?.toString() || req.headers.host);
+  return normalizeHost(req.headers["x-forwarded-host"]?.toString() || req.headers.host || req.hostname);
 }
 
 function normalizeSubdomain(value?: string) {
@@ -42,6 +42,10 @@ function bodySubdomain(req: Request) {
     "/auth/login",
     "/auth/password/request",
     "/auth/password/reset",
+    "/customer/register",
+    "/customer/login",
+    "/customer/password/request",
+    "/customer/password/reset",
     "/driver/auth/login"
   ].includes(path);
 

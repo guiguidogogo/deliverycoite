@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { MapPin } from "lucide-react";
-import { api } from "../../lib/api";
+import { api, getBrowserSubdomain } from "../../lib/api";
 import { LocationPicker } from "../../components/location-picker";
 
 type Tab = "login" | "register";
@@ -43,7 +43,8 @@ export default function CustomerAuthPage() {
         method: "POST",
         body: JSON.stringify({
           phone: loginPhone,
-          password: loginPassword
+          password: loginPassword,
+          subdomain: getBrowserSubdomain() || undefined
         })
       });
 
@@ -75,7 +76,8 @@ export default function CustomerAuthPage() {
           district: registerDistrict || undefined,
           complement: registerComplement || undefined,
           latitude: registerLat,
-          longitude: registerLng
+          longitude: registerLng,
+          subdomain: getBrowserSubdomain() || undefined
         })
       });
 
@@ -94,7 +96,7 @@ export default function CustomerAuthPage() {
     try {
       const response = await api<{ message: string }>("/customer/password/request", {
         method: "POST",
-        body: JSON.stringify({ phone: loginPhone })
+        body: JSON.stringify({ phone: loginPhone, subdomain: getBrowserSubdomain() || undefined })
       });
       setRecovering(true);
       toast.success(response.message);
@@ -110,7 +112,8 @@ export default function CustomerAuthPage() {
         body: JSON.stringify({
           phone: loginPhone,
           code: resetCode,
-          newPassword: resetPassword
+          newPassword: resetPassword,
+          subdomain: getBrowserSubdomain() || undefined
         })
       });
       setRecovering(false);
