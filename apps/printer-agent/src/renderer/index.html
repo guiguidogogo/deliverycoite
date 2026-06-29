@@ -194,6 +194,14 @@
               <option value="80">80mm / 48 colunas</option>
             </select>
           </div>
+          <div>
+            <label for="printMode">Modo de impressao</label>
+            <select id="printMode">
+              <option value="windows">Windows / Driver instalado</option>
+              <option value="raw-text">RAW texto puro</option>
+              <option value="raw-escpos">RAW ESC/POS</option>
+            </select>
+          </div>
         </div>
         <div class="checks">
           <label class="check"><input id="autoPrint" type="checkbox" /> Impressao automatica</label>
@@ -216,7 +224,7 @@
 
     <script>
       const api = window.hubPrinter;
-      const fields = ["apiUrl", "token", "printerName", "autoPrint", "startWithWindows", "minimizeToTray", "pollIntervalSeconds", "printCopies", "paperWidth"];
+      const fields = ["apiUrl", "token", "printerName", "autoPrint", "startWithWindows", "minimizeToTray", "pollIntervalSeconds", "printCopies", "paperWidth", "printMode"];
       let currentPrinters = [];
       let formDirty = false;
       let initialLoaded = false;
@@ -234,7 +242,8 @@
           minimizeToTray: el("minimizeToTray").checked,
           pollIntervalSeconds: Number(el("pollIntervalSeconds").value || 5),
           printCopies: Number(el("printCopies").value || 1),
-          paperWidth: Number(el("paperWidth").value || 58)
+          paperWidth: Number(el("paperWidth").value || 58),
+          printMode: el("printMode").value || "windows"
         };
       }
 
@@ -248,6 +257,7 @@
         el("pollIntervalSeconds").value = String(config.pollIntervalSeconds || 5);
         el("printCopies").value = String(config.printCopies || 1);
         el("paperWidth").value = String(config.paperWidth || 58);
+        el("printMode").value = config.printMode || "windows";
         renderPrinters(currentPrinters, config.printerName || "");
       }
 

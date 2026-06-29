@@ -27,6 +27,7 @@ type Config = {
   pollIntervalSeconds: number;
   printCopies: number;
   paperWidth: 58 | 80;
+  printMode: "windows" | "raw-text" | "raw-escpos";
   printFromNowAt?: string;
 };
 
@@ -49,6 +50,7 @@ const defaultConfig: Config = {
   pollIntervalSeconds: 5,
   printCopies: 1,
   paperWidth: 58,
+  printMode: "windows",
   printFromNowAt: ""
 };
 
@@ -61,6 +63,19 @@ let printing = false;
 let isQuitting = false;
 const logs: string[] = [];
 const inMemoryPrinted = new Set<string>();
+const singleInstanceLock = app.requestSingleInstanceLock();
+
+if (!singleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
 
 function dataFile() {
   return path.join(app.getPath("userData"), "config.json");
@@ -132,6 +147,11 @@ function sanitizeThermalText(text: string) {
     .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, "");
 }
 
+function plainTextBuffer(text: string) {
+  const clean = sanitizeThermalText(text).replace(/\r?\n/g, "\r\n");
+  return Buffer.from(`${clean}\r\n\r\n\r\n`, "ascii");
+}
+
 function escPosBuffer(text: string) {
   const clean = sanitizeThermalText(text).replace(/\r?\n/g, "\r\n");
   return Buffer.concat([
@@ -143,14 +163,26 @@ function escPosBuffer(text: string) {
   ]);
 }
 
-async function printText(printerName: string, text: string) {
-  if (process.platform !== "win32") {
-    throw new Error("Este agente de impressao foi feito para Windows.");
+async function printWithWindowsDriver(printerName: string, text: string) {
+  const filePath = path.join(tmpdir(), `hubregional-print-${crypto.randomUUID()}.txt`);
+  await writeFile(filePath, sanitizeThermalText(text), "utf8");
+  try {
+    const script = [
+      "$file = $env:HUB_PRINT_FILE",
+      "$printer = $env:HUB_PRINT_PRINTER",
+      "Get-Content -LiteralPath $file -Raw -Encoding UTF8 | Out-Printer -Name $printer"
+    ].join("; ");
+    await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
+      env: { ...process.env, HUB_PRINT_FILE: filePath, HUB_PRINT_PRINTER: printerName }
+    });
+  } finally {
+    await unlink(filePath).catch(() => undefined);
   }
-  if (!printerName.trim()) throw new Error("Selecione uma impressora.");
+}
 
+async function printRaw(printerName: string, text: string, mode: "raw-text" | "raw-escpos") {
   const filePath = path.join(tmpdir(), `hubregional-print-${crypto.randomUUID()}.bin`);
-  await writeFile(filePath, escPosBuffer(text));
+  await writeFile(filePath, mode === "raw-escpos" ? escPosBuffer(text) : plainTextBuffer(text));
   try {
     const script = [
       "$file = $env:HUB_PRINT_FILE",
@@ -204,6 +236,16 @@ public class RawPrinterHelper {
   }
 }
 
+async function printText(printerName: string, text: string, mode: Config["printMode"]) {
+  if (process.platform !== "win32") {
+    throw new Error("Este agente de impressao foi feito para Windows.");
+  }
+  if (!printerName.trim()) throw new Error("Selecione uma impressora.");
+
+  if (mode === "raw-escpos" || mode === "raw-text") return printRaw(printerName, text, mode);
+  return printWithWindowsDriver(printerName, text);
+}
+
 async function apiRequest<T>(pathName: string, options: RequestInit = {}): Promise<T> {
   const config = readConfig();
   const apiUrl = normalizeApiUrl(config.apiUrl);
@@ -235,7 +277,7 @@ async function handleOrder(order: AgentOrder) {
   try {
     const copies = Math.min(5, Math.max(1, Number(config.printCopies || 1)));
     for (let copy = 0; copy < copies; copy += 1) {
-      await printText(config.printerName, order.receipt);
+      await printText(config.printerName, order.receipt, config.printMode || "windows");
     }
     await markPrinted(order.id, true);
     addLog(`Pedido #${order.code} impresso para ${order.customer.name} (${copies} via${copies > 1 ? "s" : ""})`);
@@ -332,6 +374,7 @@ ipcMain.handle("save-config", (_event, config: Config) => {
     apiUrl: normalizeApiUrl(config.apiUrl),
     printCopies: Math.min(5, Math.max(1, Number(config.printCopies || 1))),
     paperWidth: config.paperWidth === 80 ? 80 : 58,
+    printMode: ["raw-text", "raw-escpos", "windows"].includes(config.printMode) ? config.printMode : "windows",
     printFromNowAt: config.printFromNowAt || current.printFromNowAt || new Date().toISOString()
   });
   restartPolling();
@@ -344,7 +387,7 @@ ipcMain.handle("test-print", async () => {
   const payload = config.token
     ? await apiRequest<{ receipt: string }>(`/printer-agent/test?paperWidth=${config.paperWidth || 58}`).catch(() => null)
     : null;
-  await printText(config.printerName, payload?.receipt ?? "HUBREGIONAL\r\nTESTE DE IMPRESSAO\r\n\r\n");
+  await printText(config.printerName, payload?.receipt ?? "HUBREGIONAL\r\nTESTE DE IMPRESSAO\r\n\r\n", config.printMode || "windows");
   addLog("Teste de impressao enviado");
   return { ok: true };
 });
