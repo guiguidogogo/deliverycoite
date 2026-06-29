@@ -100,16 +100,20 @@ export default function SettingsManagePage() {
       body: JSON.stringify({
         ...form,
         deliveryFee: Number(form.deliveryFee),
-        deliveryFeeTiers: form.deliveryFeeTiers.map((tier) => ({
-          maxDistanceKm: Number(tier.maxDistanceKm),
-          fee: Number(tier.fee)
-        }))
+        deliveryFeeTiers: form.deliveryFeeTiers
+          .filter((tier) => tier.maxDistanceKm.trim() !== "" && tier.fee.trim() !== "")
+          .map((tier) => ({
+            maxDistanceKm: Number(tier.maxDistanceKm),
+            fee: Number(tier.fee)
+          }))
       })
     });
 
     if (!res.ok) {
       const payload = await res.json().catch(() => ({}));
-      toast.error(payload.message ?? "Falha ao salvar configuracoes");
+      const firstIssue = Array.isArray(payload.issues) ? payload.issues[0] : null;
+      const field = Array.isArray(firstIssue?.path) ? firstIssue.path.join(".") : "";
+      toast.error(firstIssue?.message ? `${field ? `${field}: ` : ""}${firstIssue.message}` : payload.message ?? "Falha ao salvar configuracoes");
       return;
     }
 

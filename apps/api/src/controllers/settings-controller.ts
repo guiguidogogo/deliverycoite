@@ -5,14 +5,25 @@ import { prisma } from "../utils/prisma.js";
 import { getCompanyId } from "../utils/tenant.js";
 import { optionalImageUrl } from "../utils/image-url.js";
 
+const optionalText = z.preprocess(
+  (value) => typeof value === "string" && !value.trim() ? undefined : value,
+  z.string().trim().optional()
+);
+
+const optionalMinText = (min: number) =>
+  z.preprocess(
+    (value) => typeof value === "string" && !value.trim() ? undefined : value,
+    z.string().trim().min(min).optional()
+  );
+
 const settingsSchema = z.object({
-  companyName: z.string().min(2).optional(),
+  companyName: optionalMinText(2),
   logoUrl: optionalImageUrl(),
   promoBannerImageUrl: optionalImageUrl(),
-  promoBannerTitle: z.string().max(80).optional(),
-  promoBannerText: z.string().max(200).optional(),
-  whatsappNumber: z.string().min(8).optional(),
-  deliveryPhoneNumber: z.string().min(8).optional(),
+  promoBannerTitle: optionalText.pipe(z.string().max(80).optional()),
+  promoBannerText: optionalText.pipe(z.string().max(200).optional()),
+  whatsappNumber: optionalMinText(8),
+  deliveryPhoneNumber: optionalMinText(8),
   deliveryFee: z.coerce.number().min(0).optional(),
   ordersPaused: z.boolean().optional(),
   ordersPausedReason: z.string().max(180).nullable().optional(),
@@ -22,14 +33,14 @@ const settingsSchema = z.object({
     maxDistanceKm: z.coerce.number().positive(),
     fee: z.coerce.number().min(0)
   })).max(20).optional(),
-  openTime: z.string().optional(),
-  closeTime: z.string().optional(),
-  autoMessage: z.string().optional(),
-  pixKey: z.string().optional(),
-  pixQrCodeUrl: z.string().optional(),
+  openTime: optionalText,
+  closeTime: optionalText,
+  autoMessage: optionalText,
+  pixKey: optionalText,
+  pixQrCodeUrl: optionalText,
   darkModeEnabled: z.boolean().optional(),
-  menuiaApiKey: z.string().optional(),
-  menuiaStoreId: z.string().optional(),
+  menuiaApiKey: optionalText,
+  menuiaStoreId: optionalText,
   menuiaEnabled: z.boolean().optional(),
   whatsappOnReceived: z.boolean().optional(),
   whatsappOnPreparing: z.boolean().optional(),
@@ -39,12 +50,12 @@ const settingsSchema = z.object({
   whatsappOnCanceled: z.boolean().optional(),
   whatsappOnPaymentConfirmed: z.boolean().optional(),
   printerEnabled: z.boolean().optional(),
-  printerName: z.string().optional(),
+  printerName: optionalText,
   printerPaperWidth: z.union([z.literal(58), z.literal(80)]).optional(),
   printerAutoPrint: z.boolean().optional(),
   mercadoPagoEnabled: z.boolean().optional(),
-  mercadoPagoPublicKey: z.string().trim().optional(),
-  mercadoPagoAccessToken: z.string().trim().optional()
+  mercadoPagoPublicKey: optionalText,
+  mercadoPagoAccessToken: optionalText
 });
 
 async function ensureDefaultSettings(req: Request) {
