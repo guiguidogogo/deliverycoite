@@ -88,6 +88,15 @@ const initialForm: CheckoutForm = {
   notes: ""
 };
 
+function cartStorageKey(company?: PublicCompany | null) {
+  return `delivery:cart:${company?.subdomain || "default"}`;
+}
+
+function clearStoredCart(company?: PublicCompany | null) {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(cartStorageKey(company));
+}
+
 export function Storefront() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -113,6 +122,7 @@ export function Storefront() {
   const [addressMode, setAddressMode] = useState<"MANUAL" | "LOCATION">("MANUAL");
   const [locatingAddress, setLocatingAddress] = useState(false);
   const [updatingAddressFromMap, setUpdatingAddressFromMap] = useState(false);
+  const cartLoadedRef = useRef(false);
   const [mercadoPagoPix, setMercadoPagoPix] = useState<{
     orderId: string;
     qrCode: string | null;
@@ -257,6 +267,30 @@ export function Storefront() {
   useEffect(() => {
     localStorage.setItem("delivery:favorites", JSON.stringify(favorites));
   }, [favorites]);
+
+  useEffect(() => {
+    if (!company || cartLoadedRef.current) return;
+    cartLoadedRef.current = true;
+    const stored = localStorage.getItem(cartStorageKey(company));
+    if (!stored) return;
+    try {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) {
+        setCart(parsed);
+      }
+    } catch {
+      clearStoredCart(company);
+    }
+  }, [company]);
+
+  useEffect(() => {
+    if (!company || !cartLoadedRef.current) return;
+    if (cart.length) {
+      localStorage.setItem(cartStorageKey(company), JSON.stringify(cart));
+    } else {
+      clearStoredCart(company);
+    }
+  }, [cart, company]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
@@ -606,7 +640,6 @@ export function Storefront() {
           qrCodeBase64: pix.qrCodeBase64,
           ticketUrl: pix.ticketUrl
         });
-        setCart([]);
         setCouponDiscount(0);
         setCouponMessage("");
         toast.success("Pedido criado. Pague o Pix para confirmar.");
@@ -627,6 +660,7 @@ export function Storefront() {
 
       setOpenCart(false);
       setCart([]);
+      clearStoredCart(company);
       setCouponDiscount(0);
       setCouponMessage("");
       reset({
