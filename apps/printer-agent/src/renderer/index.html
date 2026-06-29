@@ -122,6 +122,11 @@
         color: #64748b;
         font-size: 13px;
       }
+      .saved {
+        color: #047857;
+        font-size: 13px;
+        font-weight: 800;
+      }
       @media (max-width: 760px) {
         .grid, .checks { grid-template-columns: 1fr; }
         h1 { font-size: 26px; }
@@ -151,6 +156,7 @@
           </div>
         </div>
         <p class="muted" id="lastError"></p>
+        <p class="saved" id="saveStatus"></p>
       </section>
 
       <section class="card">
@@ -195,6 +201,9 @@
       const api = window.hubPrinter;
       const fields = ["apiUrl", "token", "printerName", "autoPrint", "startWithWindows", "minimizeToTray", "pollIntervalSeconds"];
       let currentPrinters = [];
+      let formDirty = false;
+      let initialLoaded = false;
+      let saving = false;
 
       function el(id) { return document.getElementById(id); }
 
@@ -211,6 +220,7 @@
       }
 
       function fillForm(config) {
+        if (formDirty && !saving) return;
         el("apiUrl").value = config.apiUrl || "";
         el("token").value = config.token || "";
         el("autoPrint").checked = Boolean(config.autoPrint);
@@ -240,7 +250,10 @@
       }
 
       function renderState(state) {
-        if (state.config) fillForm(state.config);
+        if (state.config && (!initialLoaded || saving || !formDirty)) {
+          fillForm(state.config);
+          initialLoaded = true;
+        }
         const status = el("status");
         status.textContent = state.connected ? "Conectado" : "Desconectado";
         status.className = "badge " + (state.connected ? "ok" : "bad");
@@ -257,9 +270,30 @@
         } catch {}
       }
 
+      for (const field of fields) {
+        el(field).addEventListener("input", () => {
+          formDirty = true;
+          el("saveStatus").textContent = "";
+        });
+        el(field).addEventListener("change", () => {
+          formDirty = true;
+          el("saveStatus").textContent = "";
+        });
+      }
+
       el("save").addEventListener("click", async () => {
-        await api.saveConfig(readForm());
-        alert("Configuracao salva. O agente ja esta verificando pedidos.");
+        const config = readForm();
+        if (!config.token.trim()) {
+          el("saveStatus").textContent = "";
+          alert("Cole o token da impressora antes de salvar.");
+          return;
+        }
+        saving = true;
+        const result = await api.saveConfig(config);
+        formDirty = false;
+        if (result && result.config) fillForm(result.config);
+        saving = false;
+        el("saveStatus").textContent = "Configuracao salva. O token ficou gravado neste computador.";
       });
       el("printers").addEventListener("click", async () => {
         const printers = await api.listPrinters();

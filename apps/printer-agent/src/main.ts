@@ -253,7 +253,8 @@ ipcMain.handle("get-config", () => ({ config: readConfig(), connected, lastError
 ipcMain.handle("save-config", (_event, config: Config) => {
   saveConfig({ ...defaultConfig, ...config, apiUrl: normalizeApiUrl(config.apiUrl) });
   restartPolling();
-  return { ok: true };
+  sendState();
+  return { ok: true, config: readConfig() };
 });
 ipcMain.handle("list-printers", async () => listPrinters());
 ipcMain.handle("test-print", async () => {
