@@ -29,7 +29,25 @@ function normalizeHost(host?: string) {
 }
 
 function requestHost(req: Request) {
-  return normalizeHost(req.headers["x-forwarded-host"]?.toString() || req.headers.host || req.hostname);
+  const directHost = normalizeHost(req.headers["x-forwarded-host"]?.toString() || req.headers.host || req.hostname);
+  const rootDomain = env.rootDomain;
+  if (directHost.endsWith(`.${rootDomain}`) || directHost === rootDomain || directHost === `www.${rootDomain}` || directHost === `admin.${rootDomain}`) {
+    return directHost;
+  }
+
+  const originOrReferer = req.headers.origin?.toString() || req.headers.referer?.toString();
+  if (originOrReferer) {
+    try {
+      const browserHost = normalizeHost(new URL(originOrReferer).host);
+      if (browserHost.endsWith(`.${rootDomain}`) || browserHost === rootDomain || browserHost === `www.${rootDomain}` || browserHost === `admin.${rootDomain}`) {
+        return browserHost;
+      }
+    } catch {
+      return directHost;
+    }
+  }
+
+  return directHost;
 }
 
 function normalizeSubdomain(value?: string) {
