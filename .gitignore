@@ -6,6 +6,8 @@ dist
 .expo
 coverage
 backups
+.printer-agent-build
+apps/printer-agent/release
 *.log
 firebase-service-account*.json
 *-firebase-adminsdk-*.json

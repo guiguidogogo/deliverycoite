@@ -1,6 +1,8 @@
 {
   "name": "@delivery/printer-agent",
   "version": "1.0.0",
+  "description": "Aplicativo Windows para impressao automatica de pedidos do HubRegional.",
+  "author": "HubRegional",
   "private": true,
   "main": "dist/main.js",
   "scripts": {
@@ -10,11 +12,12 @@
     "dist": "npm run build && electron-builder --win nsis portable"
   },
   "dependencies": {
+    "7zip-bin": "5.2.0",
     "electron-store": "^8.2.0"
   },
   "devDependencies": {
     "@types/node": "^22.5.4",
-    "electron": "^31.7.7",
+    "electron": "31.7.7",
     "electron-builder": "^24.13.3",
     "typescript": "^5.5.4"
   },
