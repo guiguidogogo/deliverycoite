@@ -110,7 +110,6 @@ export async function getMercadoPagoPayment(accessToken: string, paymentId: stri
 
 export async function searchMercadoPagoPayments(accessToken: string, params: {
   externalReference?: string | null;
-  preferenceId?: string | null;
 }) {
   const search = new URLSearchParams({
     sort: "date_created",
@@ -118,7 +117,6 @@ export async function searchMercadoPagoPayments(accessToken: string, params: {
     limit: "10"
   });
   if (params.externalReference) search.set("external_reference", params.externalReference);
-  if (params.preferenceId) search.set("preference_id", params.preferenceId);
   return mpFetch<MercadoPagoPaymentSearchResponse>(`/v1/payments/search?${search.toString()}`, accessToken);
 }
 

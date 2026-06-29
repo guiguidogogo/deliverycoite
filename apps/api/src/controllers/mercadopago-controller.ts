@@ -220,10 +220,7 @@ async function refreshMercadoPagoOrderStatus(orderId: string) {
   if (order.mercadoPagoPaymentId) {
     payment = await getMercadoPagoPayment(order.company.mercadoPagoAccessToken, order.mercadoPagoPaymentId);
   } else if (order.mercadoPagoPreferenceId) {
-    const byPreference = await searchMercadoPagoPayments(order.company.mercadoPagoAccessToken, {
-      preferenceId: order.mercadoPagoPreferenceId,
-      externalReference: order.id
-    });
+    const byPreference = await searchMercadoPagoPayments(order.company.mercadoPagoAccessToken, { externalReference: order.id });
     payment = chooseBestPayment(byPreference.results ?? []);
 
     if (!payment) {
