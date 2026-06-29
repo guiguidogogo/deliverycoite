@@ -24,6 +24,15 @@ export type MercadoPagoPaymentResponse = {
   };
 };
 
+export type MercadoPagoPaymentSearchResponse = {
+  results?: MercadoPagoPaymentResponse[];
+  paging?: {
+    total?: number;
+    limit?: number;
+    offset?: number;
+  };
+};
+
 export type MercadoPagoRefundResponse = {
   id: number | string;
   payment_id?: number | string;
@@ -97,6 +106,20 @@ export async function createMercadoPagoPreference(params: {
 
 export async function getMercadoPagoPayment(accessToken: string, paymentId: string) {
   return mpFetch<MercadoPagoPaymentResponse>(`/v1/payments/${encodeURIComponent(paymentId)}`, accessToken);
+}
+
+export async function searchMercadoPagoPayments(accessToken: string, params: {
+  externalReference?: string | null;
+  preferenceId?: string | null;
+}) {
+  const search = new URLSearchParams({
+    sort: "date_created",
+    criteria: "desc",
+    limit: "10"
+  });
+  if (params.externalReference) search.set("external_reference", params.externalReference);
+  if (params.preferenceId) search.set("preference_id", params.preferenceId);
+  return mpFetch<MercadoPagoPaymentSearchResponse>(`/v1/payments/search?${search.toString()}`, accessToken);
 }
 
 export async function refundMercadoPagoPayment(accessToken: string, paymentId: string) {

@@ -1,7 +1,14 @@
 import type { Request, Response } from "express";
 import { PaymentMethod } from "@prisma/client";
 import { z } from "zod";
-import { createMercadoPagoPixPayment, createMercadoPagoPreference, getMercadoPagoPayment, refundMercadoPagoPayment } from "../services/mercadopago.js";
+import {
+  createMercadoPagoPixPayment,
+  createMercadoPagoPreference,
+  getMercadoPagoPayment,
+  refundMercadoPagoPayment,
+  searchMercadoPagoPayments,
+  type MercadoPagoPaymentResponse
+} from "../services/mercadopago.js";
 import { publishNewOrder } from "../services/realtime.js";
 import { printOrder } from "../services/thermal-printer.js";
 import { buildWhatsappMessage, dispatchWhatsappMessage } from "../services/whatsapp.js";
@@ -142,19 +149,18 @@ export async function createOrderMercadoPagoPix(req: Request, res: Response) {
   });
 }
 
-async function refreshMercadoPagoOrderStatus(orderId: string) {
+async function applyApprovedMercadoPagoPayment(orderId: string, payment: MercadoPagoPaymentResponse) {
   const order = await prisma.order.findUnique({ where: { id: orderId }, include: { company: true } });
-  if (!order?.mercadoPagoPaymentId || !order.company.mercadoPagoAccessToken) return order;
-  if (order.paidAt || order.mercadoPagoStatus === "refunded") return order;
+  if (!order) return null;
 
-  const payment = await getMercadoPagoPayment(order.company.mercadoPagoAccessToken, order.mercadoPagoPaymentId);
   const approved = payment.status === "approved";
   const updated = await prisma.order.update({
     where: { id: order.id },
     data: {
+      mercadoPagoPaymentId: String(payment.id),
       mercadoPagoStatus: payment.status ?? order.mercadoPagoStatus,
       mercadoPagoStatusDetail: payment.status_detail ?? order.mercadoPagoStatusDetail,
-      ...(approved
+      ...(approved && !order.paidAt
         ? {
             paidAt: new Date(),
             paymentMethod: PaymentMethod.MERCADO_PAGO,
@@ -201,6 +207,37 @@ async function refreshMercadoPagoOrderStatus(orderId: string) {
   return updated;
 }
 
+function chooseBestPayment(payments: MercadoPagoPaymentResponse[]) {
+  return payments.find((payment) => payment.status === "approved") ?? payments[0] ?? null;
+}
+
+async function refreshMercadoPagoOrderStatus(orderId: string) {
+  const order = await prisma.order.findUnique({ where: { id: orderId }, include: { company: true } });
+  if (!order?.company.mercadoPagoAccessToken) return order;
+  if (order.paidAt || order.mercadoPagoStatus === "refunded") return order;
+
+  let payment: MercadoPagoPaymentResponse | null = null;
+  if (order.mercadoPagoPaymentId) {
+    payment = await getMercadoPagoPayment(order.company.mercadoPagoAccessToken, order.mercadoPagoPaymentId);
+  } else if (order.mercadoPagoPreferenceId) {
+    const byPreference = await searchMercadoPagoPayments(order.company.mercadoPagoAccessToken, {
+      preferenceId: order.mercadoPagoPreferenceId,
+      externalReference: order.id
+    });
+    payment = chooseBestPayment(byPreference.results ?? []);
+
+    if (!payment) {
+      const byReference = await searchMercadoPagoPayments(order.company.mercadoPagoAccessToken, {
+        externalReference: order.id
+      });
+      payment = chooseBestPayment(byReference.results ?? []);
+    }
+  }
+
+  if (!payment) return order;
+  return applyApprovedMercadoPagoPayment(order.id, payment);
+}
+
 export async function getOrderMercadoPagoStatus(req: Request, res: Response) {
   const { orderId } = z.object({ orderId: z.string().min(1) }).parse(req.params);
   const order = await prisma.order.findFirst({
@@ -211,14 +248,15 @@ export async function getOrderMercadoPagoStatus(req: Request, res: Response) {
       paidAt: true,
       mercadoPagoStatus: true,
       mercadoPagoStatusDetail: true,
-      mercadoPagoPaymentId: true
+      mercadoPagoPaymentId: true,
+      mercadoPagoPreferenceId: true
     }
   });
 
   if (!order) return res.status(404).json({ message: "Pedido nao encontrado" });
 
   let current = order;
-  if (order.mercadoPagoPaymentId && !order.paidAt && order.mercadoPagoStatus !== "refunded") {
+  if ((order.mercadoPagoPaymentId || order.mercadoPagoPreferenceId) && !order.paidAt && order.mercadoPagoStatus !== "refunded") {
     const refreshed = await refreshMercadoPagoOrderStatus(order.id);
     if (refreshed) {
       current = {
@@ -227,7 +265,8 @@ export async function getOrderMercadoPagoStatus(req: Request, res: Response) {
         paidAt: refreshed.paidAt,
         mercadoPagoStatus: refreshed.mercadoPagoStatus,
         mercadoPagoStatusDetail: refreshed.mercadoPagoStatusDetail,
-        mercadoPagoPaymentId: refreshed.mercadoPagoPaymentId
+        mercadoPagoPaymentId: refreshed.mercadoPagoPaymentId,
+        mercadoPagoPreferenceId: refreshed.mercadoPagoPreferenceId
       };
     }
   }
@@ -276,58 +315,7 @@ export async function mercadoPagoWebhook(req: Request, res: Response) {
     payment = await getMercadoPagoPayment(order.company.mercadoPagoAccessToken, paymentId);
   }
 
-  const approved = payment.status === "approved";
-  const updated = await prisma.order.update({
-    where: { id: order.id },
-    data: {
-      mercadoPagoPaymentId: String(payment.id),
-      mercadoPagoStatus: payment.status ?? null,
-      mercadoPagoStatusDetail: payment.status_detail ?? null,
-      ...(approved && !order.paidAt
-        ? {
-            paidAt: new Date(),
-            paymentMethod: PaymentMethod.MERCADO_PAGO,
-            paidMethodDetail: `Mercado Pago (${payment.payment_type_id ?? payment.payment_method_id ?? "online"})`,
-            status: order.status === "RECEIVED" ? "PREPARING" : order.status
-          }
-        : {})
-    }
-  });
-
-  if (approved && !order.paidAt) {
-    const [settings, paidOrder] = await Promise.all([
-      prisma.setting.findFirst({ where: { companyId: order.companyId } }),
-      prisma.order.findUnique({
-        where: { id: order.id },
-        include: { customer: true, items: { include: { product: true, complements: true } } }
-      })
-    ]);
-
-    if (settings && paidOrder) {
-      const whatsapp = buildWhatsappMessage(paidOrder, settings);
-      const sent = await dispatchWhatsappMessage(settings, settings.whatsappNumber, whatsapp.message, settings.whatsappNumber);
-      await prisma.order.update({
-        where: { id: paidOrder.id },
-        data: {
-          whatsappLink: sent.whatsappUrl ?? whatsapp.url,
-          notes: [paidOrder.notes, `[PAGO: Mercado Pago em ${new Date().toLocaleString("pt-BR")}]`]
-            .filter(Boolean)
-            .join(" ")
-        }
-      });
-
-      if (settings.printerEnabled && settings.printerAutoPrint) {
-        await printOrder(paidOrder, settings).catch(() => undefined);
-      }
-
-      publishNewOrder({
-        companyId: paidOrder.companyId,
-        orderId: paidOrder.id,
-        customer: paidOrder.customer.name,
-        total: Number(paidOrder.total)
-      });
-    }
-  }
+  await applyApprovedMercadoPagoPayment(order.id, payment);
 
   return res.status(200).json({ ok: true });
 }

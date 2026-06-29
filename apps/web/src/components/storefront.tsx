@@ -299,6 +299,54 @@ export function Storefront() {
   }, [dark]);
 
   useEffect(() => {
+    if (!company || typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const mpStatus = params.get("mp_status");
+    const orderId = params.get("order");
+    if (!mpStatus || !orderId) return;
+
+    let canceled = false;
+    const cleanUrl = () => {
+      const next = new URL(window.location.href);
+      next.searchParams.delete("mp_status");
+      next.searchParams.delete("order");
+      window.history.replaceState({}, "", `${next.pathname}${next.search}${next.hash}`);
+    };
+
+    api<{
+      paid: boolean;
+      orderStatus: string;
+      mercadoPagoStatus: string | null;
+      mercadoPagoStatusDetail: string | null;
+    }>(`/orders/${orderId}/mercadopago/status`)
+      .then((status) => {
+        if (canceled) return;
+        if (status.paid) {
+          setCart([]);
+          clearStoredCart(company);
+          setOpenCart(false);
+          toast.success("Pagamento confirmado! Seu pedido foi recebido e esta indo para preparo.");
+        } else if (mpStatus === "failure") {
+          toast.error("Pagamento nao aprovado. Seu carrinho foi mantido para tentar novamente.");
+        } else {
+          toast.warning("Pagamento ainda nao confirmado. Aguarde alguns instantes ou consulte a loja.");
+        }
+      })
+      .catch((error) => {
+        if (!canceled) {
+          toast.error(error instanceof Error ? error.message : "Nao foi possivel confirmar o pagamento");
+        }
+      })
+      .finally(() => {
+        if (!canceled) cleanUrl();
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [company]);
+
+  useEffect(() => {
     if (!mercadoPagoPix || mercadoPagoPix.paid) return;
 
     const checkPayment = async () => {
