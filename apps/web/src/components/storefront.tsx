@@ -128,6 +128,8 @@ export function Storefront() {
     qrCode: string | null;
     qrCodeBase64: string | null;
     ticketUrl: string | null;
+    paid?: boolean;
+    status?: string | null;
   } | null>(null);
   const skipNextManualSearchRef = useRef(false);
   const {
@@ -295,6 +297,43 @@ export function Storefront() {
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
   }, [dark]);
+
+  useEffect(() => {
+    if (!mercadoPagoPix || mercadoPagoPix.paid) return;
+
+    const checkPayment = async () => {
+      try {
+        const status = await api<{
+          paid: boolean;
+          orderStatus: string;
+          mercadoPagoStatus: string | null;
+        }>(`/orders/${mercadoPagoPix.orderId}/mercadopago/status`);
+
+        setMercadoPagoPix((current) =>
+          current && current.orderId === mercadoPagoPix.orderId
+            ? { ...current, paid: status.paid, status: status.mercadoPagoStatus }
+            : current
+        );
+
+        if (status.paid) {
+          toast.success("Pagamento confirmado! Seu pedido foi recebido pela loja.");
+          setTimeout(() => {
+            setMercadoPagoPix(null);
+            setOpenCart(false);
+            setCart([]);
+            clearStoredCart(company);
+            reset(initialForm);
+          }, 1800);
+        }
+      } catch {
+        // Mantem o QR Code aberto; a proxima consulta tenta novamente.
+      }
+    };
+
+    void checkPayment();
+    const timer = window.setInterval(() => void checkPayment(), 4000);
+    return () => window.clearInterval(timer);
+  }, [mercadoPagoPix?.orderId, mercadoPagoPix?.paid, company, reset]);
 
   useEffect(() => {
     if (fulfillmentType !== "DELIVERY" || !deliveryLocation) {
@@ -633,12 +672,15 @@ export function Storefront() {
           qrCode: string | null;
           qrCodeBase64: string | null;
           ticketUrl: string | null;
+          status: string | null;
         }>(`/orders/${response.orderId}/mercadopago/pix`, { method: "POST" });
         setMercadoPagoPix({
           orderId: response.orderId,
           qrCode: pix.qrCode,
           qrCodeBase64: pix.qrCodeBase64,
-          ticketUrl: pix.ticketUrl
+          ticketUrl: pix.ticketUrl,
+          paid: false,
+          status: pix.status ?? null
         });
         setCouponDiscount(0);
         setCouponMessage("");
@@ -1091,23 +1133,41 @@ export function Storefront() {
           <div className="w-full max-w-md rounded-3xl bg-white p-5 text-slate-900 shadow-2xl">
             <div className="rounded-2xl bg-blue-600 p-4 text-white">
               <p className="text-sm font-bold uppercase tracking-wide opacity-90">Mercado Pago</p>
-              <h2 className="mt-1 text-2xl font-black">Pague com Pix</h2>
-              <p className="mt-1 text-sm opacity-95">Escaneie o QR Code ou copie o codigo Pix abaixo.</p>
+              <h2 className="mt-1 text-2xl font-black">
+                {mercadoPagoPix.paid ? "Pagamento confirmado" : "Pague com Pix"}
+              </h2>
+              <p className="mt-1 text-sm opacity-95">
+                {mercadoPagoPix.paid
+                  ? "Recebemos a confirmacao. Acompanhe o preparo do seu pedido."
+                  : "Escaneie o QR Code ou copie o codigo Pix abaixo. A confirmacao atualiza automaticamente."}
+              </p>
             </div>
 
-            {mercadoPagoPix.qrCodeBase64 ? (
+            {!mercadoPagoPix.paid && (
+              <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm font-semibold text-amber-800">
+                Aguardando pagamento... Nao feche esta tela ate confirmar.
+              </div>
+            )}
+
+            {mercadoPagoPix.paid && (
+              <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-center text-sm font-bold text-emerald-700">
+                Pago! Seu pedido foi enviado para a loja.
+              </div>
+            )}
+
+            {!mercadoPagoPix.paid && mercadoPagoPix.qrCodeBase64 ? (
               <img
                 className="mx-auto mt-4 h-56 w-56 rounded-2xl border object-contain p-2"
                 src={`data:image/png;base64,${mercadoPagoPix.qrCodeBase64}`}
                 alt="QR Code Pix Mercado Pago"
               />
-            ) : (
+            ) : !mercadoPagoPix.paid ? (
               <div className="mt-4 rounded-2xl border border-dashed p-5 text-center text-sm text-slate-500">
                 QR Code indisponivel. Use o copia-e-cola abaixo.
               </div>
-            )}
+            ) : null}
 
-            {mercadoPagoPix.qrCode && (
+            {!mercadoPagoPix.paid && mercadoPagoPix.qrCode && (
               <div className="mt-4">
                 <p className="mb-1 text-xs font-bold uppercase text-slate-500">Pix copia e cola</p>
                 <textarea
@@ -1128,7 +1188,7 @@ export function Storefront() {
               </div>
             )}
 
-            {mercadoPagoPix.ticketUrl && (
+            {!mercadoPagoPix.paid && mercadoPagoPix.ticketUrl && (
               <a
                 className="mt-2 block rounded-xl border border-blue-200 px-4 py-3 text-center font-semibold text-blue-700"
                 href={mercadoPagoPix.ticketUrl}
