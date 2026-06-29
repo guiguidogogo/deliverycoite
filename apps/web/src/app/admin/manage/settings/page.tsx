@@ -42,6 +42,12 @@ export default function SettingsManagePage() {
   });
   const [printers, setPrinters] = useState<string[]>([]);
   const [agentStatus, setAgentStatus] = useState<"idle" | "connecting" | "connected" | "error">("idle");
+  const [printerAgent, setPrinterAgent] = useState({
+    enabled: false,
+    hasToken: false,
+    lastSeenAt: null as string | null
+  });
+  const [newPrinterToken, setNewPrinterToken] = useState("");
   useEffect(() => {
     const token = localStorage.getItem("delivery:token");
     if (!token) return;
@@ -86,6 +92,21 @@ export default function SettingsManagePage() {
           printerPaperWidth: data.printerPaperWidth === 80 ? 80 : 58,
           printerAutoPrint: data.printerAutoPrint ?? false
         });
+      });
+
+    void apiFetch(`/admin/printer-agent`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store"
+    })
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (data) {
+          setPrinterAgent({
+            enabled: Boolean(data.enabled),
+            hasToken: Boolean(data.hasToken),
+            lastSeenAt: data.lastSeenAt ?? null
+          });
+        }
       });
 
   }, []);
@@ -204,6 +225,49 @@ export default function SettingsManagePage() {
       },
       { enableHighAccuracy: true, maximumAge: 60000, timeout: 15000 }
     );
+  }
+
+  async function togglePrinterAgent(enabled: boolean) {
+    const token = localStorage.getItem("delivery:token");
+    if (!token) return;
+
+    const res = await apiFetch(`/admin/printer-agent`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ enabled })
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast.error(payload.message ?? "Falha ao atualizar agente de impressao");
+      return;
+    }
+    setPrinterAgent({
+      enabled: Boolean(payload.enabled),
+      hasToken: Boolean(payload.hasToken),
+      lastSeenAt: payload.lastSeenAt ?? null
+    });
+    toast.success(enabled ? "Agente de impressao ativado" : "Agente de impressao desativado");
+  }
+
+  async function generatePrinterToken() {
+    const token = localStorage.getItem("delivery:token");
+    if (!token) return;
+
+    const res = await apiFetch(`/admin/printer-agent/token`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast.error(payload.message ?? "Falha ao gerar token");
+      return;
+    }
+    setNewPrinterToken(payload.token ?? "");
+    setPrinterAgent((current) => ({ ...current, enabled: true, hasToken: true }));
+    if (payload.token) {
+      await navigator.clipboard.writeText(payload.token).catch(() => undefined);
+      toast.success("Token gerado e copiado. Cole no HubRegional Printer Agent.");
+    }
   }
 
   function updateCoordinate(field: "storeLatitude" | "storeLongitude", value: string) {
@@ -453,6 +517,72 @@ export default function SettingsManagePage() {
             </label>
           ))}
         </div>
+      </section>
+
+      <section className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950 dark:border-emerald-500/30 dark:bg-emerald-950/30 dark:text-emerald-50">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-black uppercase tracking-wide">Recomendado</p>
+            <h2 className="text-xl font-black">HubRegional Printer Agent</h2>
+            <p className="mt-1 max-w-2xl text-sm opacity-80">
+              Programa Windows local para imprimir pedidos automaticamente sem depender do navegador.
+            </p>
+          </div>
+          <label className="flex items-center gap-2 rounded-xl bg-white/70 px-3 py-2 font-semibold dark:bg-black/20">
+            <input
+              type="checkbox"
+              checked={printerAgent.enabled}
+              onChange={(event) => void togglePrinterAgent(event.target.checked)}
+            />
+            Ativo
+          </label>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <div className="rounded-2xl bg-white/80 p-3 dark:bg-black/20">
+            <p className="text-xs font-bold uppercase opacity-70">Token</p>
+            <p className="mt-1 font-semibold">{printerAgent.hasToken ? "Token gerado" : "Nenhum token gerado"}</p>
+          </div>
+          <div className="rounded-2xl bg-white/80 p-3 dark:bg-black/20">
+            <p className="text-xs font-bold uppercase opacity-70">Ultima conexao</p>
+            <p className="mt-1 font-semibold">
+              {printerAgent.lastSeenAt ? new Date(printerAgent.lastSeenAt).toLocaleString("pt-BR") : "Ainda nao conectado"}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="rounded-2xl bg-emerald-700 px-4 py-3 font-bold text-white"
+            onClick={() => void generatePrinterToken()}
+          >
+            {printerAgent.hasToken ? "Gerar novo token" : "Gerar token"}
+          </button>
+        </div>
+
+        {newPrinterToken && (
+          <div className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-3 text-amber-950">
+            <p className="font-bold">Copie este token agora:</p>
+            <div className="mt-2 flex flex-col gap-2 md:flex-row">
+              <input
+                className="min-w-0 flex-1 rounded-xl border border-amber-200 bg-white px-3 py-2 font-mono text-xs"
+                readOnly
+                value={newPrinterToken}
+              />
+              <button
+                type="button"
+                className="rounded-xl bg-amber-600 px-4 py-2 font-bold text-white"
+                onClick={() => {
+                  void navigator.clipboard.writeText(newPrinterToken);
+                  toast.success("Token copiado");
+                }}
+              >
+                Copiar
+              </button>
+            </div>
+            <p className="mt-2 text-xs">
+              Por seguranca, depois que sair desta tela o token completo nao sera exibido novamente.
+            </p>
+          </div>
+        )}
       </section>
 
       <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">

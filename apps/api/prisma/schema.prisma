@@ -108,6 +108,9 @@ model Company {
   mercadoPagoPublicKey   String?
   mercadoPagoAccessToken String?
   mercadoPagoEnabled     Boolean               @default(false)
+  printerAgentTokenHash  String?
+  printerAgentEnabled    Boolean               @default(false)
+  printerAgentLastSeenAt DateTime?
   menuiaApiKey           String?
   menuiaStoreId          String?
   printerName            String?
@@ -513,6 +516,10 @@ model Order {
   mercadoPagoStatusDetail String?
   notes              String?
   whatsappLink       String?
+  printerQueuedAt    DateTime?
+  printerPrintedAt   DateTime?
+  printerPrintCount  Int               @default(0)
+  printerLastError   String?
   viewedByStaff      Boolean           @default(false)
   sentToDelivery     Boolean           @default(false)
   deliverySentAt     DateTime?
@@ -531,6 +538,7 @@ model Order {
   @@index([companyId, deletedAt])
   @@index([mercadoPagoPreferenceId])
   @@index([mercadoPagoPaymentId])
+  @@index([companyId, printerPrintedAt])
 }
 
 model Driver {

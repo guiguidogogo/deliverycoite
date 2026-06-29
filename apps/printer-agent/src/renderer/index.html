@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HubRegional Printer Agent</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Inter, Segoe UI, Arial, sans-serif;
+        color: #12213f;
+        background: #f6f1e8;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: linear-gradient(135deg, #ffe0d2, #f4f7df);
+      }
+      main {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 28px;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 20px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 34px;
+        line-height: 1;
+      }
+      .badge {
+        border-radius: 999px;
+        padding: 10px 14px;
+        font-weight: 800;
+      }
+      .ok { background: #d1fae5; color: #047857; }
+      .bad { background: #fee2e2; color: #b91c1c; }
+      .card {
+        border: 1px solid rgba(18, 33, 63, .12);
+        border-radius: 22px;
+        background: rgba(255,255,255,.88);
+        padding: 18px;
+        box-shadow: 0 14px 40px rgba(18,33,63,.08);
+        margin-bottom: 16px;
+      }
+      label {
+        display: block;
+        font-size: 13px;
+        font-weight: 800;
+        margin-bottom: 6px;
+      }
+      input, select {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid rgba(18,33,63,.16);
+        border-radius: 14px;
+        padding: 12px 13px;
+        font-size: 15px;
+        background: white;
+      }
+      .grid {
+        display: grid;
+        gap: 14px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 14px;
+      }
+      button {
+        border: 0;
+        border-radius: 14px;
+        padding: 12px 16px;
+        font-weight: 900;
+        cursor: pointer;
+        background: #12213f;
+        color: white;
+      }
+      button.secondary {
+        background: white;
+        color: #12213f;
+        border: 1px solid rgba(18,33,63,.18);
+      }
+      button.green {
+        background: #059669;
+      }
+      .checks {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 14px;
+      }
+      .check {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding: 12px;
+        border-radius: 14px;
+        background: rgba(255,255,255,.7);
+      }
+      .check input {
+        width: auto;
+      }
+      .log {
+        max-height: 260px;
+        overflow: auto;
+        border-radius: 16px;
+        background: #0f172a;
+        color: #e2e8f0;
+        padding: 14px;
+        font-family: Consolas, monospace;
+        font-size: 12px;
+      }
+      .muted {
+        color: #64748b;
+        font-size: 13px;
+      }
+      @media (max-width: 760px) {
+        .grid, .checks { grid-template-columns: 1fr; }
+        h1 { font-size: 26px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <div class="muted">HubRegional</div>
+          <h1>Printer Agent</h1>
+        </div>
+        <div id="status" class="badge bad">Desconectado</div>
+      </header>
+
+      <section class="card">
+        <h2>Conexao com a loja</h2>
+        <div class="grid">
+          <div>
+            <label for="apiUrl">URL da API</label>
+            <input id="apiUrl" placeholder="https://hubregional.com.br/api" />
+          </div>
+          <div>
+            <label for="token">Token da impressora</label>
+            <input id="token" type="password" placeholder="Cole o token gerado no painel admin" />
+          </div>
+        </div>
+        <p class="muted" id="lastError"></p>
+      </section>
+
+      <section class="card">
+        <h2>Impressao</h2>
+        <div class="grid">
+          <div>
+            <label for="printerName">Impressora principal</label>
+            <select id="printerName">
+              <option value="">Selecione uma impressora</option>
+            </select>
+          </div>
+          <div>
+            <label for="pollIntervalSeconds">Buscar pedidos a cada</label>
+            <select id="pollIntervalSeconds">
+              <option value="3">3 segundos</option>
+              <option value="5">5 segundos</option>
+              <option value="10">10 segundos</option>
+              <option value="15">15 segundos</option>
+            </select>
+          </div>
+        </div>
+        <div class="checks">
+          <label class="check"><input id="autoPrint" type="checkbox" /> Impressao automatica</label>
+          <label class="check"><input id="startWithWindows" type="checkbox" /> Iniciar com Windows</label>
+          <label class="check"><input id="minimizeToTray" type="checkbox" /> Minimizar para bandeja</label>
+        </div>
+        <div class="actions">
+          <button class="green" id="save">Salvar e conectar</button>
+          <button class="secondary" id="printers">Buscar impressoras</button>
+          <button class="secondary" id="test">Testar impressao</button>
+          <button class="secondary" id="poll">Verificar agora</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Log</h2>
+        <div id="log" class="log">Aguardando configuracao...</div>
+      </section>
+    </main>
+
+    <script>
+      const api = window.hubPrinter;
+      const fields = ["apiUrl", "token", "printerName", "autoPrint", "startWithWindows", "minimizeToTray", "pollIntervalSeconds"];
+      let currentPrinters = [];
+
+      function el(id) { return document.getElementById(id); }
+
+      function readForm() {
+        return {
+          apiUrl: el("apiUrl").value,
+          token: el("token").value,
+          printerName: el("printerName").value,
+          autoPrint: el("autoPrint").checked,
+          startWithWindows: el("startWithWindows").checked,
+          minimizeToTray: el("minimizeToTray").checked,
+          pollIntervalSeconds: Number(el("pollIntervalSeconds").value || 5)
+        };
+      }
+
+      function fillForm(config) {
+        el("apiUrl").value = config.apiUrl || "";
+        el("token").value = config.token || "";
+        el("autoPrint").checked = Boolean(config.autoPrint);
+        el("startWithWindows").checked = Boolean(config.startWithWindows);
+        el("minimizeToTray").checked = Boolean(config.minimizeToTray);
+        el("pollIntervalSeconds").value = String(config.pollIntervalSeconds || 5);
+        renderPrinters(currentPrinters, config.printerName || "");
+      }
+
+      function renderPrinters(printers, selected) {
+        currentPrinters = printers;
+        const select = el("printerName");
+        select.innerHTML = '<option value="">Selecione uma impressora</option>';
+        if (selected && !printers.includes(selected)) {
+          const option = document.createElement("option");
+          option.value = selected;
+          option.textContent = selected;
+          select.appendChild(option);
+        }
+        for (const printer of printers) {
+          const option = document.createElement("option");
+          option.value = printer;
+          option.textContent = printer;
+          select.appendChild(option);
+        }
+        select.value = selected || "";
+      }
+
+      function renderState(state) {
+        if (state.config) fillForm(state.config);
+        const status = el("status");
+        status.textContent = state.connected ? "Conectado" : "Desconectado";
+        status.className = "badge " + (state.connected ? "ok" : "bad");
+        el("lastError").textContent = state.lastError ? "Aviso: " + state.lastError : "";
+        el("log").textContent = state.logs && state.logs.length ? state.logs.join("\\n") : "Nenhum pedido impresso ainda.";
+      }
+
+      async function load() {
+        const state = await api.getConfig();
+        renderState(state);
+        try {
+          const printers = await api.listPrinters();
+          renderPrinters(printers, state.config.printerName || "");
+        } catch {}
+      }
+
+      el("save").addEventListener("click", async () => {
+        await api.saveConfig(readForm());
+        alert("Configuracao salva. O agente ja esta verificando pedidos.");
+      });
+      el("printers").addEventListener("click", async () => {
+        const printers = await api.listPrinters();
+        renderPrinters(printers, el("printerName").value);
+      });
+      el("test").addEventListener("click", async () => {
+        await api.saveConfig(readForm());
+        await api.testPrint();
+        alert("Teste enviado para a impressora.");
+      });
+      el("poll").addEventListener("click", async () => {
+        await api.saveConfig(readForm());
+        await api.pollNow();
+      });
+
+      api.onState(renderState);
+      load();
+    </script>
+  </body>
+</html>

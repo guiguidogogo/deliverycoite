@@ -9,7 +9,7 @@ import { formatOrderCode } from "../utils/order-code.js";
 
 const execFileAsync = promisify(execFile);
 
-type PrintableOrder = {
+export type PrintableOrder = {
   orderNumber: number;
   fulfillmentType: FulfillmentType;
   paymentMethod: PaymentMethod;
@@ -48,7 +48,7 @@ function separator(width: number) {
   return "-".repeat(width);
 }
 
-function receiptText(order: PrintableOrder, settings: Setting) {
+export function receiptText(order: PrintableOrder, settings: Pick<Setting, "companyName" | "printerPaperWidth">) {
   const width = settings.printerPaperWidth === 80 ? 48 : 32;
   const payment =
     order.paymentMethod === "CASH"

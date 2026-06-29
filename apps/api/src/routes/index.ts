@@ -103,6 +103,14 @@ import { getFutureIntegrations, testMenuiaIntegration } from "../controllers/int
 import { createOrderMercadoPagoPix, createOrderMercadoPagoPreference, getMercadoPagoPublicConfig, getOrderMercadoPagoStatus, mercadoPagoWebhook, refundOrderMercadoPago } from "../controllers/mercadopago-controller.js";
 import { listNewOrders } from "../controllers/notifications-controller.js";
 import {
+  generatePrinterAgentToken,
+  getPrinterAgentConfig,
+  getPrinterAgentTestReceipt,
+  listPrinterAgentOrders,
+  markPrinterAgentOrderPrinted,
+  updatePrinterAgentConfig
+} from "../controllers/printer-agent-controller.js";
+import {
   createOrder,
   listOrders,
   markOrderViewed,
@@ -197,6 +205,9 @@ route.post("/orders/:orderId/mercadopago/pix", createOrderMercadoPagoPix);
 route.get("/orders/:orderId/mercadopago/status", getOrderMercadoPagoStatus);
 route.post("/mercadopago/webhook", mercadoPagoWebhook);
 route.get("/mercadopago/webhook", mercadoPagoWebhook);
+route.get("/printer-agent/orders", listPrinterAgentOrders);
+route.post("/printer-agent/orders/:id/printed", markPrinterAgentOrderPrinted);
+route.post("/printer-agent/test", getPrinterAgentTestReceipt);
 
 router.use(auth());
 route.get("/admin/me", getCurrentStaff);
@@ -220,6 +231,9 @@ route.post("/admin/orders/:id/send-delivery", requirePermission("ORDERS"), sendT
 route.post("/admin/orders/:id/print", requirePermission("ORDERS"), printOrderById);
 route.get("/admin/orders/:id/print-data", requirePermission("ORDERS"), getOrderPrintData);
 route.get("/admin/printers", requirePermission("SETTINGS"), listPrinters);
+route.get("/admin/printer-agent", requirePermission("SETTINGS"), getPrinterAgentConfig);
+route.patch("/admin/printer-agent", requirePermission("SETTINGS"), updatePrinterAgentConfig);
+route.post("/admin/printer-agent/token", requirePermission("SETTINGS"), generatePrinterAgentToken);
 route.get("/admin/dashboard", requirePermission("ORDERS"), getDashboard);
 route.get("/admin/notifications/new-orders", requirePermission("ORDERS"), listNewOrders);
 route.get("/admin/deliveries/orders", requirePermission("ORDERS"), listReadyDeliveryOrders);
