@@ -288,6 +288,11 @@
           alert("Cole o token da impressora antes de salvar.");
           return;
         }
+        if (config.autoPrint && !config.printerName.trim()) {
+          el("saveStatus").textContent = "";
+          alert("Escolha a impressora principal antes de ativar a impressao automatica.");
+          return;
+        }
         saving = true;
         const result = await api.saveConfig(config);
         formDirty = false;
@@ -300,12 +305,22 @@
         renderPrinters(printers, el("printerName").value);
       });
       el("test").addEventListener("click", async () => {
-        await api.saveConfig(readForm());
+        const config = readForm();
+        if (!config.printerName.trim()) {
+          alert("Escolha a impressora principal antes de testar.");
+          return;
+        }
+        await api.saveConfig(config);
         await api.testPrint();
         alert("Teste enviado para a impressora.");
       });
       el("poll").addEventListener("click", async () => {
-        await api.saveConfig(readForm());
+        const config = readForm();
+        if (config.autoPrint && !config.printerName.trim()) {
+          alert("Escolha a impressora principal antes de verificar pedidos.");
+          return;
+        }
+        await api.saveConfig(config);
         await api.pollNow();
       });
 

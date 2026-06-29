@@ -25,6 +25,7 @@ type Config = {
   startWithWindows: boolean;
   minimizeToTray: boolean;
   pollIntervalSeconds: number;
+  printFromNowAt?: string;
 };
 
 type AgentOrder = {
@@ -43,7 +44,8 @@ const defaultConfig: Config = {
   autoPrint: true,
   startWithWindows: false,
   minimizeToTray: true,
-  pollIntervalSeconds: 5
+  pollIntervalSeconds: 5,
+  printFromNowAt: ""
 };
 
 let mainWindow: BrowserWindow | null = null;
@@ -190,10 +192,17 @@ async function pollOrders() {
     sendState();
     return;
   }
+  if (config.autoPrint && !config.printerName.trim()) {
+    connected = false;
+    lastError = "Selecione e salve uma impressora principal antes de ativar a impressao automatica.";
+    sendState();
+    return;
+  }
 
   printing = true;
   try {
-    const payload = await apiRequest<{ orders: AgentOrder[] }>("/printer-agent/orders");
+    const since = config.printFromNowAt ? `?since=${encodeURIComponent(config.printFromNowAt)}` : "";
+    const payload = await apiRequest<{ orders: AgentOrder[] }>(`/printer-agent/orders${since}`);
     connected = true;
     lastError = "";
     for (const order of payload.orders) {
@@ -251,7 +260,13 @@ function createTray() {
 
 ipcMain.handle("get-config", () => ({ config: readConfig(), connected, lastError, logs }));
 ipcMain.handle("save-config", (_event, config: Config) => {
-  saveConfig({ ...defaultConfig, ...config, apiUrl: normalizeApiUrl(config.apiUrl) });
+  const current = readConfig();
+  saveConfig({
+    ...defaultConfig,
+    ...config,
+    apiUrl: normalizeApiUrl(config.apiUrl),
+    printFromNowAt: config.printFromNowAt || current.printFromNowAt || new Date().toISOString()
+  });
   restartPolling();
   sendState();
   return { ok: true, config: readConfig() };

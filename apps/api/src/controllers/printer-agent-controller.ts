@@ -50,14 +50,16 @@ function orderToPayload(order: Awaited<ReturnType<typeof findPrintableOrders>>[n
   };
 }
 
-async function findPrintableOrders(companyId: string) {
-  const since = new Date(Date.now() - 1000 * 60 * 60 * 24);
+async function findPrintableOrders(companyId: string, since?: Date) {
+  const createdSince = since && !Number.isNaN(since.getTime())
+    ? since
+    : new Date(Date.now() - 1000 * 60 * 60 * 24);
   return prisma.order.findMany({
     where: {
       companyId,
       deletedAt: null,
       printerPrintedAt: null,
-      createdAt: { gte: since },
+      createdAt: { gte: createdSince },
       status: { notIn: [OrderStatus.CANCELED, OrderStatus.FINISHED] },
       OR: [
         { paymentMethod: { not: PaymentMethod.MERCADO_PAGO } },
@@ -128,10 +130,12 @@ export async function updatePrinterAgentConfig(req: Request, res: Response) {
 export async function listPrinterAgentOrders(req: Request, res: Response) {
   const company = await getAgentCompany(req);
   if (!company) return res.status(401).json({ message: "Token de impressao invalido ou desativado" });
+  const sinceParam = req.query.since?.toString();
+  const since = sinceParam ? new Date(sinceParam) : undefined;
 
   const [settings, orders] = await Promise.all([
     prisma.setting.findUnique({ where: { companyId: company.id } }),
-    findPrintableOrders(company.id)
+    findPrintableOrders(company.id, since)
   ]);
 
   const safeSettings = settings ?? {
