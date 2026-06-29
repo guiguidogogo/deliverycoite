@@ -26,6 +26,7 @@ type Config = {
   minimizeToTray: boolean;
   pollIntervalSeconds: number;
   printCopies: number;
+  paperWidth: 58 | 80;
   printFromNowAt?: string;
 };
 
@@ -47,6 +48,7 @@ const defaultConfig: Config = {
   minimizeToTray: true,
   pollIntervalSeconds: 5,
   printCopies: 1,
+  paperWidth: 58,
   printFromNowAt: ""
 };
 
@@ -123,19 +125,76 @@ async function listPrinters() {
   return Array.isArray(parsed) ? parsed : [parsed];
 }
 
+function sanitizeThermalText(text: string) {
+  return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, "");
+}
+
+function escPosBuffer(text: string) {
+  const clean = sanitizeThermalText(text).replace(/\r?\n/g, "\r\n");
+  return Buffer.concat([
+    Buffer.from([0x1b, 0x40]), // ESC @ - init
+    Buffer.from([0x1b, 0x74, 0x02]), // CP850 when supported
+    Buffer.from(clean, "ascii"),
+    Buffer.from("\r\n\r\n\r\n", "ascii"),
+    Buffer.from([0x1d, 0x56, 0x42, 0x00]) // partial cut, ignored by printers without cutter
+  ]);
+}
+
 async function printText(printerName: string, text: string) {
   if (process.platform !== "win32") {
     throw new Error("Este agente de impressao foi feito para Windows.");
   }
   if (!printerName.trim()) throw new Error("Selecione uma impressora.");
 
-  const filePath = path.join(tmpdir(), `hubregional-print-${crypto.randomUUID()}.txt`);
-  await writeFile(filePath, text, "utf8");
+  const filePath = path.join(tmpdir(), `hubregional-print-${crypto.randomUUID()}.bin`);
+  await writeFile(filePath, escPosBuffer(text));
   try {
     const script = [
       "$file = $env:HUB_PRINT_FILE",
       "$printer = $env:HUB_PRINT_PRINTER",
-      "Get-Content -LiteralPath $file -Raw -Encoding UTF8 | Out-Printer -Name $printer"
+      `Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public class RawPrinterHelper {
+  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Ansi)]
+  public class DOCINFOA {
+    [MarshalAs(UnmanagedType.LPStr)] public string pDocName;
+    [MarshalAs(UnmanagedType.LPStr)] public string pOutputFile;
+    [MarshalAs(UnmanagedType.LPStr)] public string pDataType;
+  }
+  [DllImport("winspool.Drv", EntryPoint="OpenPrinterA", SetLastError=true, CharSet=CharSet.Ansi, ExactSpelling=true, CallingConvention=CallingConvention.StdCall)]
+  public static extern bool OpenPrinter(string szPrinter, out IntPtr hPrinter, IntPtr pd);
+  [DllImport("winspool.Drv", EntryPoint="ClosePrinter", SetLastError=true, ExactSpelling=true, CallingConvention=CallingConvention.StdCall)]
+  public static extern bool ClosePrinter(IntPtr hPrinter);
+  [DllImport("winspool.Drv", EntryPoint="StartDocPrinterA", SetLastError=true, CharSet=CharSet.Ansi, ExactSpelling=true, CallingConvention=CallingConvention.StdCall)]
+  public static extern bool StartDocPrinter(IntPtr hPrinter, Int32 level, [In, MarshalAs(UnmanagedType.LPStruct)] DOCINFOA di);
+  [DllImport("winspool.Drv", EntryPoint="EndDocPrinter", SetLastError=true, ExactSpelling=true, CallingConvention=CallingConvention.StdCall)]
+  public static extern bool EndDocPrinter(IntPtr hPrinter);
+  [DllImport("winspool.Drv", EntryPoint="StartPagePrinter", SetLastError=true, ExactSpelling=true, CallingConvention=CallingConvention.StdCall)]
+  public static extern bool StartPagePrinter(IntPtr hPrinter);
+  [DllImport("winspool.Drv", EntryPoint="EndPagePrinter", SetLastError=true, ExactSpelling=true, CallingConvention=CallingConvention.StdCall)]
+  public static extern bool EndPagePrinter(IntPtr hPrinter);
+  [DllImport("winspool.Drv", EntryPoint="WritePrinter", SetLastError=true, ExactSpelling=true, CallingConvention=CallingConvention.StdCall)]
+  public static extern bool WritePrinter(IntPtr hPrinter, byte[] pBytes, Int32 dwCount, out Int32 dwWritten);
+}
+'@`,
+      "$bytes = [System.IO.File]::ReadAllBytes($file)",
+      "$handle = [IntPtr]::Zero",
+      "if (-not [RawPrinterHelper]::OpenPrinter($printer, [ref]$handle, [IntPtr]::Zero)) { throw 'Nao foi possivel abrir a impressora RAW' }",
+      "$doc = New-Object RawPrinterHelper+DOCINFOA",
+      "$doc.pDocName = 'HubRegional Pedido'",
+      "$doc.pDataType = 'RAW'",
+      "try {",
+      "  [void][RawPrinterHelper]::StartDocPrinter($handle, 1, $doc)",
+      "  [void][RawPrinterHelper]::StartPagePrinter($handle)",
+      "  $written = 0",
+      "  if (-not [RawPrinterHelper]::WritePrinter($handle, $bytes, $bytes.Length, [ref]$written)) { throw 'Falha ao enviar bytes para impressora' }",
+      "  [void][RawPrinterHelper]::EndPagePrinter($handle)",
+      "  [void][RawPrinterHelper]::EndDocPrinter($handle)",
+      "} finally { [void][RawPrinterHelper]::ClosePrinter($handle) }"
     ].join("; ");
     await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
       env: { ...process.env, HUB_PRINT_FILE: filePath, HUB_PRINT_PRINTER: printerName }
@@ -206,8 +265,9 @@ async function pollOrders() {
 
   printing = true;
   try {
-    const since = config.printFromNowAt ? `?since=${encodeURIComponent(config.printFromNowAt)}` : "";
-    const payload = await apiRequest<{ orders: AgentOrder[] }>(`/printer-agent/orders${since}`);
+    const search = new URLSearchParams({ paperWidth: String(config.paperWidth || 58) });
+    if (config.printFromNowAt) search.set("since", config.printFromNowAt);
+    const payload = await apiRequest<{ orders: AgentOrder[] }>(`/printer-agent/orders?${search.toString()}`);
     connected = true;
     lastError = "";
     for (const order of payload.orders) {
@@ -271,6 +331,7 @@ ipcMain.handle("save-config", (_event, config: Config) => {
     ...config,
     apiUrl: normalizeApiUrl(config.apiUrl),
     printCopies: Math.min(5, Math.max(1, Number(config.printCopies || 1))),
+    paperWidth: config.paperWidth === 80 ? 80 : 58,
     printFromNowAt: config.printFromNowAt || current.printFromNowAt || new Date().toISOString()
   });
   restartPolling();
@@ -281,7 +342,7 @@ ipcMain.handle("list-printers", async () => listPrinters());
 ipcMain.handle("test-print", async () => {
   const config = readConfig();
   const payload = config.token
-    ? await apiRequest<{ receipt: string }>("/printer-agent/test").catch(() => null)
+    ? await apiRequest<{ receipt: string }>(`/printer-agent/test?paperWidth=${config.paperWidth || 58}`).catch(() => null)
     : null;
   await printText(config.printerName, payload?.receipt ?? "HUBREGIONAL\r\nTESTE DE IMPRESSAO\r\n\r\n");
   addLog("Teste de impressao enviado");

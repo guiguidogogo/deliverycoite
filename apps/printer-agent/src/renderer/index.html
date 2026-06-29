@@ -187,6 +187,13 @@
               <option value="5">5 vias</option>
             </select>
           </div>
+          <div>
+            <label for="paperWidth">Largura do papel</label>
+            <select id="paperWidth">
+              <option value="58">58mm / 32 colunas</option>
+              <option value="80">80mm / 48 colunas</option>
+            </select>
+          </div>
         </div>
         <div class="checks">
           <label class="check"><input id="autoPrint" type="checkbox" /> Impressao automatica</label>
@@ -209,7 +216,7 @@
 
     <script>
       const api = window.hubPrinter;
-      const fields = ["apiUrl", "token", "printerName", "autoPrint", "startWithWindows", "minimizeToTray", "pollIntervalSeconds", "printCopies"];
+      const fields = ["apiUrl", "token", "printerName", "autoPrint", "startWithWindows", "minimizeToTray", "pollIntervalSeconds", "printCopies", "paperWidth"];
       let currentPrinters = [];
       let formDirty = false;
       let initialLoaded = false;
@@ -226,7 +233,8 @@
           startWithWindows: el("startWithWindows").checked,
           minimizeToTray: el("minimizeToTray").checked,
           pollIntervalSeconds: Number(el("pollIntervalSeconds").value || 5),
-          printCopies: Number(el("printCopies").value || 1)
+          printCopies: Number(el("printCopies").value || 1),
+          paperWidth: Number(el("paperWidth").value || 58)
         };
       }
 
@@ -239,6 +247,7 @@
         el("minimizeToTray").checked = Boolean(config.minimizeToTray);
         el("pollIntervalSeconds").value = String(config.pollIntervalSeconds || 5);
         el("printCopies").value = String(config.printCopies || 1);
+        el("paperWidth").value = String(config.paperWidth || 58);
         renderPrinters(currentPrinters, config.printerName || "");
       }
 

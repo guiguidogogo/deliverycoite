@@ -133,15 +133,19 @@ export async function listPrinterAgentOrders(req: Request, res: Response) {
   if (!company) return res.status(401).json({ message: "Token de impressao invalido ou desativado" });
   const sinceParam = req.query.since?.toString();
   const since = sinceParam ? new Date(sinceParam) : undefined;
+  const paperWidth = req.query.paperWidth?.toString() === "80" ? 80 : 58;
 
   const [settings, orders] = await Promise.all([
     prisma.setting.findUnique({ where: { companyId: company.id } }),
     findPrintableOrders(company.id, since)
   ]);
 
-  const safeSettings = settings ?? {
+  const safeSettings = {
+    ...(settings ?? {
     companyName: company.tradeName,
     printerPaperWidth: 58
+    }),
+    printerPaperWidth: paperWidth
   };
 
   await prisma.company.update({
@@ -203,6 +207,9 @@ export async function getPrinterAgentTestReceipt(req: Request, res: Response) {
   const company = await getAgentCompany(req);
   if (!company) return res.status(401).json({ message: "Token de impressao invalido ou desativado" });
 
+  const paperWidth = req.query.paperWidth?.toString() === "80" ? 80 : 58;
+  const width = paperWidth === 80 ? 48 : 32;
+
   await prisma.company.update({
     where: { id: company.id },
     data: { printerAgentLastSeenAt: new Date() }
@@ -212,8 +219,9 @@ export async function getPrinterAgentTestReceipt(req: Request, res: Response) {
     receipt: [
       company.tradeName.toUpperCase(),
       "TESTE DE IMPRESSAO",
+      `Papel: ${paperWidth}mm`,
       new Date().toLocaleString("pt-BR"),
-      "--------------------------------",
+      "-".repeat(width),
       "HubRegional Printer Agent",
       "Conexao realizada com sucesso.",
       "",
