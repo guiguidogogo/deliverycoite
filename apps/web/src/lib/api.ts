@@ -1,4 +1,5 @@
 const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "/api").replace(/\/$/, "");
+const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? "hubregional.com.br";
 
 export function normalizeSubdomain(value?: string | null) {
   return (value ?? "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
@@ -6,6 +7,16 @@ export function normalizeSubdomain(value?: string | null) {
 
 export function getBrowserSubdomain() {
   if (typeof window === "undefined") return "";
+
+  const host = window.location.hostname.toLowerCase();
+  const rootDomain = ROOT_DOMAIN.toLowerCase();
+  if (host.endsWith(`.${rootDomain}`) && host !== `www.${rootDomain}` && host !== `admin.${rootDomain}`) {
+    const subdomain = normalizeSubdomain(host.slice(0, -(rootDomain.length + 1)));
+    if (subdomain) {
+      localStorage.setItem("delivery:subdomain", subdomain);
+      return subdomain;
+    }
+  }
 
   const fromQuery = normalizeSubdomain(new URLSearchParams(window.location.search).get("subdomain"));
   if (fromQuery) {

@@ -154,8 +154,12 @@ export function Storefront() {
   const typedDistrict = watch("district") || "";
 
   useEffect(() => {
-    api<PublicCompany>("/company")
-      .then((tenantCompany) => {
+    let canceled = false;
+
+    async function loadStorefront() {
+      try {
+        const tenantCompany = await api<PublicCompany>("/company");
+        if (canceled) return;
         setCompany(tenantCompany);
         document.documentElement.style.setProperty("--tenant-primary", tenantCompany.primaryColor);
         document.documentElement.style.setProperty("--tenant-secondary", tenantCompany.secondaryColor);
@@ -169,21 +173,19 @@ export function Storefront() {
           favicon.href = resolveAssetUrl(tenantCompany.faviconUrl);
         }
         document.title = tenantCompany.tradeName;
-      })
-      .catch(() => setCompany(null));
+      } catch {
+        if (!canceled) setCompany(null);
+      }
 
-    api<Category[]>("/categories")
-      .then((c) => {
-        setCategories(c.filter((item: any) => item.active !== false));
-      })
-      .catch(() => {
-        setCategories([]);
-      });
-
-    api<Product[]>("/products")
-      .then((p) => {
+      try {
+        const [categoryList, productList] = await Promise.all([
+          api<Category[]>("/categories"),
+          api<Product[]>("/products")
+        ]);
+        if (canceled) return;
+        setCategories(categoryList.filter((item: any) => item.active !== false));
         setProducts(
-          p
+          productList
             .filter((item: any) => item.active !== false && item.available !== false)
             .map((item: any) => ({
               ...item,
@@ -195,10 +197,22 @@ export function Storefront() {
               }))
             }))
         );
-      })
-      .catch((error) => {
+      } catch (error) {
+        if (canceled) return;
+        setCategories([]);
+        setProducts([]);
         toast.error(error instanceof Error ? error.message : "Nao foi possivel carregar o cardapio");
-      });
+      }
+    }
+
+    void loadStorefront();
+
+    return () => {
+      canceled = true;
+    };
+  }, []);
+
+  useEffect(() => {
 
     api<Settings>("/settings")
       .then((s) => {
