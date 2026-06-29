@@ -100,7 +100,7 @@ import {
   reopenCashSession
 } from "../controllers/finance-controller.js";
 import { getFutureIntegrations, testMenuiaIntegration } from "../controllers/integrations-controller.js";
-import { createOrderMercadoPagoPix, createOrderMercadoPagoPreference, getMercadoPagoPublicConfig, mercadoPagoWebhook } from "../controllers/mercadopago-controller.js";
+import { createOrderMercadoPagoPix, createOrderMercadoPagoPreference, getMercadoPagoPublicConfig, mercadoPagoWebhook, refundOrderMercadoPago } from "../controllers/mercadopago-controller.js";
 import { listNewOrders } from "../controllers/notifications-controller.js";
 import {
   createOrder,
@@ -213,6 +213,7 @@ route.get("/admin/orders", requirePermission("ORDERS"), listOrders);
 route.patch("/admin/orders/:id/status", requirePermission("ORDERS"), updateOrderStatus);
 route.patch("/admin/orders/:id/viewed", requirePermission("ORDERS"), markOrderViewed);
 route.patch("/admin/orders/:id/paid", requirePermission("ORDERS"), markOrderPaid);
+route.post("/admin/orders/:id/mercadopago/refund", requirePermission("ORDERS"), refundOrderMercadoPago);
 route.delete("/admin/orders/:id", requirePermission("ORDERS"), deleteOrder);
 route.post("/admin/orders/:id/send-delivery", requirePermission("ORDERS"), sendToDelivery);
 route.post("/admin/orders/:id/print", requirePermission("ORDERS"), printOrderById);

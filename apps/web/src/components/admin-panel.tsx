@@ -34,6 +34,9 @@ type Order = {
   fulfillmentType: "DELIVERY" | "PICKUP";
   paymentMethod?: "CASH" | "PIX" | "CARD" | "MERCADO_PAGO";
   paidMethodDetail?: string | null;
+  paidAt?: string | null;
+  mercadoPagoStatus?: string | null;
+  mercadoPagoStatusDetail?: string | null;
   changeFor?: number | null;
   subtotal?: number;
   deliveryFee?: number;
@@ -63,6 +66,14 @@ const labels: Record<Order["status"], string> = {
 };
 
 const ADMIN_SOUND_KEY = "delivery:admin-sound-enabled";
+
+function isMercadoPagoPending(order: Order) {
+  return order.paymentMethod === "MERCADO_PAGO" && !order.paidAt && order.mercadoPagoStatus !== "refunded";
+}
+
+function isMercadoPagoRefunded(order: Order) {
+  return order.paymentMethod === "MERCADO_PAGO" && order.mercadoPagoStatus === "refunded";
+}
 
 async function authApi<T>(path: string, token: string, init?: RequestInit): Promise<T> {
   let res: Response;
@@ -524,7 +535,21 @@ export function AdminPanel() {
                     {order.fulfillmentType === "PICKUP" ? "Retirada na loja" : "Entrega"}
                   </p>
                   <p className="text-xs opacity-60">{formatDateTime(order.createdAt)}</p>
-                  {order.notes?.includes("[PAGO:") && <p className="text-xs text-emerald-600">Pagamento confirmado</p>}
+                  {isMercadoPagoPending(order) && (
+                    <p className="mt-1 rounded-full bg-amber-100 px-2 py-1 text-xs font-bold text-amber-700">
+                      Aguardando pagamento Mercado Pago
+                    </p>
+                  )}
+                  {isMercadoPagoRefunded(order) && (
+                    <p className="mt-1 rounded-full bg-red-100 px-2 py-1 text-xs font-bold text-red-700">
+                      Estornado Mercado Pago
+                    </p>
+                  )}
+                  {(order.paidAt || order.notes?.includes("[PAGO:")) && !isMercadoPagoRefunded(order) && (
+                    <p className="mt-1 rounded-full bg-emerald-100 px-2 py-1 text-xs font-bold text-emerald-700">
+                      PAGO {order.paidMethodDetail ? `• ${order.paidMethodDetail}` : ""}
+                    </p>
+                  )}
                 </div>
                 <div className="text-right text-sm">
                   <p>{labels[order.status]}</p>
@@ -538,7 +563,7 @@ export function AdminPanel() {
                   <button
                     key={status}
                     className="rounded-lg border border-black/15 px-2 py-1 text-xs dark:border-white/20"
-                    disabled={order.status === "FINISHED" && status !== "FINISHED"}
+                    disabled={isMercadoPagoPending(order) || isMercadoPagoRefunded(order) || (order.status === "FINISHED" && status !== "FINISHED")}
                     onClick={() => {
                       void authApi<{
                         status: Order["status"];
@@ -580,7 +605,7 @@ export function AdminPanel() {
                     Marcar visualizado
                   </button>
                 )}
-                {order.fulfillmentType === "DELIVERY" && order.status === "PREPARING" && (
+                {order.fulfillmentType === "DELIVERY" && order.status === "PREPARING" && !isMercadoPagoPending(order) && !isMercadoPagoRefunded(order) && (
                   <a
                     className="rounded-lg bg-blue-700 px-2 py-1 text-xs text-white"
                     href={`/admin/manage/deliveries?orderId=${encodeURIComponent(order.id)}`}
@@ -590,7 +615,9 @@ export function AdminPanel() {
                 )}
                 {order.fulfillmentType === "DELIVERY"
                   && order.status === "OUT_FOR_DELIVERY"
-                  && !order.sentToDelivery && (
+                  && !order.sentToDelivery
+                  && !isMercadoPagoPending(order)
+                  && !isMercadoPagoRefunded(order) && (
                   <button
                     className="rounded-lg bg-blue-500 px-2 py-1 text-xs text-white"
                     onClick={() => {
@@ -608,7 +635,7 @@ export function AdminPanel() {
                     🛵 Enviar para Motoboy
                   </button>
                 )}
-                {order.status !== "CANCELED" && !order.notes?.includes("[PAGO:") && (
+                {order.status !== "CANCELED" && !order.notes?.includes("[PAGO:") && !order.paidAt && order.paymentMethod !== "MERCADO_PAGO" && (
                   <>
                     <button className="rounded-lg bg-emerald-600 px-2 py-1 text-xs text-white" onClick={() => setPayingOrderId(order.id)}>
                       Marcar pago
@@ -662,9 +689,43 @@ export function AdminPanel() {
                     )}
                   </>
                 )}
+                {order.paymentMethod === "MERCADO_PAGO" && order.paidAt && !isMercadoPagoRefunded(order) && (
+                  <button
+                    className="rounded-lg bg-red-700 px-2 py-1 text-xs text-white"
+                    onClick={() => {
+                      if (!window.confirm("Confirmar estorno deste pagamento no Mercado Pago?")) return;
+                      void authApi<{ mercadoPagoStatus?: string | null; status?: Order["status"]; paidAt?: string | null }>(
+                        `/admin/orders/${order.id}/mercadopago/refund`,
+                        token,
+                        { method: "POST" }
+                      )
+                        .then(async (payload) => {
+                          setOrders((prev) =>
+                            prev.map((item) =>
+                              item.id === order.id
+                                ? { ...item, mercadoPagoStatus: payload.mercadoPagoStatus ?? "refunded", paidAt: payload.paidAt ?? null, status: payload.status ?? "CANCELED" }
+                                : item
+                            )
+                          );
+                          toast.success("Pagamento estornado no Mercado Pago");
+                          await refreshPanel(false);
+                        })
+                        .catch((error) => {
+                          toast.error(error instanceof Error ? error.message : "Falha ao estornar pagamento");
+                        });
+                    }}
+                  >
+                    Estornar Mercado Pago
+                  </button>
+                )}
                 <button
                   className="rounded-lg bg-slate-700 px-2 py-1 text-xs text-white"
+                  disabled={isMercadoPagoPending(order)}
                   onClick={() => {
+                    if (isMercadoPagoPending(order)) {
+                      toast.error("Aguarde a confirmacao do pagamento Mercado Pago para imprimir");
+                      return;
+                    }
                     if (printSettings.printerName) {
                       void printHtmlWithAgent(
                         printSettings.printerName,

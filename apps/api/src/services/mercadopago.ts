@@ -24,6 +24,13 @@ export type MercadoPagoPaymentResponse = {
   };
 };
 
+export type MercadoPagoRefundResponse = {
+  id: number | string;
+  payment_id?: number | string;
+  status?: string;
+  amount?: number;
+};
+
 async function mpFetch<T>(path: string, accessToken: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${MP_API}${path}`, {
     ...init,
@@ -90,6 +97,16 @@ export async function createMercadoPagoPreference(params: {
 
 export async function getMercadoPagoPayment(accessToken: string, paymentId: string) {
   return mpFetch<MercadoPagoPaymentResponse>(`/v1/payments/${encodeURIComponent(paymentId)}`, accessToken);
+}
+
+export async function refundMercadoPagoPayment(accessToken: string, paymentId: string) {
+  return mpFetch<MercadoPagoRefundResponse>(`/v1/payments/${encodeURIComponent(paymentId)}/refunds`, accessToken, {
+    method: "POST",
+    headers: {
+      "X-Idempotency-Key": `refund-${paymentId}-${Date.now()}`
+    },
+    body: JSON.stringify({})
+  });
 }
 
 export async function createMercadoPagoPixPayment(params: {

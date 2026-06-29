@@ -400,6 +400,19 @@ export async function createOrder(req: Request, res: Response) {
     });
   }
 
+  if (body.paymentMethod === PaymentMethod.MERCADO_PAGO) {
+    return res.status(201).json({
+      orderId: order.id,
+      whatsappUrl: null,
+      sentByServer: false,
+      sendError: null,
+      printError: null,
+      message: "Pedido aguardando confirmacao do Mercado Pago",
+      total: order.total,
+      paymentPending: true
+    });
+  }
+
   const whatsapp = buildWhatsappMessage(order, settings);
   const sent = await dispatchWhatsappMessage(
     settings,

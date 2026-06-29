@@ -1,10 +1,14 @@
 import type { Request, Response } from "express";
 import { PaymentMethod } from "@prisma/client";
 import { z } from "zod";
-import { createMercadoPagoPixPayment, createMercadoPagoPreference, getMercadoPagoPayment } from "../services/mercadopago.js";
+import { createMercadoPagoPixPayment, createMercadoPagoPreference, getMercadoPagoPayment, refundMercadoPagoPayment } from "../services/mercadopago.js";
+import { publishNewOrder } from "../services/realtime.js";
+import { printOrder } from "../services/thermal-printer.js";
+import { buildWhatsappMessage, dispatchWhatsappMessage } from "../services/whatsapp.js";
 import { prisma } from "../utils/prisma.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
 import { formatOrderCode } from "../utils/order-code.js";
+import { audit } from "../utils/audit.js";
 
 function requestBaseUrl(req: Request) {
   const proto = req.get("x-forwarded-proto")?.split(",")[0] || req.protocol || "https";
@@ -173,7 +177,7 @@ export async function mercadoPagoWebhook(req: Request, res: Response) {
   }
 
   const approved = payment.status === "approved";
-  await prisma.order.update({
+  const updated = await prisma.order.update({
     where: { id: order.id },
     data: {
       mercadoPagoPaymentId: String(payment.id),
@@ -190,5 +194,89 @@ export async function mercadoPagoWebhook(req: Request, res: Response) {
     }
   });
 
+  if (approved && !order.paidAt) {
+    const [settings, paidOrder] = await Promise.all([
+      prisma.setting.findFirst({ where: { companyId: order.companyId } }),
+      prisma.order.findUnique({
+        where: { id: order.id },
+        include: { customer: true, items: { include: { product: true, complements: true } } }
+      })
+    ]);
+
+    if (settings && paidOrder) {
+      const whatsapp = buildWhatsappMessage(paidOrder, settings);
+      const sent = await dispatchWhatsappMessage(settings, settings.whatsappNumber, whatsapp.message, settings.whatsappNumber);
+      await prisma.order.update({
+        where: { id: paidOrder.id },
+        data: {
+          whatsappLink: sent.whatsappUrl ?? whatsapp.url,
+          notes: [paidOrder.notes, `[PAGO: Mercado Pago em ${new Date().toLocaleString("pt-BR")}]`]
+            .filter(Boolean)
+            .join(" ")
+        }
+      });
+
+      if (settings.printerEnabled && settings.printerAutoPrint) {
+        await printOrder(paidOrder, settings).catch(() => undefined);
+      }
+
+      publishNewOrder({
+        companyId: paidOrder.companyId,
+        orderId: paidOrder.id,
+        customer: paidOrder.customer.name,
+        total: Number(paidOrder.total)
+      });
+    }
+  }
+
   return res.status(200).json({ ok: true });
+}
+
+export async function refundOrderMercadoPago(req: Request, res: Response) {
+  const order = await prisma.order.findFirst({
+    where: { id: req.params.id, ...companyWhere(req) },
+    include: { company: true }
+  });
+
+  if (!order) return res.status(404).json({ message: "Pedido nao encontrado" });
+  if (order.paymentMethod !== PaymentMethod.MERCADO_PAGO || !order.mercadoPagoPaymentId) {
+    return res.status(400).json({ message: "Este pedido nao possui pagamento Mercado Pago" });
+  }
+  if (order.mercadoPagoStatus === "refunded") {
+    return res.status(400).json({ message: "Este pedido ja foi estornado" });
+  }
+  if (!order.paidAt) {
+    return res.status(400).json({ message: "Somente pagamentos confirmados podem ser estornados" });
+  }
+  if (!order.company.mercadoPagoAccessToken) {
+    return res.status(400).json({ message: "Mercado Pago nao configurado para esta empresa" });
+  }
+
+  const refund = await refundMercadoPagoPayment(order.company.mercadoPagoAccessToken, order.mercadoPagoPaymentId);
+  const updated = await prisma.$transaction(async (transaction) => {
+    const row = await transaction.order.update({
+      where: { id: order.id },
+      data: {
+        paidAt: null,
+        mercadoPagoStatus: "refunded",
+        mercadoPagoStatusDetail: refund.status ?? "refunded",
+        status: "CANCELED",
+        notes: [order.notes, `[ESTORNO MERCADO PAGO: ${new Date().toLocaleString("pt-BR")}]`]
+          .filter(Boolean)
+          .join(" ")
+      }
+    });
+
+    await audit(req, {
+      action: "MERCADO_PAGO_REFUND",
+      entity: "Order",
+      entityId: order.id,
+      oldValue: { paidAt: order.paidAt, mercadoPagoStatus: order.mercadoPagoStatus },
+      newValue: { refundId: refund.id, status: refund.status }
+    }, transaction);
+
+    return row;
+  });
+
+  return res.json({ ...updated, refund });
 }
