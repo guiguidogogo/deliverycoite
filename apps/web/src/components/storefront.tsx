@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MapPin, Moon, Search, ShoppingCart, Sun, User } from "lucide-react";
+import { Bike, Clock, Flame, Heart, Instagram, MapPin, MessageCircle, Minus, Moon, Plus, Search, ShoppingCart, Sparkles, Star, Store, Sun, Tag, User, X } from "lucide-react";
 import { toast } from "sonner";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -115,6 +115,7 @@ export function Storefront() {
   const [couponMessage, setCouponMessage] = useState("");
   const [configuringProduct, setConfiguringProduct] = useState<Product | null>(null);
   const [complementQuantities, setComplementQuantities] = useState<Record<string, number>>({});
+  const [configuringQuantity, setConfiguringQuantity] = useState(1);
   const [deliveryLocation, setDeliveryLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [quotedDeliveryFee, setQuotedDeliveryFee] = useState<number | null>(null);
   const [deliveryDistanceKm, setDeliveryDistanceKm] = useState<number | null>(null);
@@ -456,12 +457,24 @@ export function Storefront() {
   }, [addressMode, typedAddress, typedNumber, typedDistrict]);
 
   const filtered = useMemo(() => {
+    const term = query.trim().toLowerCase();
     return products.filter((product) => {
       const byCategory = selectedCategory === "all" || product.categoryId === selectedCategory;
-      const byText = !query || product.name.toLowerCase().includes(query.toLowerCase()) || product.description.toLowerCase().includes(query.toLowerCase());
+      const categoryName = categories.find((category) => category.id === product.categoryId)?.name ?? "";
+      const complementText = (product.complements ?? [])
+        .map((link) => `${link.complement.name} ${link.complement.description}`)
+        .join(" ");
+      const promoText = product.promoPrice ? "promocao oferta desconto barato" : "";
+      const byText = !term || [
+        product.name,
+        product.description,
+        categoryName,
+        complementText,
+        promoText
+      ].some((value) => value.toLowerCase().includes(term));
       return byCategory && byText;
     });
-  }, [products, query, selectedCategory]);
+  }, [categories, products, query, selectedCategory]);
 
   const subtotal = cart.reduce((acc, item) => {
     const extras = item.complements.reduce(
@@ -479,6 +492,28 @@ export function Storefront() {
         : (settings?.deliveryFee ?? 0);
   const discount = couponDiscount;
   const total = subtotal + deliveryFee - discount;
+  const promoProducts = useMemo(
+    () => products.filter((product) => product.promoPrice && product.promoPrice < product.price).slice(0, 8),
+    [products]
+  );
+  const bestSellers = useMemo(
+    () => [...products].sort((a, b) => (b.complements?.length ?? 0) - (a.complements?.length ?? 0)).slice(0, 6),
+    [products]
+  );
+  const newestProducts = useMemo(() => [...products].slice(0, 6), [products]);
+  const selectedCategoryName = selectedCategory === "all"
+    ? "Todos os produtos"
+    : categories.find((category) => category.id === selectedCategory)?.name ?? "Categoria";
+  const storeOpen = Boolean(company?.isOpen) && !settings?.ordersPaused;
+  const productModalExtras = configuringProduct
+    ? configuringProduct.complements
+        .filter((link) => (complementQuantities[link.complementId] ?? 0) > 0)
+        .reduce((sum, link) => sum + link.complement.price * (complementQuantities[link.complementId] ?? 0), 0)
+    : 0;
+  const productModalUnit = configuringProduct
+    ? (configuringProduct.promoPrice ?? configuringProduct.price) + productModalExtras
+    : 0;
+  const productModalTotal = productModalUnit * configuringQuantity;
 
   async function applyCoupon() {
     if (!couponCode.trim()) {
@@ -501,7 +536,7 @@ export function Storefront() {
     }
   }
 
-  function addConfiguredToCart(product: Product, complements: SelectedComplement[]) {
+  function addConfiguredToCart(product: Product, complements: SelectedComplement[], quantity = 1) {
     const selectionKey = complements
       .map((item) => `${item.complement.id}:${item.quantity}`)
       .sort()
@@ -511,21 +546,16 @@ export function Storefront() {
     setCart((prev) => {
       const found = prev.find((item) => item.id === itemId);
       if (found) {
-        toast.success(`+1 ${product.name} adicionado!`);
-        return prev.map((item) => (item.id === itemId ? { ...item, quantity: item.quantity + 1 } : item));
+        toast.success(`+${quantity} ${product.name} adicionado!`);
+        return prev.map((item) => (item.id === itemId ? { ...item, quantity: item.quantity + quantity } : item));
       }
       toast.success(`${product.name} adicionado ao carrinho!`);
-      return [...prev, { id: itemId, product, quantity: 1, complements }];
+      return [...prev, { id: itemId, product, quantity, complements }];
     });
   }
 
   function beginProductConfiguration(product: Product) {
     const activeLinks = (product.complements ?? []).filter((link) => link.complement.active);
-    if (!activeLinks.length) {
-      addConfiguredToCart(product, []);
-      return;
-    }
-
     setComplementQuantities(
       Object.fromEntries(
         activeLinks
@@ -533,6 +563,7 @@ export function Storefront() {
           .map((link) => [link.complementId, 1])
       )
     );
+    setConfiguringQuantity(1);
     setConfiguringProduct(product);
   }
 
@@ -551,9 +582,10 @@ export function Storefront() {
       toast.error(`${missing.complement.name} e obrigatorio`);
       return;
     }
-    addConfiguredToCart(configuringProduct, selected);
+    addConfiguredToCart(configuringProduct, selected, configuringQuantity);
     setConfiguringProduct(null);
     setComplementQuantities({});
+    setConfiguringQuantity(1);
   }
 
   function setItemQuantity(itemId: string, quantity: number) {
@@ -791,154 +823,295 @@ export function Storefront() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-5xl px-4 pb-28 pt-4 md:px-8">
-      <section className="reveal card-surface overflow-hidden p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-3">
-              {company?.logoUrl && (
-                <Image
-                  src={resolveAssetUrl(company.logoUrl)}
-                  alt={`Logo ${company.tradeName}`}
-                  width={56}
-                  height={56}
-                  className="h-14 w-14 rounded-xl object-contain"
-                  unoptimized
-                />
-              )}
-              <div>
-                <p className="font-display text-3xl tracking-wide">
-                  {company?.tradeName ?? settings?.companyName ?? "Lanchonete Delivery"}
-                </p>
-                <p className="text-sm opacity-70">Sabores artesanais e entrega rapida</p>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {customer ? (
-              <a
-                href="/profile"
-                className="flex items-center gap-2 rounded-full border border-black/10 px-3 py-2 text-sm dark:border-white/20"
-                title="Meu perfil"
-              >
-                <User size={18} />
-                <span className="hidden sm:inline">{customer.name.split(" ")[0]}</span>
-              </a>
-            ) : (
-              <a
-                href="/account"
-                className="rounded-full border border-black/10 px-3 py-2 text-sm dark:border-white/20"
-              >
-                <User size={18} className="inline sm:hidden" />
-                <span className="hidden sm:inline">Entrar</span>
-              </a>
-            )}
-            <button
-              className="rounded-full border border-black/10 p-2 dark:border-white/20"
-              onClick={() => setDark((v) => !v)}
-              aria-label="Alternar tema"
-            >
-              {dark ? <Sun size={18} /> : <Moon size={18} />}
-            </button>
-          </div>
-        </div>
-        {settings?.ordersPaused && (
-          <div className="mt-4 rounded-xl bg-red-600 p-3 text-center font-semibold text-white">
-            {settings.ordersPausedReason || "Loja temporariamente pausada para novos pedidos"}
-          </div>
-        )}
-
+    <main className="mx-auto w-full max-w-6xl px-3 pb-28 pt-3 md:px-8 md:pt-6">
+      <section className="reveal overflow-hidden rounded-[2rem] border border-white/60 bg-white/85 shadow-2xl shadow-orange-950/10 backdrop-blur dark:border-white/10 dark:bg-slate-950/80">
         <div
-          className="relative mt-4 overflow-hidden rounded-2xl p-4 text-white"
+          className="relative min-h-[260px] overflow-hidden p-4 text-white md:p-7"
           style={
             settings?.promoBannerImageUrl
               ? {
-                  backgroundImage: `linear-gradient(90deg, rgba(15,23,42,.82), rgba(15,23,42,.28)), url("${resolveAssetUrl(settings.promoBannerImageUrl)}")`,
+                  backgroundImage: `linear-gradient(135deg, rgba(15,23,42,.92), rgba(15,23,42,.55)), url("${resolveAssetUrl(settings.promoBannerImageUrl)}")`,
                   backgroundPosition: "center",
                   backgroundSize: "cover"
                 }
               : {
-                  backgroundImage: "linear-gradient(90deg, var(--tenant-primary), var(--tenant-secondary))"
+                  backgroundImage: "radial-gradient(circle at top right, var(--tenant-secondary), transparent 34%), linear-gradient(135deg, var(--tenant-primary), #111827 72%)"
                 }
           }
         >
-          <p className="font-display text-2xl">{settings?.promoBannerTitle || "PROMO DA NOITE"}</p>
-          <p>{settings?.promoBannerText || "Confira nossos cupons e promocoes"}</p>
+          <div className="absolute -right-12 -top-12 h-44 w-44 rounded-full bg-white/10 blur-2xl" />
+          <div className="relative z-10 flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white shadow-xl shadow-black/20">
+                {company?.logoUrl ? (
+                  <Image src={resolveAssetUrl(company.logoUrl)} alt={`Logo ${company.tradeName}`} width={64} height={64} className="h-full w-full object-contain p-1" unoptimized />
+                ) : (
+                  <Store className="text-slate-900" size={30} />
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="mb-1 flex flex-wrap items-center gap-2">
+                  <span className={`rounded-full px-3 py-1 text-xs font-black ${storeOpen ? "bg-emerald-400 text-emerald-950" : "bg-red-400 text-red-950"}`}>
+                    {storeOpen ? "Aberto agora" : "Fechado"}
+                  </span>
+                  {company?.category && <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold">{company.category}</span>}
+                </div>
+                <h1 className="font-display text-4xl leading-none tracking-wide md:text-6xl">
+                  {company?.tradeName ?? settings?.companyName ?? "HubRegional"}
+                </h1>
+                <p className="mt-2 max-w-xl text-sm text-white/85 md:text-base">
+                  {settings?.promoBannerText || "Pe?a seus favoritos com uma experi?ncia r?pida, bonita e feita para delivery regional."}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-2">
+              {customer ? (
+                <a href="/profile" className="rounded-full bg-white/15 px-3 py-2 text-sm font-bold backdrop-blur" title="Meu perfil">
+                  <User size={18} className="inline sm:hidden" />
+                  <span className="hidden sm:inline">Ol?, {customer.name.split(" ")[0]}</span>
+                </a>
+              ) : (
+                <a href="/account" className="rounded-full bg-white px-3 py-2 text-sm font-black text-slate-900 shadow-lg">
+                  Entrar
+                </a>
+              )}
+              <button className="rounded-full bg-white/15 p-2 backdrop-blur" onClick={() => setDark((v) => !v)} aria-label="Alternar tema">
+                {dark ? <Sun size={18} /> : <Moon size={18} />}
+              </button>
+            </div>
+          </div>
+
+          <div className="relative z-10 mt-6 grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
+            <div className="rounded-2xl bg-white/14 p-3 backdrop-blur">
+              <Clock size={18} />
+              <p className="mt-1 font-black">{company?.deliveryTimeMin ?? 35} min</p>
+              <p className="text-xs text-white/75">tempo m?dio</p>
+            </div>
+            <div className="rounded-2xl bg-white/14 p-3 backdrop-blur">
+              <Bike size={18} />
+              <p className="mt-1 font-black">{money(Number(company?.deliveryFee ?? settings?.deliveryFee ?? 0))}</p>
+              <p className="text-xs text-white/75">taxa base</p>
+            </div>
+            <div className="rounded-2xl bg-white/14 p-3 backdrop-blur">
+              <Star size={18} />
+              <p className="mt-1 font-black">{Number(company?.rating ?? 5).toFixed(1)}</p>
+              <p className="text-xs text-white/75">avalia??o</p>
+            </div>
+            <div className="rounded-2xl bg-white/14 p-3 backdrop-blur">
+              <MapPin size={18} />
+              <p className="mt-1 truncate font-black">{company?.city || "Sua cidade"}</p>
+              <p className="text-xs text-white/75">atendimento local</p>
+            </div>
+          </div>
+
+          <div className="relative z-10 mt-5 flex flex-wrap gap-2 text-sm">
+            {company?.whatsapp && (
+              <a className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 font-black text-slate-900" href={`https://wa.me/55${company.whatsapp.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">
+                <MessageCircle size={16} /> WhatsApp
+              </a>
+            )}
+            {company?.instagram && (
+              <a className="inline-flex items-center gap-2 rounded-full bg-white/15 px-4 py-2 font-bold backdrop-blur" href={`https://instagram.com/${company.instagram.replace("@", "")}`} target="_blank" rel="noreferrer">
+                <Instagram size={16} /> Instagram
+              </a>
+            )}
+          </div>
+        </div>
+
+        {settings?.ordersPaused && (
+          <div className="bg-red-600 p-3 text-center font-semibold text-white">
+            {settings.ordersPausedReason || "Loja temporariamente pausada para novos pedidos"}
+          </div>
+        )}
+      </section>
+
+      <section className="sticky top-0 z-30 -mx-3 mt-3 bg-[#fff7ed]/85 px-3 py-3 backdrop-blur dark:bg-slate-950/85 md:static md:mx-0 md:bg-transparent md:px-0 md:backdrop-blur-0">
+        <div className="card-surface flex items-center gap-2 rounded-2xl px-4 py-3 shadow-lg shadow-orange-950/5">
+          <Search size={18} className="opacity-60" />
+          <input
+            className="w-full bg-transparent text-sm outline-none"
+            placeholder="Buscar produto, categoria, complemento ou promo??o..."
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
+        <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+          <button className={`shrink-0 rounded-full px-4 py-2 text-sm font-bold ${selectedCategory === "all" ? "bg-ink text-white dark:bg-ember" : "card-surface"}`} onClick={() => setSelectedCategory("all")}>
+            Todos
+          </button>
+          {categories.map((category) => (
+            <button key={category.id} className={`shrink-0 rounded-full px-4 py-2 text-sm font-bold ${selectedCategory === category.id ? "bg-ink text-white dark:bg-ember" : "card-surface"}`} onClick={() => setSelectedCategory(category.id)}>
+              {category.name}
+            </button>
+          ))}
         </div>
       </section>
 
-      <section className="mt-4 flex gap-2 overflow-x-auto pb-1">
-        <button
-          className={`rounded-full px-4 py-2 text-sm ${selectedCategory === "all" ? "bg-ink text-white dark:bg-ember" : "card-surface"}`}
-          onClick={() => setSelectedCategory("all")}
-        >
-          Todos
-        </button>
-        {categories.map((category) => (
-          <button
-            key={category.id}
-            className={`rounded-full px-4 py-2 text-sm ${selectedCategory === category.id ? "bg-ink text-white dark:bg-ember" : "card-surface"}`}
-            onClick={() => setSelectedCategory(category.id)}
-          >
-            {category.name}
-          </button>
-        ))}
+      {promoProducts.length > 0 && selectedCategory === "all" && !query && (
+        <section className="mt-5">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.25em] text-ember">Ofertas</p>
+              <h2 className="font-display text-3xl">Promo??es do dia</h2>
+            </div>
+            <Tag className="text-ember" />
+          </div>
+          <div className="flex gap-3 overflow-x-auto pb-2">
+            {promoProducts.map((product) => (
+              <button key={product.id} className="group w-64 shrink-0 overflow-hidden rounded-3xl bg-white text-left shadow-xl shadow-orange-950/10 transition hover:-translate-y-1 dark:bg-slate-900" onClick={() => beginProductConfiguration(product)}>
+                <div className="relative h-36 bg-slate-200/40">
+                  <Image src={resolveAssetUrl(product.imageUrl) || "https://images.unsplash.com/photo-1550547660-d9450f859349"} alt={product.name} fill className="object-cover" unoptimized />
+                  <span className="absolute left-3 top-3 rounded-full bg-ember px-3 py-1 text-xs font-black text-white">Oferta</span>
+                </div>
+                <div className="p-4">
+                  <h3 className="line-clamp-1 font-black">{product.name}</h3>
+                  <p className="mt-1 line-clamp-2 text-sm opacity-65">{product.description}</p>
+                  <div className="mt-3 flex items-end gap-2">
+                    <strong className="text-xl text-ember">{money(product.promoPrice ?? product.price)}</strong>
+                    <span className="text-xs opacity-50 line-through">{money(product.price)}</span>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {bestSellers.length > 0 && selectedCategory === "all" && !query && (
+        <section className="mt-5">
+          <div className="mb-3 flex items-center gap-2">
+            <Flame className="text-ember" />
+            <h2 className="font-display text-3xl">Mais vendidos</h2>
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            {bestSellers.slice(0, 3).map((product, index) => (
+              <button key={product.id} className="card-surface flex items-center gap-3 p-3 text-left transition hover:-translate-y-0.5" onClick={() => beginProductConfiguration(product)}>
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ember font-black text-white">{index + 1}</span>
+                <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-black/5">
+                  <Image src={resolveAssetUrl(product.imageUrl) || "https://images.unsplash.com/photo-1550547660-d9450f859349"} alt={product.name} fill className="object-cover" unoptimized />
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate font-black">{product.name}</p>
+                  <p className="text-sm text-ember">{money(product.promoPrice ?? product.price)}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {newestProducts.length > 0 && selectedCategory === "all" && !query && (
+        <section className="mt-5">
+          <div className="mb-3 flex items-center gap-2">
+            <Sparkles className="text-emerald-600" />
+            <h2 className="font-display text-3xl">Novidades</h2>
+          </div>
+          <div className="no-scrollbar flex gap-3 overflow-x-auto pb-1">
+            {newestProducts.map((product) => (
+              <button
+                key={product.id}
+                className="card-surface w-64 shrink-0 overflow-hidden text-left transition hover:-translate-y-0.5"
+                onClick={() => beginProductConfiguration(product)}
+              >
+                <div className="relative h-28 bg-black/5">
+                  <Image
+                    src={resolveAssetUrl(product.imageUrl) || "https://images.unsplash.com/photo-1550547660-d9450f859349"}
+                    alt={product.name}
+                    fill
+                    className="object-cover"
+                    unoptimized
+                  />
+                  <span className="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-1 text-[11px] font-black text-slate-900 shadow">
+                    Novo
+                  </span>
+                </div>
+                <div className="p-3">
+                  <p className="line-clamp-1 font-black">{product.name}</p>
+                  <p className="mt-1 line-clamp-2 text-xs opacity-65">{product.description}</p>
+                  <p className="mt-2 font-black text-ember">{money(product.promoPrice ?? product.price)}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className="mt-4">
+        <div className="mb-3 flex items-end justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] opacity-60">Card?pio</p>
+            <h2 className="font-display text-3xl">{selectedCategoryName}</h2>
+          </div>
+          <span className="rounded-full bg-black/5 px-3 py-1 text-sm font-bold dark:bg-white/10">{filtered.length} itens</span>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {filtered.map((product, index) => {
+            const unit = product.promoPrice ?? product.price;
+            const hasPromo = Boolean(product.promoPrice && product.promoPrice < product.price);
+            return (
+              <article key={product.id} className="card-surface reveal group overflow-hidden transition duration-200 hover:-translate-y-1 hover:shadow-2xl" style={{ animationDelay: `${index * 45}ms` }}>
+                <button className="block w-full text-left" onClick={() => beginProductConfiguration(product)}>
+                  <div className="relative h-44 w-full bg-slate-200/40">
+                    <Image src={resolveAssetUrl(product.imageUrl) || "https://images.unsplash.com/photo-1550547660-d9450f859349"} alt={product.name} fill className="object-cover transition duration-300 group-hover:scale-105" sizes="(max-width: 768px) 100vw, 33vw" unoptimized />
+                    {hasPromo && <span className="absolute left-3 top-3 rounded-full bg-ember px-3 py-1 text-xs font-black text-white">Promo</span>}
+                  </div>
+                </button>
+                <div className="p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <button className="min-w-0 text-left" onClick={() => beginProductConfiguration(product)}>
+                      <h3 className="line-clamp-1 text-lg font-black leading-tight">{product.name}</h3>
+                      <p className="mt-1 line-clamp-2 text-sm opacity-70">{product.description}</p>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setFavorites((prev) => prev.includes(product.id) ? prev.filter((id) => id !== product.id) : [...prev, product.id]);
+                        void api("/favorites/toggle", { method: "POST", body: JSON.stringify({ phone: customerPhone || "guest", productId: product.id }) }).catch(() => undefined);
+                      }}
+                      className={`grid h-9 w-9 shrink-0 place-items-center rounded-full ${favorites.includes(product.id) ? "bg-ember text-white" : "bg-black/5 dark:bg-white/10"}`}
+                      aria-label="Favoritar"
+                    >
+                      <Heart size={16} fill={favorites.includes(product.id) ? "currentColor" : "none"} />
+                    </button>
+                  </div>
+                  <div className="mt-4 flex items-end justify-between gap-3">
+                    <div>
+                      {hasPromo && <p className="text-xs opacity-50 line-through">{money(product.price)}</p>}
+                      <p className="text-xl font-black text-ember">{money(unit)}</p>
+                    </div>
+                    <button className="inline-flex items-center gap-1 rounded-2xl bg-ink px-4 py-2 text-sm font-black text-white dark:bg-ember" onClick={() => beginProductConfiguration(product)}>
+                      <Plus size={16} /> {product.complements?.length ? "Montar" : "Adicionar"}
+                    </button>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+        {!filtered.length && (
+          <div className="card-surface mt-4 p-8 text-center">
+            <p className="font-display text-3xl">Nada encontrado</p>
+            <p className="mt-1 text-sm opacity-70">Tente buscar por outro produto, categoria ou promo??o.</p>
+          </div>
+        )}
       </section>
 
-      <section className="mt-4 card-surface flex items-center gap-2 px-3 py-2">
-        <Search size={16} className="opacity-60" />
-        <input
-          className="w-full bg-transparent text-sm outline-none"
-          placeholder="Busque hamburguer, pizza, bebida..."
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-      </section>
-
-      <section className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
-        {filtered.map((product, index) => {
-          const unit = product.promoPrice ?? product.price;
-          return (
-            <article key={product.id} className="card-surface reveal overflow-hidden" style={{ animationDelay: `${index * 60}ms` }}>
-              <div className="relative h-36 w-full bg-slate-200/40">
-                <Image
-                  src={resolveAssetUrl(product.imageUrl) || "https://images.unsplash.com/photo-1550547660-d9450f859349"}
-                  alt={product.name}
-                  fill
-                  className="object-cover"
-                  sizes="(max-width: 768px) 100vw, 33vw"
-                  unoptimized
-                />
-              </div>
-              <div className="p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <h3 className="text-lg font-semibold leading-tight">{product.name}</h3>
-                  <button
-                    onClick={() => {
-                      setFavorites((prev) =>
-                        prev.includes(product.id) ? prev.filter((id) => id !== product.id) : [...prev, product.id]
-                      );
-                      void api("/favorites/toggle", {
-                        method: "POST",
-                        body: JSON.stringify({ phone: customerPhone || "guest", productId: product.id })
-                      }).catch(() => undefined);
-                    }}
-                    className={`rounded-full px-2 py-1 text-xs ${favorites.includes(product.id) ? "bg-ember text-white" : "bg-black/5 dark:bg-white/10"}`}
-                  >
-                    Favorito
-                  </button>
-                </div>
-                <p className="mt-1 text-sm opacity-70">{product.description}</p>
-                <div className="mt-3 flex items-center justify-between">
-                  <p className="font-semibold text-ember">{money(unit)}</p>
-                  <button className="rounded-xl bg-ink px-3 py-2 text-xs font-semibold text-white dark:bg-ember" onClick={() => beginProductConfiguration(product)}>
-                    {product.complements?.length ? "Montar" : "Adicionar"}
-                  </button>
-                </div>
-              </div>
-            </article>
-          );
-        })}
+      <section className="mt-6 grid gap-3 md:grid-cols-3">
+        <div className="card-surface p-4">
+          <p className="text-xs font-black uppercase tracking-wide text-ember">CRM futuro</p>
+          <h3 className="mt-1 font-black">Clientes e fidelidade</h3>
+          <p className="mt-1 text-sm opacity-70">Estrutura visual preparada para hist?rico, frequ?ncia, cupons e campanhas.</p>
+        </div>
+        <div className="card-surface p-4">
+          <p className="text-xs font-black uppercase tracking-wide text-emerald-600">Compras</p>
+          <h3 className="mt-1 font-black">?ltima compra e total gasto</h3>
+          <p className="mt-1 text-sm opacity-70">Base para relacionamento por loja sem misturar clientes entre empresas.</p>
+        </div>
+        <div className="card-surface p-4">
+          <p className="text-xs font-black uppercase tracking-wide text-blue-600">Marketing</p>
+          <h3 className="mt-1 font-black">Recupera??o e campanhas</h3>
+          <p className="mt-1 text-sm opacity-70">Pronto para segmentar clientes inativos e ofertas regionais.</p>
+        </div>
       </section>
 
       <button
@@ -954,33 +1127,53 @@ export function Storefront() {
 
       {openCart && (
         <section className="fixed inset-0 z-50 bg-black/45 p-3 md:flex md:items-center md:justify-center" onClick={() => setOpenCart(false)}>
-          <div className="card-surface mx-auto mt-8 max-h-[90vh] w-full max-w-xl overflow-y-auto p-4" onClick={(event) => event.stopPropagation()}>
-            <h2 className="font-display text-3xl">Seu Pedido</h2>
+          <div className="card-surface mx-auto mt-8 max-h-[90vh] w-full max-w-xl overflow-y-auto p-4 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-ember">Sacola</p>
+                <h2 className="font-display text-4xl leading-none">Seu pedido</h2>
+                <p className="mt-1 text-sm opacity-65">Confira os itens, endereço, cupom e pagamento antes de finalizar.</p>
+              </div>
+              <button
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-black/5 dark:bg-white/10"
+                onClick={() => setOpenCart(false)}
+                aria-label="Fechar sacola"
+              >
+                <X size={18} />
+              </button>
+            </div>
 
             <div className="mt-3 space-y-2">
+              {!cart.length && (
+                <div className="rounded-2xl border border-dashed border-black/10 p-6 text-center dark:border-white/10">
+                  <ShoppingCart className="mx-auto opacity-35" size={34} />
+                  <p className="mt-2 font-black">Sua sacola está vazia</p>
+                  <p className="mt-1 text-sm opacity-65">Escolha um produto do cardápio para começar.</p>
+                </div>
+              )}
               {cart.map((item) => {
                 const extras = item.complements.reduce(
                   (sum, selected) => sum + selected.complement.price * selected.quantity,
                   0
                 );
                 return (
-                <div key={item.id} className="flex items-center justify-between rounded-xl border border-black/10 p-2 dark:border-white/10">
-                  <div>
-                    <p className="font-medium">{item.product.name}</p>
+                <div key={item.id} className="flex items-center justify-between gap-3 rounded-2xl border border-black/10 bg-white/70 p-3 shadow-sm dark:border-white/10 dark:bg-white/5">
+                  <div className="min-w-0">
+                    <p className="line-clamp-1 font-black">{item.product.name}</p>
                     {item.complements.map((selected) => (
                       <p key={selected.complement.id} className="text-xs opacity-65">
                         + {selected.quantity}x {selected.complement.name}
                       </p>
                     ))}
-                    <p className="text-sm opacity-70">{money(((item.product.promoPrice ?? item.product.price) + extras) * item.quantity)}</p>
+                    <p className="mt-1 text-sm font-bold text-ember">{money(((item.product.promoPrice ?? item.product.price) + extras) * item.quantity)}</p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button className="rounded-md bg-black/10 px-2 dark:bg-white/10" onClick={() => setItemQuantity(item.id, item.quantity - 1)}>
-                      -
+                  <div className="flex shrink-0 items-center gap-2 rounded-full bg-black/5 p-1 dark:bg-white/10">
+                    <button className="grid h-8 w-8 place-items-center rounded-full bg-white shadow-sm dark:bg-slate-900" onClick={() => setItemQuantity(item.id, item.quantity - 1)}>
+                      <Minus size={14} />
                     </button>
-                    <span>{item.quantity}</span>
-                    <button className="rounded-md bg-black/10 px-2 dark:bg-white/10" onClick={() => setItemQuantity(item.id, item.quantity + 1)}>
-                      +
+                    <span className="min-w-6 text-center font-black">{item.quantity}</span>
+                    <button className="grid h-8 w-8 place-items-center rounded-full bg-ink text-white dark:bg-ember" onClick={() => setItemQuantity(item.id, item.quantity + 1)}>
+                      <Plus size={14} />
                     </button>
                   </div>
                 </div>
@@ -1172,15 +1365,35 @@ export function Storefront() {
               </div>
             )}
 
-            <div className="mt-4 space-y-1 text-sm">
-              <p>Subtotal: {money(subtotal)}</p>
-              <p>{fulfillmentType === "PICKUP" ? "Retirada na loja" : `Taxa de entrega: ${money(deliveryFee)}`}</p>
-              <p>Desconto: {money(discount)}</p>
-              <p className="text-lg font-bold">Total: {money(total)}</p>
+            <div className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm dark:bg-white/5">
+              <div className="mb-3 flex items-center gap-2">
+                <Tag size={16} className="text-ember" />
+                <p className="font-black">Resumo do pedido</p>
+              </div>
+              <div className="space-y-2">
+                <div className="flex justify-between gap-3">
+                  <span className="opacity-70">Subtotal</span>
+                  <strong>{money(subtotal)}</strong>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="opacity-70">{fulfillmentType === "PICKUP" ? "Retirada" : "Taxa de entrega"}</span>
+                  <strong>{fulfillmentType === "PICKUP" ? "Grátis" : money(deliveryFee)}</strong>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="opacity-70">Desconto</span>
+                  <strong className={discount > 0 ? "text-emerald-600" : ""}>{money(discount)}</strong>
+                </div>
+                <div className="border-t border-black/10 pt-3 dark:border-white/10">
+                  <div className="flex items-end justify-between gap-3">
+                    <span className="font-black">Total</span>
+                    <strong className="text-2xl text-ember">{money(total)}</strong>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <button
-              className="mt-4 w-full rounded-xl bg-ember px-4 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-4 w-full rounded-2xl bg-ember px-4 py-4 text-lg font-black text-white shadow-xl shadow-orange-500/25 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={isSubmitting || settings?.ordersPaused}
               onClick={() => void handleSubmit(finishOrder)()}
             >
@@ -1276,72 +1489,111 @@ export function Storefront() {
       )}
 
       {configuringProduct && (
-        <section className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-3" onClick={() => setConfiguringProduct(null)}>
-          <div className="card-surface max-h-[90vh] w-full max-w-xl overflow-y-auto p-4" onClick={(event) => event.stopPropagation()}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="font-display text-3xl">Monte seu {configuringProduct.name}</h2>
-                <p className="text-sm opacity-70">Escolha os complementos e quantidades.</p>
+        <section className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 p-0 md:items-center md:p-4" onClick={() => setConfiguringProduct(null)}>
+          <div className="relative max-h-[94vh] w-full max-w-2xl overflow-hidden rounded-t-[2rem] bg-white text-slate-950 shadow-2xl dark:bg-slate-950 dark:text-white md:rounded-[2rem]" onClick={(event) => event.stopPropagation()}>
+            <div className="relative h-64 bg-slate-200 md:h-72">
+              <Image
+                src={resolveAssetUrl(configuringProduct.imageUrl) || "https://images.unsplash.com/photo-1550547660-d9450f859349"}
+                alt={configuringProduct.name}
+                fill
+                unoptimized
+                className="object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-transparent to-black/25" />
+              <button className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-full bg-white/90 text-slate-900 shadow-lg" onClick={() => setConfiguringProduct(null)} aria-label="Fechar produto">
+                <X size={18} />
+              </button>
+              {configuringProduct.promoPrice && configuringProduct.promoPrice < configuringProduct.price && (
+                <span className="absolute left-4 top-4 rounded-full bg-ember px-3 py-1 text-xs font-black text-white shadow-lg">Promo??o</span>
+              )}
+              <div className="absolute bottom-4 left-4 right-4 text-white">
+                <h2 className="font-display text-4xl leading-none">{configuringProduct.name}</h2>
+                <p className="mt-1 line-clamp-2 text-sm text-white/85">{configuringProduct.description}</p>
               </div>
-              <button className="rounded-lg border px-3 py-1" onClick={() => setConfiguringProduct(null)}>Fechar</button>
             </div>
 
-            <div className="mt-4 space-y-3">
-              {configuringProduct.complements
-                .filter((link) => link.complement.active)
-                .map((link) => {
-                  const quantity = complementQuantities[link.complementId] ?? 0;
-                  return (
-                    <article key={link.id} className={`flex gap-3 rounded-xl border p-3 ${quantity > 0 ? "border-ember" : "border-black/10 dark:border-white/10"}`}>
-                      <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-black/5">
-                        {link.complement.imageUrl ? (
-                          <Image src={resolveAssetUrl(link.complement.imageUrl)} alt={link.complement.name} fill unoptimized className="object-cover" />
-                        ) : null}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-start justify-between gap-2">
-                          <div>
-                            <p className="font-semibold">{link.complement.name}</p>
-                            <p className="text-xs opacity-65">{link.complement.description}</p>
-                            <p className="text-sm text-ember">
-                              {link.complement.price > 0 ? `+ ${money(link.complement.price)}` : "Sem adicional"}
-                            </p>
+            <div className="max-h-[calc(94vh-16rem)] overflow-y-auto p-4 pb-28 md:max-h-[54vh] md:p-5 md:pb-28">
+              <div className="flex items-end justify-between gap-3 rounded-2xl bg-orange-50 p-4 dark:bg-white/5">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide opacity-60">Pre?o do item</p>
+                  {configuringProduct.promoPrice && configuringProduct.promoPrice < configuringProduct.price && (
+                    <p className="text-sm opacity-50 line-through">{money(configuringProduct.price)}</p>
+                  )}
+                  <p className="text-3xl font-black text-ember">{money(configuringProduct.promoPrice ?? configuringProduct.price)}</p>
+                </div>
+                <div className="flex items-center gap-2 rounded-full bg-white p-1 shadow-sm dark:bg-slate-900">
+                  <button className="grid h-10 w-10 place-items-center rounded-full bg-black/5 disabled:opacity-40 dark:bg-white/10" disabled={configuringQuantity <= 1} onClick={() => setConfiguringQuantity((value) => Math.max(1, value - 1))}>
+                    <Minus size={16} />
+                  </button>
+                  <strong className="min-w-8 text-center">{configuringQuantity}</strong>
+                  <button className="grid h-10 w-10 place-items-center rounded-full bg-ink text-white dark:bg-ember" onClick={() => setConfiguringQuantity((value) => value + 1)}>
+                    <Plus size={16} />
+                  </button>
+                </div>
+              </div>
+
+              {configuringProduct.complements.filter((link) => link.complement.active).length > 0 ? (
+                <div className="mt-5 space-y-4">
+                  {configuringProduct.complements
+                    .filter((link) => link.complement.active)
+                    .map((link) => {
+                      const quantity = complementQuantities[link.complementId] ?? 0;
+                      return (
+                        <article key={link.id} className={`overflow-hidden rounded-2xl border ${quantity > 0 ? "border-ember bg-orange-50/70 dark:bg-orange-950/20" : "border-black/10 dark:border-white/10"}`}>
+                          <div className="flex gap-3 p-3">
+                            <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-black/5 dark:bg-white/10">
+                              {link.complement.imageUrl ? (
+                                <Image src={resolveAssetUrl(link.complement.imageUrl)} alt={link.complement.name} fill unoptimized className="object-cover" />
+                              ) : (
+                                <div className="grid h-full w-full place-items-center text-xs opacity-50">Extra</div>
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start justify-between gap-2">
+                                <div>
+                                  <p className="font-black">{link.complement.name}</p>
+                                  <p className="mt-0.5 line-clamp-2 text-xs opacity-65">{link.complement.description}</p>
+                                  <p className="mt-1 text-sm font-bold text-ember">
+                                    {link.complement.price > 0 ? `+ ${money(link.complement.price)}` : "Sem adicional"}
+                                  </p>
+                                </div>
+                                <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-black ${link.required ? "bg-red-100 text-red-700" : "bg-black/5 dark:bg-white/10"}`}>
+                                  {link.required ? "Obrigat?rio" : "Opcional"}
+                                </span>
+                              </div>
+                              <div className="mt-3 flex items-center justify-end gap-2">
+                                <button className="grid h-9 w-9 place-items-center rounded-full bg-black/10 disabled:opacity-40 dark:bg-white/10" disabled={link.required && quantity <= 1} onClick={() => setComplementQuantities((current) => ({ ...current, [link.complementId]: Math.max(link.required ? 1 : 0, quantity - 1) }))}>
+                                  <Minus size={15} />
+                                </button>
+                                <span className="min-w-7 text-center font-black">{quantity}</span>
+                                <button className="grid h-9 w-9 place-items-center rounded-full bg-ink text-white dark:bg-ember" onClick={() => setComplementQuantities((current) => ({ ...current, [link.complementId]: quantity + 1 }))}>
+                                  <Plus size={15} />
+                                </button>
+                              </div>
+                            </div>
                           </div>
-                          <span className={`rounded-full px-2 py-1 text-xs ${link.required ? "bg-red-100 text-red-700" : "bg-black/5 dark:bg-white/10"}`}>
-                            {link.required ? "Obrigatorio" : "Opcional"}
-                          </span>
-                        </div>
-                        <div className="mt-2 flex items-center gap-2">
-                          <button
-                            className="rounded-lg bg-black/10 px-3 py-1 dark:bg-white/10 disabled:opacity-40"
-                            disabled={link.required && quantity <= 1}
-                            onClick={() => setComplementQuantities((current) => ({
-                              ...current,
-                              [link.complementId]: Math.max(link.required ? 1 : 0, quantity - 1)
-                            }))}
-                          >
-                            -
-                          </button>
-                          <span className="min-w-6 text-center">{quantity}</span>
-                          <button
-                            className="rounded-lg bg-black/10 px-3 py-1 dark:bg-white/10"
-                            onClick={() => setComplementQuantities((current) => ({
-                              ...current,
-                              [link.complementId]: quantity + 1
-                            }))}
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-                    </article>
-                  );
-                })}
+                        </article>
+                      );
+                    })}
+                </div>
+              ) : (
+                <div className="mt-5 rounded-2xl border border-dashed border-black/10 p-4 text-sm opacity-70 dark:border-white/10">
+                  Este item n?o possui complementos. Escolha a quantidade e adicione ? sacola.
+                </div>
+              )}
             </div>
 
-            <button className="mt-4 w-full rounded-xl bg-ember px-4 py-3 font-semibold text-white" onClick={confirmProductConfiguration}>
-              Adicionar ao carrinho
-            </button>
+            <div className="fixed bottom-0 left-0 right-0 z-[61] border-t border-black/10 bg-white/95 p-3 backdrop-blur dark:border-white/10 dark:bg-slate-950/95 md:absolute md:left-auto md:right-auto md:w-full md:max-w-2xl md:rounded-b-[2rem]">
+              <div className="mx-auto flex max-w-2xl items-center gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold uppercase opacity-55">Total</p>
+                  <p className="text-2xl font-black text-ember">{money(productModalTotal)}</p>
+                </div>
+                <button className="rounded-2xl bg-ember px-5 py-4 font-black text-white shadow-xl shadow-orange-500/25" onClick={confirmProductConfiguration}>
+                  Adicionar ? sacola
+                </button>
+              </div>
+            </div>
           </div>
         </section>
       )}
