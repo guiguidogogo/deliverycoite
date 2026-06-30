@@ -139,6 +139,7 @@ import {
   deleteDiningArea,
   deleteTable,
   getPublicTable,
+  listTableOrders,
   listDiningAreas,
   listTables,
   updateDiningArea,
@@ -265,6 +266,7 @@ route.get("/admin/tables", requirePermission("SETTINGS"), listTables);
 route.post("/admin/tables", requirePermission("SETTINGS"), createTable);
 route.patch("/admin/tables/:id", requirePermission("SETTINGS"), updateTable);
 route.patch("/admin/tables/:id/status", requirePermission("SETTINGS"), updateTableStatus);
+route.get("/admin/tables/:id/orders", requirePermission("ORDERS"), listTableOrders);
 route.delete("/admin/tables/:id", requirePermission("SETTINGS"), deleteTable);
 route.get("/admin/reports/orders.xlsx", requirePermission("REPORTS"), exportOrdersExcel);
 route.get("/admin/reports/orders.pdf", requirePermission("REPORTS"), exportOrdersPdf);

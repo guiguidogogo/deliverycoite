@@ -166,6 +166,36 @@ export async function updateTableStatus(req: Request, res: Response) {
   return res.json({ ...table, qrCodeUrl: publicTableUrl(req, table, subdomain) });
 }
 
+export async function listTableOrders(req: Request, res: Response) {
+  const table = await prisma.restaurantTable.findFirst({
+    where: { id: req.params.id, companyId: getCompanyId(req), active: true },
+    select: { id: true }
+  });
+  if (!table) return res.status(404).json({ message: "Mesa nao encontrada" });
+
+  const orders = await prisma.order.findMany({
+    where: {
+      companyId: getCompanyId(req),
+      tableId: table.id,
+      deletedAt: null,
+      status: { notIn: ["FINISHED", "CANCELED"] }
+    },
+    include: {
+      customer: true,
+      waiter: { select: { id: true, name: true } },
+      items: {
+        include: {
+          product: { select: { id: true, name: true } },
+          complements: true
+        }
+      }
+    },
+    orderBy: { createdAt: "asc" }
+  });
+
+  return res.json(orders);
+}
+
 export async function deleteTable(req: Request, res: Response) {
   await prisma.restaurantTable.update({
     where: { id: req.params.id, companyId: getCompanyId(req) },

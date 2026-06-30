@@ -485,6 +485,9 @@ export function AdminPanel() {
         {can("SETTINGS") && <a className="rounded-lg bg-emerald-700 px-3 py-2 text-sm text-white" href="/admin/manage/tables">
           Mesas / QR Code
         </a>}
+        {can("ORDERS") && <a className="rounded-lg bg-orange-600 px-3 py-2 text-sm text-white" href="/admin/manage/pdv">
+          PDV Mesas
+        </a>}
         {can("CUSTOMERS") && <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/customers">
           Clientes
         </a>}
