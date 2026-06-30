@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Bike, Clock, Flame, Heart, Instagram, MapPin, MessageCircle, Minus, Moon, Plus, Search, ShoppingCart, Sparkles, Star, Store, Sun, Tag, User, X } from "lucide-react";
 import { toast } from "sonner";
@@ -62,6 +63,8 @@ type CheckoutPayload = {
     longitude?: number;
   };
   fulfillmentType: "DELIVERY" | "PICKUP";
+  source?: "DELIVERY" | "TABLE" | "COUNTER" | "WAITER";
+  tableId?: string;
   paymentMethod: "CASH" | "PIX" | "CARD" | "MERCADO_PAGO";
   changeFor?: number;
   couponCode?: string;
@@ -98,10 +101,12 @@ function clearStoredCart(company?: PublicCompany | null) {
 }
 
 export function Storefront() {
+  const pathname = usePathname();
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [company, setCompany] = useState<PublicCompany | null>(null);
+  const [tableContext, setTableContext] = useState<{ id: string; number: number; name?: string | null; area?: { name: string } | null } | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [query, setQuery] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -153,6 +158,10 @@ export function Storefront() {
   const typedAddress = watch("address") || "";
   const typedNumber = watch("number") || "";
   const typedDistrict = watch("district") || "";
+  const tableNumber = useMemo(() => {
+    const match = pathname?.match(/^\/mesa\/(\d+)/);
+    return match ? Number(match[1]) : null;
+  }, [pathname]);
 
   useEffect(() => {
     let canceled = false;
@@ -162,6 +171,14 @@ export function Storefront() {
         const tenantCompany = await api<PublicCompany>("/company");
         if (canceled) return;
         setCompany(tenantCompany);
+        if (tableNumber) {
+          const table = await api<{ id: string; number: number; name?: string | null; area?: { name: string } | null }>(`/tables/${tableNumber}`);
+          if (canceled) return;
+          setTableContext(table);
+          setValue("fulfillmentType", "PICKUP");
+        } else {
+          setTableContext(null);
+        }
         document.documentElement.style.setProperty("--tenant-primary", tenantCompany.primaryColor);
         document.documentElement.style.setProperty("--tenant-secondary", tenantCompany.secondaryColor);
         if (tenantCompany.faviconUrl) {
@@ -211,7 +228,7 @@ export function Storefront() {
     return () => {
       canceled = true;
     };
-  }, []);
+  }, [setValue, tableNumber]);
 
   useEffect(() => {
 
@@ -485,7 +502,7 @@ export function Storefront() {
     return acc + unit * item.quantity;
   }, 0);
   const deliveryFee =
-    cart.length === 0 || fulfillmentType === "PICKUP"
+    cart.length === 0 || fulfillmentType === "PICKUP" || tableContext
       ? 0
       : settings?.deliveryFeeTiers?.length
         ? (quotedDeliveryFee ?? 0)
@@ -714,6 +731,7 @@ export function Storefront() {
     }
     if (
       values.fulfillmentType === "DELIVERY" &&
+      !tableContext &&
       settings.deliveryFeeTiers?.length &&
       (!deliveryLocation || quotedDeliveryFee === null)
     ) {
@@ -732,7 +750,9 @@ export function Storefront() {
         latitude: deliveryLocation?.latitude,
         longitude: deliveryLocation?.longitude
       },
-      fulfillmentType: values.fulfillmentType,
+      fulfillmentType: tableContext ? "PICKUP" : values.fulfillmentType,
+      source: tableContext ? "TABLE" : "DELIVERY",
+      tableId: tableContext?.id,
       paymentMethod: values.paymentMethod === "MERCADO_PAGO_PIX" || values.paymentMethod === "MERCADO_PAGO_CARD" ? "MERCADO_PAGO" : values.paymentMethod,
       changeFor:
         values.paymentMethod === "CASH" && values.needChange && values.changeFor
@@ -922,6 +942,13 @@ export function Storefront() {
         {settings?.ordersPaused && (
           <div className="bg-red-600 p-3 text-center font-semibold text-white">
             {settings.ordersPausedReason || "Loja temporariamente pausada para novos pedidos"}
+          </div>
+        )}
+        {tableContext && (
+          <div className="bg-emerald-600 p-3 text-center font-black text-white">
+            Atendimento na mesa {tableContext.number}
+            {tableContext.name ? ` - ${tableContext.name}` : ""}
+            {tableContext.area?.name ? ` (${tableContext.area.name})` : ""}
           </div>
         )}
       </section>
@@ -1213,15 +1240,21 @@ export function Storefront() {
                 {...register("phone", { onBlur: () => void fillCustomerNameByPhone() })}
               />
 
-              <label className="md:col-span-2">
-                <span className="mb-1 block text-xs font-semibold">Como deseja receber?</span>
-                <select className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" {...register("fulfillmentType")}>
-                  <option value="DELIVERY">Entrega no endereco</option>
-                  <option value="PICKUP">Retirada na loja (sem frete)</option>
-                </select>
-              </label>
+              {tableContext ? (
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-3 font-bold text-emerald-800 md:col-span-2">
+                  Pedido para consumo na mesa {tableContext.number}. A cozinha recebe junto com os pedidos do delivery.
+                </div>
+              ) : (
+                <label className="md:col-span-2">
+                  <span className="mb-1 block text-xs font-semibold">Como deseja receber?</span>
+                  <select className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" {...register("fulfillmentType")}>
+                    <option value="DELIVERY">Entrega no endereco</option>
+                    <option value="PICKUP">Retirada na loja (sem frete)</option>
+                  </select>
+                </label>
+              )}
 
-              {fulfillmentType === "DELIVERY" && (
+              {fulfillmentType === "DELIVERY" && !tableContext && (
                 <>
                   <div className="grid grid-cols-2 gap-2 md:col-span-2">
                     <button
@@ -1376,8 +1409,8 @@ export function Storefront() {
                   <strong>{money(subtotal)}</strong>
                 </div>
                 <div className="flex justify-between gap-3">
-                  <span className="opacity-70">{fulfillmentType === "PICKUP" ? "Retirada" : "Taxa de entrega"}</span>
-                  <strong>{fulfillmentType === "PICKUP" ? "Grátis" : money(deliveryFee)}</strong>
+                  <span className="opacity-70">{tableContext ? `Mesa ${tableContext.number}` : fulfillmentType === "PICKUP" ? "Retirada" : "Taxa de entrega"}</span>
+                  <strong>{tableContext || fulfillmentType === "PICKUP" ? "Grátis" : money(deliveryFee)}</strong>
                 </div>
                 <div className="flex justify-between gap-3">
                   <span className="opacity-70">Desconto</span>

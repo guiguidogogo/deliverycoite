@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { FulfillmentType, OrderStatus, PaymentMethod, Prisma } from "@prisma/client";
+import { FulfillmentType, OrderSource, OrderStatus, PaymentMethod, Prisma } from "@prisma/client";
 import { z } from "zod";
 import { publishNewOrder } from "../services/realtime.js";
 import { printOrder } from "../services/thermal-printer.js";
@@ -42,6 +42,8 @@ const checkoutSchema = z
       longitude: z.number().min(-180).max(180).optional()
     }),
     fulfillmentType: z.nativeEnum(FulfillmentType).default(FulfillmentType.DELIVERY),
+    source: z.nativeEnum(OrderSource).default(OrderSource.DELIVERY),
+    tableId: z.string().optional(),
     paymentMethod: z.nativeEnum(PaymentMethod),
     changeFor: z.coerce.number().optional(),
     couponCode: z.string().optional(),
@@ -60,7 +62,11 @@ const checkoutSchema = z
       .min(1)
   })
   .superRefine((body, ctx) => {
-    if (body.fulfillmentType !== FulfillmentType.DELIVERY) return;
+    if (body.source === OrderSource.TABLE && !body.tableId) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["tableId"], message: "Mesa obrigatoria" });
+    }
+
+    if (body.fulfillmentType !== FulfillmentType.DELIVERY || body.source === OrderSource.TABLE) return;
 
     if (body.customer.address.trim().length < 3) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["customer", "address"], message: "Endereco obrigatorio" });
@@ -152,9 +158,11 @@ function isStoreOpen(openTime: string | null | undefined, closeTime: string | nu
 
 export async function createOrder(req: Request, res: Response) {
   const body = checkoutSchema.parse(req.body);
+  const companyId = getCompanyId(req);
+  const tableOrder = body.source === OrderSource.TABLE;
 
   const settings = await prisma.setting.findFirstOrThrow({
-    where: companyWhere(req),
+    where: { companyId },
     include: { deliveryFeeTiers: true }
   });
 
@@ -166,7 +174,7 @@ export async function createOrder(req: Request, res: Response) {
 
   if (body.paymentMethod === PaymentMethod.MERCADO_PAGO) {
     const company = await prisma.company.findUnique({
-      where: { id: getCompanyId(req) },
+      where: { id: companyId },
       select: {
         mercadoPagoEnabled: true,
         mercadoPagoPublicKey: true,
@@ -186,7 +194,7 @@ export async function createOrder(req: Request, res: Response) {
 
   const productIds = [...new Set(body.items.map((item) => item.productId))];
   const products = await prisma.product.findMany({
-    where: { ...companyWhere(req), id: { in: productIds }, active: true, available: true },
+    where: { companyId, id: { in: productIds }, active: true, available: true },
     include: {
       complements: {
         include: { complement: true },
@@ -258,9 +266,18 @@ export async function createOrder(req: Request, res: Response) {
     ...customerData
   } = body.customer;
   const phone = normalizePhone(body.customer.phone);
+  const table = body.tableId
+    ? await prisma.restaurantTable.findFirst({
+        where: { id: body.tableId, companyId, active: true },
+        select: { id: true, number: true, name: true }
+      })
+    : null;
+  if (tableOrder && !table) {
+    return res.status(400).json({ message: "Mesa invalida para esta loja" });
+  }
   const email = normalizeEmail((body.customer as any).email);
   const linkedCustomer = await linkCustomerToCompany({
-    companyId: getCompanyId(req),
+    companyId,
     name: body.customer.name,
     phone,
     email
@@ -268,20 +285,20 @@ export async function createOrder(req: Request, res: Response) {
   const customer = await prisma.customer.upsert({
     where: {
       companyId_phone: {
-        companyId: getCompanyId(req),
+        companyId,
         phone
       }
     },
     create: {
-      companyId: getCompanyId(req),
+      companyId,
       globalCustomerId: linkedCustomer.globalCustomer.id,
       companyCustomerId: linkedCustomer.companyCustomer.id,
       ...customerData,
       phone,
       email,
-      address: pickup ? "Retirada na loja" : body.customer.address,
-      number: pickup ? "S/N" : body.customer.number,
-      district: pickup ? "Retirada" : body.customer.district
+      address: pickup || tableOrder ? (tableOrder ? `Mesa ${table?.number}` : "Retirada na loja") : body.customer.address,
+      number: pickup || tableOrder ? "S/N" : body.customer.number,
+      district: pickup || tableOrder ? (tableOrder ? "Atendimento na mesa" : "Retirada") : body.customer.district
     },
     update: pickup
       ? {
@@ -310,7 +327,7 @@ export async function createOrder(req: Request, res: Response) {
   if (body.couponCode) {
     const code = body.couponCode.trim().toUpperCase();
     normalizedCouponCode = code;
-    const coupon = await prisma.coupon.findFirst({ where: { code, ...companyWhere(req) } });
+    const coupon = await prisma.coupon.findFirst({ where: { code, companyId } });
 
     if (!coupon || !coupon.active) {
       return res.status(400).json({ message: "Cupom invalido" });
@@ -327,14 +344,14 @@ export async function createOrder(req: Request, res: Response) {
     }
 
     const totalUses = await prisma.couponRedemption.count({
-      where: { couponId: coupon.id, ...companyWhere(req) }
+      where: { couponId: coupon.id, companyId }
     });
     if (coupon.maxUses && totalUses >= coupon.maxUses) {
       return res.status(400).json({ message: "Cupom atingiu o limite total de uso" });
     }
 
     const customerUses = await prisma.couponRedemption.count({
-      where: { couponId: coupon.id, customerId: customer.id, ...companyWhere(req) }
+      where: { couponId: coupon.id, customerId: customer.id, companyId }
     });
     if (coupon.maxUsesPerCustomer && customerUses >= coupon.maxUsesPerCustomer) {
       return res.status(400).json({ message: "Voce atingiu o limite deste cupom" });
@@ -348,7 +365,7 @@ export async function createOrder(req: Request, res: Response) {
     const usesToday = await prisma.couponRedemption.count({
       where: {
         couponId: coupon.id,
-        ...companyWhere(req),
+        companyId,
         customerId: customer.id,
         usedAt: { gte: startDay, lte: endDay }
       }
@@ -366,7 +383,7 @@ export async function createOrder(req: Request, res: Response) {
 
   const subtotal = toDecimal(subtotalNumber);
   const deliveryQuote =
-    body.fulfillmentType === FulfillmentType.PICKUP
+    body.fulfillmentType === FulfillmentType.PICKUP || tableOrder
       ? { fee: 0, distanceKm: null, requiresLocation: false }
       : calculateDeliveryFee(
           settings,
@@ -397,30 +414,33 @@ export async function createOrder(req: Request, res: Response) {
 
   const order = await prisma.order.create({
     data: {
-      companyId: getCompanyId(req),
+      companyId,
       customerId: customer.id,
+      source: body.source,
+      tableId: table?.id ?? null,
+      waiterId: body.source === OrderSource.WAITER ? req.user?.sub ?? null : null,
       paymentMethod: body.paymentMethod,
-      fulfillmentType: body.fulfillmentType,
+      fulfillmentType: tableOrder ? FulfillmentType.PICKUP : body.fulfillmentType,
       changeFor: body.changeFor ? toDecimal(body.changeFor) : null,
       subtotal,
       deliveryFee,
-      deliveryLatitude: pickup ? null : body.customer.latitude,
-      deliveryLongitude: pickup ? null : body.customer.longitude,
-      deliveryDistanceKm: pickup ? null : deliveryQuote.distanceKm,
+      deliveryLatitude: pickup || tableOrder ? null : body.customer.latitude,
+      deliveryLongitude: pickup || tableOrder ? null : body.customer.longitude,
+      deliveryDistanceKm: pickup || tableOrder ? null : deliveryQuote.distanceKm,
       discount,
       total,
       couponCode: normalizedCouponCode,
       customerNotes: body.notes,
       items: {
         create: preparedItems.map((item) => ({
-          companyId: getCompanyId(req),
+          companyId,
           productId: item.productId,
           quantity: item.quantity,
           price: toDecimal(item.basePrice),
           total: toDecimal(item.total),
           complements: {
             create: item.selectedComplements.map((complement) => ({
-              companyId: getCompanyId(req),
+              companyId,
               complementId: complement.id,
               name: complement.name,
               quantity: complement.quantity,
@@ -437,6 +457,13 @@ export async function createOrder(req: Request, res: Response) {
     }
   });
 
+  if (table) {
+    await prisma.restaurantTable.update({
+      where: { id: table.id },
+      data: { status: "OCCUPIED", openedAt: new Date(), closedAt: null }
+    });
+  }
+
   await recordCompanyCustomerPurchase({
     companyCustomerId: linkedCustomer.companyCustomer.id,
     orderTotal: total,
@@ -446,7 +473,7 @@ export async function createOrder(req: Request, res: Response) {
   if (couponIdUsed) {
     await prisma.couponRedemption.create({
       data: {
-        companyId: getCompanyId(req),
+        companyId,
         couponId: couponIdUsed,
         customerId: customer.id,
         orderId: order.id
@@ -490,7 +517,7 @@ export async function createOrder(req: Request, res: Response) {
   }
 
   publishNewOrder({
-    companyId: getCompanyId(req),
+    companyId,
     orderId: updatedOrder.id,
     customer: order.customer.name,
     total: Number(updatedOrder.total)
@@ -560,7 +587,7 @@ export async function listOrders(req: Request, res: Response) {
 
   const orders = await prisma.order.findMany({
     where,
-    include: { customer: true, items: { include: { product: true, complements: true } } },
+    include: { customer: true, table: { include: { area: true } }, waiter: { select: { id: true, name: true } }, items: { include: { product: true, complements: true } } },
     orderBy: { createdAt: "desc" }
   });
 

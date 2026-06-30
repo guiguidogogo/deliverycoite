@@ -133,6 +133,18 @@ import { exportFinanceExcel, exportFinancePdf, exportOrdersExcel, exportOrdersPd
 import { listPrinters } from "../controllers/printer-controller.js";
 import { getSettings, updateSettings } from "../controllers/settings-controller.js";
 import { listMarketplaceCompanies, marketplaceSummary } from "../controllers/marketplace-controller.js";
+import {
+  createDiningArea,
+  createTable,
+  deleteDiningArea,
+  deleteTable,
+  getPublicTable,
+  listDiningAreas,
+  listTables,
+  updateDiningArea,
+  updateTable,
+  updateTableStatus
+} from "../controllers/tables-controller.js";
 import { auth, requireAnyPermission, requirePermission, requireSuperAdmin } from "../middlewares/auth.js";
 import { customerAuth } from "../middlewares/customer-auth.js";
 import { driverAuth } from "../middlewares/driver-auth.js";
@@ -195,6 +207,7 @@ route.get("/customers/lookup", lookupCustomer);
 route.get("/categories", listCategories);
 route.get("/products", listProducts);
 route.get("/complements", listComplements);
+route.get("/tables/:number", getPublicTable);
 route.get("/coupons/validate", validateCoupon);
 route.post("/favorites/toggle", toggleFavorite);
 route.post("/orders", createOrder);
@@ -244,6 +257,15 @@ route.get("/admin/deliveries/routes", requirePermission("ORDERS"), listDeliveryR
 route.post("/admin/deliveries/routes", requirePermission("ORDERS"), createDeliveryRoute);
 route.get("/admin/deliveries/routes/:id", requirePermission("ORDERS"), getDeliveryRoute);
 route.patch("/admin/deliveries/routes/:id/status", requirePermission("ORDERS"), updateDeliveryRouteStatus);
+route.get("/admin/dining-areas", requirePermission("SETTINGS"), listDiningAreas);
+route.post("/admin/dining-areas", requirePermission("SETTINGS"), createDiningArea);
+route.patch("/admin/dining-areas/:id", requirePermission("SETTINGS"), updateDiningArea);
+route.delete("/admin/dining-areas/:id", requirePermission("SETTINGS"), deleteDiningArea);
+route.get("/admin/tables", requirePermission("SETTINGS"), listTables);
+route.post("/admin/tables", requirePermission("SETTINGS"), createTable);
+route.patch("/admin/tables/:id", requirePermission("SETTINGS"), updateTable);
+route.patch("/admin/tables/:id/status", requirePermission("SETTINGS"), updateTableStatus);
+route.delete("/admin/tables/:id", requirePermission("SETTINGS"), deleteTable);
 route.get("/admin/reports/orders.xlsx", requirePermission("REPORTS"), exportOrdersExcel);
 route.get("/admin/reports/orders.pdf", requirePermission("REPORTS"), exportOrdersPdf);
 route.get("/admin/reports/finance.xlsx", requirePermission("FINANCE_REPORTS"), exportFinanceExcel);

@@ -31,6 +31,7 @@ type Order = {
   id: string;
   orderNumber: number;
   status: "RECEIVED" | "PREPARING" | "OUT_FOR_DELIVERY" | "DELIVERED" | "FINISHED" | "CANCELED";
+  source?: "DELIVERY" | "TABLE" | "COUNTER" | "WAITER";
   fulfillmentType: "DELIVERY" | "PICKUP";
   paymentMethod?: "CASH" | "PIX" | "CARD" | "MERCADO_PAGO";
   paidMethodDetail?: string | null;
@@ -44,6 +45,8 @@ type Order = {
   total: number;
   createdAt: string;
   customer: { name: string; phone: string; address: string; number: string; district: string; complement?: string | null };
+  table?: { number: number; name?: string | null; area?: { name: string } | null } | null;
+  waiter?: { name: string } | null;
   items: Array<{
     id: string;
     quantity: number;
@@ -73,6 +76,24 @@ function isMercadoPagoPending(order: Order) {
 
 function isMercadoPagoRefunded(order: Order) {
   return order.paymentMethod === "MERCADO_PAGO" && order.mercadoPagoStatus === "refunded";
+}
+
+function orderSourceLabel(order: Order) {
+  if (order.source === "TABLE" && order.table) {
+    return `Mesa ${order.table.number}${order.table.area?.name ? ` • ${order.table.area.name}` : ""}`;
+  }
+  if (order.source === "WAITER") {
+    return `Garçom${order.waiter?.name ? ` • ${order.waiter.name}` : ""}`;
+  }
+  if (order.source === "COUNTER") return "Balcão";
+  return order.fulfillmentType === "PICKUP" ? "Retirada na loja" : "Delivery";
+}
+
+function orderSourceTone(order: Order) {
+  if (order.source === "TABLE") return "text-emerald-700";
+  if (order.source === "WAITER") return "text-orange-700";
+  if (order.source === "COUNTER") return "text-violet-700";
+  return order.fulfillmentType === "PICKUP" ? "text-violet-600" : "text-blue-600";
 }
 
 async function authApi<T>(path: string, token: string, init?: RequestInit): Promise<T> {
@@ -461,6 +482,9 @@ export function AdminPanel() {
         {can("SETTINGS") && <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/settings">
           Configuracoes
         </a>}
+        {can("SETTINGS") && <a className="rounded-lg bg-emerald-700 px-3 py-2 text-sm text-white" href="/admin/manage/tables">
+          Mesas / QR Code
+        </a>}
         {can("CUSTOMERS") && <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/customers">
           Clientes
         </a>}
@@ -531,8 +555,8 @@ export function AdminPanel() {
                 <div>
                   <p className="font-semibold">#{String(order.orderNumber).padStart(5, "0")} - {order.customer.name}</p>
                   <p className="text-sm opacity-70">{order.customer.phone}</p>
-                  <p className={`text-xs font-semibold ${order.fulfillmentType === "PICKUP" ? "text-violet-600" : "text-blue-600"}`}>
-                    {order.fulfillmentType === "PICKUP" ? "Retirada na loja" : "Entrega"}
+                  <p className={`text-xs font-semibold ${orderSourceTone(order)}`}>
+                    {orderSourceLabel(order)}
                   </p>
                   <p className="text-xs opacity-60">{formatDateTime(order.createdAt)}</p>
                   {isMercadoPagoPending(order) && (

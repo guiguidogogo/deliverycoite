@@ -35,6 +35,21 @@ enum FulfillmentType {
   PICKUP
 }
 
+enum OrderSource {
+  DELIVERY
+  TABLE
+  COUNTER
+  WAITER
+}
+
+enum TableStatus {
+  FREE
+  OCCUPIED
+  WAITING_PAYMENT
+  RESERVED
+  CLEANING
+}
+
 enum CashEntryType {
   OPENING
   WITHDRAWAL
@@ -62,6 +77,7 @@ model User {
   company        Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
   staffRoleId    String?
   staffRole      StaffRole?      @relation(fields: [staffRoleId], references: [id], onDelete: SetNull)
+  waiterOrders   Order[]         @relation("WaiterOrders")
   passwordResets PasswordReset[]
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
@@ -140,6 +156,8 @@ model Company {
   deliveryRoutes         DeliveryRoute[]
   deliveryRouteOrders    DeliveryRouteOrder[]
   driverDeviceTokens     DriverDeviceToken[]
+  diningAreas            DiningArea[]
+  restaurantTables       RestaurantTable[]
   auditLogs              AuditLog[]
   payables               AccountPayable[]
   receivables            AccountReceivable[]
@@ -496,8 +514,13 @@ model Order {
   customerId         String
   customer           Customer          @relation(fields: [customerId], references: [id])
   status             OrderStatus       @default(RECEIVED)
+  source             OrderSource       @default(DELIVERY)
   paymentMethod      PaymentMethod
   fulfillmentType    FulfillmentType   @default(DELIVERY)
+  tableId            String?
+  table              RestaurantTable?  @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  waiterId           String?
+  waiter             User?             @relation("WaiterOrders", fields: [waiterId], references: [id], onDelete: SetNull)
   changeFor          Decimal?          @db.Decimal(10, 2)
   subtotal           Decimal           @db.Decimal(10, 2)
   deliveryFee        Decimal           @db.Decimal(10, 2)
@@ -535,10 +558,49 @@ model Order {
   @@index([status])
   @@index([createdAt])
   @@index([companyId])
+  @@index([companyId, source])
+  @@index([companyId, tableId])
   @@index([companyId, deletedAt])
   @@index([mercadoPagoPreferenceId])
   @@index([mercadoPagoPaymentId])
   @@index([companyId, printerPrintedAt])
+}
+
+model DiningArea {
+  id        String            @id @default(cuid())
+  companyId String
+  company   Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name      String
+  active    Boolean           @default(true)
+  tables    RestaurantTable[]
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@unique([companyId, name])
+  @@index([companyId])
+}
+
+model RestaurantTable {
+  id           String       @id @default(cuid())
+  companyId    String
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  areaId       String?
+  area         DiningArea?   @relation(fields: [areaId], references: [id], onDelete: SetNull)
+  number       Int
+  name         String?
+  seats        Int          @default(4)
+  status       TableStatus  @default(FREE)
+  qrCodeToken  String       @unique
+  active       Boolean      @default(true)
+  openedAt     DateTime?
+  closedAt     DateTime?
+  orders       Order[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@unique([companyId, number])
+  @@index([companyId, status])
+  @@index([companyId, areaId])
 }
 
 model Driver {
