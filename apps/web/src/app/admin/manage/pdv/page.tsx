@@ -31,10 +31,18 @@ type RestaurantTable = {
     customerName?: string | null;
     customerPhone?: string | null;
     customerEmail?: string | null;
+    waiterCalledAt?: string | null;
+    billRequestedAt?: string | null;
+    orderCount?: number;
+    itemCount?: number;
+    accountTotal?: number | string;
     openedByUser?: { name: string } | null;
   } | null;
   area?: DiningArea | null;
   _count?: { orders: number };
+  orderCount?: number;
+  itemCount?: number;
+  accountTotal?: number | string;
 };
 
 type TableOrder = {
@@ -170,7 +178,7 @@ export default function PdvPage() {
   );
 
   const totals = useMemo(() => {
-    const openOrders = orders.filter((order) => !["FINISHED", "CANCELED"].includes(order.status));
+  const openOrders = orders.filter((order) => order.status !== "CANCELED");
     return {
       count: openOrders.length,
       total: openOrders.reduce((sum, order) => sum + Number(order.total), 0),
@@ -362,6 +370,24 @@ export default function PdvPage() {
     }
   }
 
+  async function reopenSession(table: RestaurantTable) {
+    if (!table.activeSession) return;
+    try {
+      const session = await request(`/admin/tables/${table.id}/session/${table.activeSession.id}/reopen`, { method: "POST" });
+      const updated = {
+        ...table,
+        status: "OCCUPIED" as TableStatus,
+        activeSession: session,
+        qrCodeUrl: session.sessionUrl
+      };
+      setSelectedTable(updated);
+      setTables((current) => current.map((item) => item.id === table.id ? updated : item));
+      toast.success("Conta reaberta para novos pedidos");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao reabrir conta");
+    }
+  }
+
   function addDraftItem() {
     if (!draftProductId) return;
     const product = products.find((item) => item.id === draftProductId);
@@ -405,6 +431,10 @@ export default function PdvPage() {
 
   async function createTableOrder() {
     if (!selectedTable || !draftItems.length || savingOrder) return;
+    if (selectedTable.activeSession?.status === "CLOSING_REQUESTED") {
+      toast.error("A conta foi solicitada. Reabra a conta para fazer novos pedidos.");
+      return;
+    }
     setSavingOrder(true);
     try {
       await request(`/admin/tables/${selectedTable.id}/orders`, {
@@ -539,8 +569,11 @@ export default function PdvPage() {
         method: "PATCH",
         body: JSON.stringify({ status })
       });
-      setTables((current) => current.map((item) => item.id === table.id ? { ...item, ...updated } : item));
-      if (selectedTable?.id === table.id) setSelectedTable((current) => current ? { ...current, ...updated } : current);
+      const sessionPatch = status === "WAITING_PAYMENT" && table.activeSession
+        ? { activeSession: { ...table.activeSession, status: "CLOSING_REQUESTED" as const, billRequestedAt: new Date().toISOString() } }
+        : {};
+      setTables((current) => current.map((item) => item.id === table.id ? { ...item, ...updated, ...sessionPatch } : item));
+      if (selectedTable?.id === table.id) setSelectedTable((current) => current ? { ...current, ...updated, ...sessionPatch } : current);
       toast.success(`Mesa ${table.number}: ${statusLabels[status]}`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao atualizar mesa");
@@ -652,13 +685,21 @@ export default function PdvPage() {
               <div className="mt-5 grid grid-cols-2 gap-2 text-sm">
                 <div className="rounded-2xl bg-white/65 p-3">
                   <p className="text-xs opacity-70">Pedidos</p>
-                  <p className="text-xl font-black">{table._count?.orders ?? 0}</p>
+                  <p className="text-xl font-black">{table.orderCount ?? table._count?.orders ?? 0}</p>
                 </div>
                 <div className="rounded-2xl bg-white/65 p-3">
                   <p className="text-xs opacity-70">QR Code</p>
                   <p className="truncate text-xs font-bold">
                     {table.activeSession?.status === "PENDING_CONFIRMATION" ? "Aguardando confirmação" : table.activeSession ? "Sessão ativa" : "Fechado"}
                   </p>
+                </div>
+                <div className="rounded-2xl bg-white/65 p-3">
+                  <p className="text-xs opacity-70">Conta atual</p>
+                  <p className="truncate text-xs font-black">{brl(table.accountTotal ?? 0)}</p>
+                </div>
+                <div className={`rounded-2xl p-3 ${table.activeSession?.waiterCalledAt ? "bg-blue-100 text-blue-900" : "bg-white/65"}`}>
+                  <p className="text-xs opacity-70">Garçom</p>
+                  <p className="truncate text-xs font-black">{table.activeSession?.waiterCalledAt ? "Chamado" : "-"}</p>
                 </div>
               </div>
             </button>
@@ -705,6 +746,11 @@ export default function PdvPage() {
                   Confirmar abertura
                 </button>
               )}
+              {selectedTable.activeSession?.status === "CLOSING_REQUESTED" && (
+                <button className="rounded-xl bg-blue-700 px-3 py-2 text-sm font-bold text-white" onClick={() => void reopenSession(selectedTable)}>
+                  Reabrir conta
+                </button>
+              )}
               {!selectedTable.activeSession && (
                 <button className="rounded-xl bg-emerald-700 px-3 py-2 text-sm font-bold text-white disabled:opacity-60" disabled={openingSession} onClick={() => void openSession(selectedTable)}>
                   {openingSession ? "Abrindo..." : "Abrir atendimento"}
@@ -716,7 +762,9 @@ export default function PdvPage() {
                 </a>
               )}
               <button className="rounded-xl bg-orange-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void updateStatus(selectedTable, "OCCUPIED")}>Marcar ocupada</button>
-              <button className="rounded-xl bg-red-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void updateStatus(selectedTable, "WAITING_PAYMENT")}>Solicitou conta</button>
+              {selectedTable.activeSession?.status !== "CLOSING_REQUESTED" && (
+                <button className="rounded-xl bg-red-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void updateStatus(selectedTable, "WAITING_PAYMENT")}>Solicitou conta</button>
+              )}
               <button className="rounded-xl border px-3 py-2 text-sm font-bold" onClick={() => void printTableAccount()}>Imprimir pré-conta</button>
               <button className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void updateStatus(selectedTable, "FREE")}>Liberar mesa</button>
             </div>
@@ -891,7 +939,7 @@ export default function PdvPage() {
                       ))}
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {(["RECEIVED", "PREPARING", "FINISHED", "CANCELED"] as TableOrder["status"][]).map((status) => (
+                      {(["RECEIVED", "PREPARING", "CANCELED"] as TableOrder["status"][]).map((status) => (
                         <button key={status} className="rounded-lg border px-3 py-2 text-xs font-bold" onClick={() => void updateOrderStatus(order, status)}>
                           {orderStatusLabels[status]}
                         </button>

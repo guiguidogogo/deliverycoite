@@ -893,7 +893,7 @@ export function Storefront() {
       }
     }
     if (tableOrderingBlocked) {
-      toast.error(tableSession?.status === "CLOSING_REQUESTED" ? "Conta solicitada. Chame o garcom para incluir itens." : "Atendimento encerrado");
+      toast.error(tableSession?.status === "CLOSING_REQUESTED" ? "Conta solicitada. Peca ao garcom para reabrir a conta antes de fazer novos pedidos." : "Atendimento encerrado");
       return;
     }
     if (

@@ -1,0 +1,3 @@
+ALTER TABLE "TableSession"
+  ADD COLUMN IF NOT EXISTS "waiterCalledAt" TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "billRequestedAt" TIMESTAMP(3);

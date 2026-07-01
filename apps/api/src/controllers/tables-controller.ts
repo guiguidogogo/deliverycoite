@@ -174,13 +174,19 @@ export async function listTables(req: Request, res: Response) {
         where: { status: { in: [TableSessionStatus.PENDING_CONFIRMATION, TableSessionStatus.OPEN, TableSessionStatus.CLOSING_REQUESTED] } },
         orderBy: { openedAt: "desc" },
         take: 1,
-        include: { openedByUser: { select: { id: true, name: true } } }
+        include: {
+          openedByUser: { select: { id: true, name: true } },
+          orders: {
+            where: { deletedAt: null, status: { notIn: ["CANCELED"] } },
+            select: { id: true, total: true, items: { select: { quantity: true } } }
+          }
+        }
       },
       _count: {
         select: {
           orders: {
             where: {
-              status: { notIn: ["FINISHED", "CANCELED"] },
+              status: { notIn: ["CANCELED"] },
               deletedAt: null
             }
           }
@@ -192,12 +198,22 @@ export async function listTables(req: Request, res: Response) {
   ]);
   return res.json(tables.map((table) => {
     const activeSession = table.sessions[0] ?? null;
+    const activeOrders = activeSession?.orders ?? [];
+    const sessionTotal = activeOrders.reduce((sum, order) => sum + Number(order.total), 0);
+    const sessionItems = activeOrders.reduce((sum, order) => sum + order.items.reduce((acc, item) => acc + item.quantity, 0), 0);
     return {
       ...table,
       activeSession: activeSession ? {
         ...activeSession,
+        orders: undefined,
+        orderCount: activeOrders.length,
+        itemCount: sessionItems,
+        accountTotal: sessionTotal,
         sessionUrl: publicTableSessionUrl(req, activeSession.token, subdomain)
       } : null,
+      accountTotal: sessionTotal,
+      orderCount: activeSession ? activeOrders.length : table._count.orders,
+      itemCount: sessionItems,
       qrCodeUrl: activeSession
         ? publicTableSessionUrl(req, activeSession.token, subdomain)
         : publicTableUrl(req, table, subdomain)
@@ -254,13 +270,33 @@ export async function updateTable(req: Request, res: Response) {
 
 export async function updateTableStatus(req: Request, res: Response) {
   const body = statusSchema.parse(req.body);
-  const table = await prisma.restaurantTable.update({
-    where: { id: req.params.id, companyId: getCompanyId(req) },
-    data: {
-      status: body.status,
-      openedAt: body.status === "OCCUPIED" ? new Date() : undefined,
-      closedAt: body.status === "FREE" ? new Date() : undefined
+  const companyId = getCompanyId(req);
+  const table = await prisma.$transaction(async (tx) => {
+    const updated = await tx.restaurantTable.update({
+      where: { id: req.params.id, companyId },
+      data: {
+        status: body.status,
+        openedAt: body.status === "OCCUPIED" ? new Date() : undefined,
+        closedAt: body.status === "FREE" ? new Date() : undefined
+      }
+    });
+
+    if (body.status === "WAITING_PAYMENT") {
+      await tx.tableSession.updateMany({
+        where: {
+          companyId,
+          tableId: req.params.id,
+          status: TableSessionStatus.OPEN
+        },
+        data: {
+          status: TableSessionStatus.CLOSING_REQUESTED,
+          billRequestedAt: new Date(),
+          lastActivityAt: new Date()
+        }
+      });
     }
+
+    return updated;
   });
   const subdomain = await currentCompanySubdomain(req);
   return res.json({ ...table, qrCodeUrl: publicTableUrl(req, table, subdomain) });
@@ -469,6 +505,9 @@ export async function createTableOrder(req: Request, res: Response) {
       status: { in: [TableSessionStatus.OPEN, TableSessionStatus.CLOSING_REQUESTED] }
     }
   });
+  if (activeSession?.status === TableSessionStatus.CLOSING_REQUESTED) {
+    return res.status(409).json({ message: "Conta solicitada. Reabra a conta para fazer novos pedidos." });
+  }
 
   const productIds = [...new Set(body.items.map((item) => item.productId))];
   const products = await prisma.product.findMany({
@@ -973,7 +1012,7 @@ export async function callWaiterFromSession(req: Request, res: Response) {
     }),
     prisma.tableSession.update({
       where: { id: session.id },
-      data: { lastActivityAt: new Date() }
+      data: { lastActivityAt: new Date(), waiterCalledAt: new Date() }
     })
   ]);
   return res.json({ ok: true, message: `Garcom chamado na mesa ${session.table.number}` });
@@ -992,7 +1031,7 @@ export async function requestBillFromSession(req: Request, res: Response) {
   await prisma.$transaction([
     prisma.tableSession.update({
       where: { id: session.id },
-      data: { status: TableSessionStatus.CLOSING_REQUESTED, lastActivityAt: new Date() }
+      data: { status: TableSessionStatus.CLOSING_REQUESTED, lastActivityAt: new Date(), billRequestedAt: new Date() }
     }),
     prisma.restaurantTable.update({
       where: { id: session.tableId },
@@ -1000,6 +1039,51 @@ export async function requestBillFromSession(req: Request, res: Response) {
     })
   ]);
   return res.json({ ok: true, message: `Conta solicitada para a mesa ${session.table.number}` });
+}
+
+export async function reopenTableSession(req: Request, res: Response) {
+  const companyId = getCompanyId(req);
+  const session = await prisma.tableSession.findFirst({
+    where: {
+      id: req.params.sessionId,
+      tableId: req.params.id,
+      companyId,
+      status: TableSessionStatus.CLOSING_REQUESTED
+    },
+    include: { table: { include: { area: true } }, openedByUser: { select: { id: true, name: true } } }
+  });
+  if (!session) return res.status(404).json({ message: "Conta solicitada nao encontrada para reabrir" });
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const reopened = await tx.tableSession.update({
+      where: { id: session.id },
+      data: {
+        status: TableSessionStatus.OPEN,
+        billRequestedAt: null,
+        lastActivityAt: new Date()
+      },
+      include: { openedByUser: { select: { id: true, name: true } } }
+    });
+    await tx.restaurantTable.update({
+      where: { id: session.tableId },
+      data: { status: "OCCUPIED" }
+    });
+    return reopened;
+  });
+
+  await audit(req, {
+    action: "TABLE_SESSION_REOPENED",
+    entity: "TableSession",
+    entityId: updated.id,
+    newValue: { tableId: session.tableId, tableNumber: session.table.number }
+  });
+
+  const subdomain = await currentCompanySubdomain(req);
+  return res.json({
+    ...updated,
+    table: session.table,
+    sessionUrl: publicTableSessionUrl(req, updated.token, subdomain)
+  });
 }
 
 export async function callWaiterFromTable(req: Request, res: Response) {

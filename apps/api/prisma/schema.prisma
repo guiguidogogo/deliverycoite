@@ -639,6 +639,8 @@ model TableSession {
   closedAt       DateTime?
   expiresAt      DateTime?
   lastActivityAt DateTime           @default(now())
+  waiterCalledAt DateTime?
+  billRequestedAt DateTime?
   total          Decimal            @default(0) @db.Decimal(10, 2)
   orders         Order[]
   createdAt      DateTime           @default(now())
