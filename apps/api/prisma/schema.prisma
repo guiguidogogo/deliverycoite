@@ -815,6 +815,8 @@ model Setting {
   printerName                String?
   printerPaperWidth          Int               @default(58)
   printerAutoPrint           Boolean           @default(false)
+  tableServiceFeeEnabled     Boolean           @default(false)
+  tableServiceFeePercent     Decimal           @default(10) @db.Decimal(5, 2)
   updatedAt                  DateTime          @updatedAt
   createdAt                  DateTime          @default(now())
   deliveryFeeTiers           DeliveryFeeTier[]

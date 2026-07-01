@@ -248,6 +248,25 @@ export function Storefront() {
   }, [setValue, tableNumber, tableSessionToken]);
 
   useEffect(() => {
+    if (!tableSessionToken) return;
+    const refresh = () => {
+      void api<any>(`/table-sessions/${tableSessionToken}`)
+        .then((session) => {
+          setTableSession(session);
+          setTableContext(session?.table ?? null);
+        })
+        .catch(() => undefined);
+    };
+    const timer = window.setInterval(refresh, 5000);
+    const onFocus = () => refresh();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [tableSessionToken]);
+
+  useEffect(() => {
 
     api<Settings>("/settings")
       .then((s) => {
@@ -1105,6 +1124,15 @@ export function Storefront() {
               <p className="rounded-2xl border border-dashed p-4 text-sm opacity-70">Nenhum pedido enviado ainda.</p>
             )}
           </div>
+          {tableSession.account && (
+            <div className="mt-3 space-y-1 rounded-2xl bg-emerald-50 p-3 text-sm text-emerald-950">
+              <div className="flex justify-between"><span>Subtotal</span><strong>{money(Number(tableSession.account.subtotal ?? 0))}</strong></div>
+              <div className="flex justify-between"><span>Taxa de serviço</span><strong>{money(Number(tableSession.account.serviceFee ?? 0))}</strong></div>
+              <div className="flex justify-between"><span>Desconto</span><strong>{money(Number(tableSession.account.discount ?? 0))}</strong></div>
+              <div className="flex justify-between border-t border-emerald-200 pt-2 text-base"><span>Total</span><strong>{money(Number(tableSession.account.total ?? tableSession.total ?? 0))}</strong></div>
+              <p className="text-xs opacity-70">Atualiza automaticamente a cada poucos segundos.</p>
+            </div>
+          )}
         </section>
       )}
 

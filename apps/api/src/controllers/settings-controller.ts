@@ -53,6 +53,8 @@ const settingsSchema = z.object({
   printerName: optionalText,
   printerPaperWidth: z.union([z.literal(58), z.literal(80)]).optional(),
   printerAutoPrint: z.boolean().optional(),
+  tableServiceFeeEnabled: z.boolean().optional(),
+  tableServiceFeePercent: z.coerce.number().min(0).max(30).optional(),
   mercadoPagoEnabled: z.boolean().optional(),
   mercadoPagoPublicKey: optionalText,
   mercadoPagoAccessToken: optionalText

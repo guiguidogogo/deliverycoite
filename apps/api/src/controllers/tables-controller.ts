@@ -41,7 +41,15 @@ const tableOrderSchema = z.object({
 
 const closeTableSchema = z.object({
   paymentMethod: z.enum(["CASH", "PIX", "DEBIT", "CREDIT", "CARD"]),
-  notes: z.string().optional()
+  notes: z.string().optional(),
+  discount: z.coerce.number().min(0).default(0),
+  discountReason: z.string().max(180).optional(),
+  serviceFeeEnabled: z.boolean().optional(),
+  serviceFeePercent: z.coerce.number().min(0).max(30).optional(),
+  payments: z.array(z.object({
+    method: z.enum(["CASH", "PIX", "DEBIT", "CREDIT", "CARD"]),
+    amount: z.coerce.number().positive()
+  })).optional()
 });
 
 function publicTableUrl(req: Request, table: { number: number }, explicitSubdomain?: string | null) {
@@ -81,6 +89,36 @@ function newShortCode() {
 
 function toDecimal(value: number) {
   return new Prisma.Decimal(value.toFixed(2));
+}
+
+function paymentMethodFromClose(value: "CASH" | "PIX" | "DEBIT" | "CREDIT" | "CARD"): PaymentMethod {
+  return value === "CASH" ? "CASH" : value === "PIX" ? "PIX" : "CARD";
+}
+
+function paymentDetailFromClose(value: "CASH" | "PIX" | "DEBIT" | "CREDIT" | "CARD") {
+  return value === "DEBIT"
+    ? "Cartao Debito"
+    : value === "CREDIT"
+      ? "Cartao Credito"
+      : value === "CARD"
+        ? "Cartao"
+        : value === "PIX"
+          ? "PIX"
+          : "Dinheiro";
+}
+
+function buildAccountTotals(
+  subtotal: number,
+  options: { serviceFeeEnabled?: boolean; serviceFeePercent?: number; discount?: number }
+) {
+  const serviceFee = options.serviceFeeEnabled ? subtotal * ((options.serviceFeePercent ?? 10) / 100) : 0;
+  const discount = Math.min(Math.max(options.discount ?? 0, 0), subtotal + serviceFee);
+  return {
+    subtotal,
+    serviceFee,
+    discount,
+    total: Math.max(0, subtotal + serviceFee - discount)
+  };
 }
 
 export async function listDiningAreas(req: Request, res: Response) {
@@ -337,10 +375,16 @@ export async function getTableSessionAccount(req: Request, res: Response) {
     }
   });
   if (!session) return res.status(404).json({ message: "Atendimento nao encontrado" });
-  const total = session.orders
+  const settings = await prisma.setting.findFirst({ where: { companyId } });
+  const subtotal = session.orders
     .filter((order) => !["FINISHED", "CANCELED"].includes(order.status))
     .reduce((sum, order) => sum + Number(order.total), 0);
-  return res.json({ ...session, total });
+  const account = buildAccountTotals(subtotal, {
+    serviceFeeEnabled: settings?.tableServiceFeeEnabled ?? false,
+    serviceFeePercent: Number(settings?.tableServiceFeePercent ?? 10),
+    discount: 0
+  });
+  return res.json({ ...session, total: account.total, account });
 }
 
 export async function createTableOrder(req: Request, res: Response) {
@@ -546,17 +590,26 @@ export async function closeTableAccount(req: Request, res: Response) {
     return res.status(400).json({ message: "Abra seu caixa antes de fechar a mesa" });
   }
 
-  const paymentMethod: PaymentMethod = body.paymentMethod === "CASH" ? "CASH" : body.paymentMethod === "PIX" ? "PIX" : "CARD";
-  const paymentDetail =
-    body.paymentMethod === "DEBIT"
-      ? "Cartao Debito"
-      : body.paymentMethod === "CREDIT"
-        ? "Cartao Credito"
-        : body.paymentMethod === "CARD"
-          ? "Cartao"
-          : body.paymentMethod === "PIX"
-            ? "PIX"
-            : "Dinheiro";
+  const settings = await prisma.setting.findFirst({ where: { companyId } });
+  const subtotal = orders.reduce((sum, order) => sum + Number(order.total), 0);
+  const serviceFeeEnabled = body.serviceFeeEnabled ?? settings?.tableServiceFeeEnabled ?? false;
+  const serviceFeePercent = body.serviceFeePercent ?? Number(settings?.tableServiceFeePercent ?? 10);
+  const account = buildAccountTotals(subtotal, {
+    serviceFeeEnabled,
+    serviceFeePercent,
+    discount: body.discount
+  });
+  const splitPayments = body.payments?.length
+    ? body.payments
+    : [{ method: body.paymentMethod, amount: account.total }];
+  const paidTotal = splitPayments.reduce((sum, payment) => sum + Number(payment.amount), 0);
+  if (Math.abs(paidTotal - account.total) > 0.02) {
+    return res.status(400).json({ message: `Pagamentos (${paidTotal.toFixed(2)}) nao batem com total (${account.total.toFixed(2)})` });
+  }
+  const paymentMethod = paymentMethodFromClose(splitPayments[0].method);
+  const paymentDetail = splitPayments.length > 1
+    ? `Pagamento dividido (${splitPayments.map((payment) => `${paymentDetailFromClose(payment.method)} ${Number(payment.amount).toFixed(2)}`).join(" + ")})`
+    : paymentDetailFromClose(splitPayments[0].method);
   const now = new Date();
 
   await prisma.$transaction(async (tx) => {
@@ -567,14 +620,27 @@ export async function closeTableAccount(req: Request, res: Response) {
         paidAt: now,
         paidMethodDetail: paymentDetail,
         status: "FINISHED",
+        discount: toDecimal(order.id === orders[0].id ? account.discount : 0),
         notes: [
           order.notes,
-          body.notes
-            ? `[FECHAMENTO MESA ${table.number}: ${paymentDetail} em ${now.toLocaleString("pt-BR")} - ${body.notes}]`
-            : `[FECHAMENTO MESA ${table.number}: ${paymentDetail} em ${now.toLocaleString("pt-BR")}]`
+          `[FECHAMENTO MESA ${table.number}: ${paymentDetail} em ${now.toLocaleString("pt-BR")} | Subtotal ${subtotal.toFixed(2)} | Servico ${account.serviceFee.toFixed(2)} | Desconto ${account.discount.toFixed(2)} | Total ${account.total.toFixed(2)}${body.discountReason ? ` | Motivo desconto: ${body.discountReason}` : ""}${body.notes ? ` - ${body.notes}` : ""}]`
         ].filter(Boolean).join(" ")
       }
     })));
+    if (account.serviceFee > 0) {
+      await tx.cashEntry.create({
+        data: {
+          companyId,
+          sessionId: session.id,
+          type: "MANUAL_INCOME",
+          category: "OTHER_INCOME",
+          direction: "IN",
+          amount: toDecimal(account.serviceFee),
+          operatorId: req.user!.sub,
+          description: `Taxa de servico mesa ${table.number}`
+        }
+      });
+    }
     await tx.restaurantTable.update({
       where: { id: table.id },
       data: { status: "FREE", closedAt: now, openedAt: null }
@@ -586,20 +652,41 @@ export async function closeTableAccount(req: Request, res: Response) {
           status: TableSessionStatus.CLOSED,
           closedAt: now,
           closedByUserId: req.user?.sub ?? null,
-          total: toDecimal(orders.reduce((sum, order) => sum + Number(order.total), 0)),
+          total: toDecimal(account.total),
           lastActivityAt: now
         }
       });
     }
   });
 
-  await recordCashPayments(session.id, companyId, orders.map((order) => ({
-    amount: order.total,
-    paymentMethod,
-    paymentDetail,
-    orderId: order.id,
-    description: `Fechamento mesa ${table.number} - pedido #${String(order.orderNumber).padStart(5, "0")} via ${paymentDetail}`
-  })));
+  if (splitPayments.length > 1) {
+    await prisma.cashEntry.createMany({
+      data: splitPayments.map((payment) => ({
+        companyId,
+        sessionId: session.id,
+        type: "MANUAL_INCOME",
+        category:
+          payment.method === "CASH" ? "SALE_CASH" :
+          payment.method === "PIX" ? "SALE_PIX" :
+          payment.method === "DEBIT" ? "SALE_DEBIT" : "SALE_CREDIT",
+        direction: "IN",
+        amount: toDecimal(Number(payment.amount)),
+        paymentMethod: paymentMethodFromClose(payment.method),
+        paymentDetail: paymentDetailFromClose(payment.method),
+        orderId: orders[0].id,
+        operatorId: req.user!.sub,
+        description: `Fechamento dividido mesa ${table.number} - ${paymentDetailFromClose(payment.method)}`
+      }))
+    });
+  } else {
+    await recordCashPayments(session.id, companyId, orders.map((order, index) => ({
+      amount: index === 0 ? toDecimal(account.total) : toDecimal(0),
+      paymentMethod,
+      paymentDetail,
+      orderId: order.id,
+      description: `Fechamento mesa ${table.number} - pedido #${String(order.orderNumber).padStart(5, "0")} via ${paymentDetail}`
+    })).filter((payment) => Number(payment.amount) > 0));
+  }
 
   return res.json({
     ok: true,
@@ -607,7 +694,11 @@ export async function closeTableAccount(req: Request, res: Response) {
     tableNumber: table.number,
     paymentDetail,
     ordersClosed: orders.length,
-    total: orders.reduce((sum, order) => sum + Number(order.total), 0)
+    subtotal,
+    serviceFee: account.serviceFee,
+    discount: account.discount,
+    total: account.total,
+    payments: splitPayments
   });
 }
 
@@ -680,9 +771,15 @@ export async function getPublicTableSession(req: Request, res: Response) {
   if (!session) return res.status(404).json({ message: "Atendimento nao encontrado" });
 
   const expired = Boolean(session.expiresAt && session.expiresAt < new Date());
-  const total = session.orders
+  const settings = await prisma.setting.findFirst({ where: { companyId: session.companyId } });
+  const subtotal = session.orders
     .filter((order) => !["FINISHED", "CANCELED"].includes(order.status))
     .reduce((sum, order) => sum + Number(order.total), 0);
+  const account = buildAccountTotals(subtotal, {
+    serviceFeeEnabled: settings?.tableServiceFeeEnabled ?? false,
+    serviceFeePercent: Number(settings?.tableServiceFeePercent ?? 10),
+    discount: 0
+  });
 
   return res.json({
     id: session.id,
@@ -691,7 +788,8 @@ export async function getPublicTableSession(req: Request, res: Response) {
     requiresCode: session.status === TableSessionStatus.OPEN || session.status === TableSessionStatus.CLOSING_REQUESTED,
     openedAt: session.openedAt,
     expiresAt: session.expiresAt,
-    total,
+    total: account.total,
+    account,
     table: {
       id: session.table.id,
       number: session.table.number,

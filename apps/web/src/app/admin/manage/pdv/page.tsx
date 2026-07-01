@@ -137,6 +137,11 @@ export default function PdvPage() {
   const [draftNotes, setDraftNotes] = useState("");
   const [closePaymentMethod, setClosePaymentMethod] = useState<ClosePaymentMethod>("PIX");
   const [closeNotes, setCloseNotes] = useState("");
+  const [closeDiscount, setCloseDiscount] = useState(0);
+  const [closeDiscountReason, setCloseDiscountReason] = useState("");
+  const [serviceFeeEnabled, setServiceFeeEnabled] = useState(false);
+  const [serviceFeePercent, setServiceFeePercent] = useState(10);
+  const [splitPayments, setSplitPayments] = useState<Array<{ method: ClosePaymentMethod; amount: number }>>([]);
   const [loading, setLoading] = useState(true);
   const [savingOrder, setSavingOrder] = useState(false);
   const [closingTable, setClosingTable] = useState(false);
@@ -179,6 +184,17 @@ export default function PdvPage() {
     }, 0);
     return sum + (Number(product.promoPrice ?? product.price) + complements) * item.quantity;
   }, 0), [draftItems, products]);
+
+  const accountTotals = useMemo(() => {
+    const serviceFee = serviceFeeEnabled ? totals.total * (serviceFeePercent / 100) : 0;
+    const discount = Math.min(Math.max(closeDiscount || 0, 0), totals.total + serviceFee);
+    return {
+      subtotal: totals.total,
+      serviceFee,
+      discount,
+      total: Math.max(0, totals.total + serviceFee - discount)
+    };
+  }, [closeDiscount, serviceFeeEnabled, serviceFeePercent, totals.total]);
 
   const configuringTotal = useMemo(() => {
     if (!configuringProduct) return 0;
@@ -289,6 +305,9 @@ export default function PdvPage() {
     setDraftCustomerName("Cliente da mesa");
     setClosePaymentMethod("PIX");
     setCloseNotes("");
+    setCloseDiscount(0);
+    setCloseDiscountReason("");
+    setSplitPayments([]);
     setLoadingOrders(true);
     try {
       const loaded = await request(`/admin/tables/${table.id}/orders`);
@@ -398,7 +417,7 @@ export default function PdvPage() {
       toast.error("Nao ha pedidos para fechar nesta mesa");
       return;
     }
-    const confirmed = window.confirm(`Fechar a mesa ${selectedTable.number} no valor de ${brl(totals.total)}?`);
+    const confirmed = window.confirm(`Fechar a mesa ${selectedTable.number} no valor de ${brl(accountTotals.total)}?`);
     if (!confirmed) return;
     setClosingTable(true);
     try {
@@ -406,6 +425,11 @@ export default function PdvPage() {
         method: "POST",
         body: JSON.stringify({
           paymentMethod: closePaymentMethod,
+          discount: closeDiscount,
+          discountReason: closeDiscountReason || undefined,
+          serviceFeeEnabled,
+          serviceFeePercent,
+          payments: splitPayments.length ? splitPayments : undefined,
           notes: closeNotes || undefined
         })
       });
@@ -419,6 +443,32 @@ export default function PdvPage() {
     } finally {
       setClosingTable(false);
     }
+  }
+
+  function printTableAccount() {
+    if (!selectedTable) return;
+    const rows = orders.map((order) => `
+      <div style="border-top:1px dashed #999;padding:8px 0">
+        <strong>Pedido #${String(order.orderNumber).padStart(5, "0")}</strong> - ${brl(order.total)}
+        ${order.items.map((item) => `<div>${item.quantity}x ${item.product.name} - ${brl(item.total)}${item.complements.map((c) => `<br/><small>+ ${c.quantity}x ${c.name}</small>`).join("")}</div>`).join("")}
+      </div>
+    `).join("");
+    const win = window.open("", "_blank", "width=380,height=640");
+    if (!win) return;
+    win.document.write(`
+      <html><body style="font-family:Arial,sans-serif;max-width:320px">
+        <h2>Conta Mesa ${selectedTable.number}</h2>
+        ${rows}
+        <hr/>
+        <p>Subtotal: <strong>${brl(accountTotals.subtotal)}</strong></p>
+        <p>Taxa de servico: <strong>${brl(accountTotals.serviceFee)}</strong></p>
+        <p>Desconto: <strong>${brl(accountTotals.discount)}</strong></p>
+        <h2>Total: ${brl(accountTotals.total)}</h2>
+      </body></html>
+    `);
+    win.document.close();
+    win.focus();
+    win.print();
   }
 
   async function updateStatus(table: RestaurantTable, status: TableStatus) {
@@ -581,7 +631,7 @@ export default function PdvPage() {
               </div>
               <div className="rounded-2xl bg-emerald-100 p-3 text-emerald-900">
                 <p className="text-xs opacity-70">Total</p>
-                <p className="text-2xl font-black">{brl(totals.total)}</p>
+                <p className="text-2xl font-black">{brl(accountTotals.total)}</p>
               </div>
             </div>
 
@@ -631,7 +681,29 @@ export default function PdvPage() {
                   <h3 className="text-xl font-black">Fechar conta da mesa</h3>
                   <p className="text-sm opacity-70">Registra pagamento no caixa aberto e finaliza os pedidos da mesa.</p>
                 </div>
-                <strong className="rounded-full bg-white px-3 py-1 text-emerald-700">{brl(totals.total)}</strong>
+                <strong className="rounded-full bg-white px-3 py-1 text-emerald-700">{brl(accountTotals.total)}</strong>
+              </div>
+              <div className="mt-3 grid gap-2 md:grid-cols-4">
+                <div className="rounded-2xl bg-white p-3">
+                  <p className="text-xs opacity-70">Subtotal</p>
+                  <p className="font-black">{brl(accountTotals.subtotal)}</p>
+                </div>
+                <label className="rounded-2xl bg-white p-3">
+                  <span className="flex items-center gap-2 text-xs font-bold">
+                    <input type="checkbox" checked={serviceFeeEnabled} onChange={(event) => setServiceFeeEnabled(event.target.checked)} />
+                    Taxa de serviço
+                  </span>
+                  <input className="mt-1 w-full rounded-lg border px-2 py-1 text-sm" type="number" min={0} max={30} value={serviceFeePercent} onChange={(event) => setServiceFeePercent(Number(event.target.value || 0))} />
+                  <p className="text-xs font-bold">{brl(accountTotals.serviceFee)}</p>
+                </label>
+                <label className="rounded-2xl bg-white p-3">
+                  <span className="text-xs font-bold">Desconto</span>
+                  <input className="mt-1 w-full rounded-lg border px-2 py-1 text-sm" type="number" min={0} value={closeDiscount} onChange={(event) => setCloseDiscount(Number(event.target.value || 0))} />
+                </label>
+                <div className="rounded-2xl bg-emerald-100 p-3">
+                  <p className="text-xs opacity-70">Total final</p>
+                  <p className="text-xl font-black">{brl(accountTotals.total)}</p>
+                </div>
               </div>
               <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1.5fr_auto]">
                 <select className="rounded-xl border px-3 py-2" value={closePaymentMethod} onChange={(event) => setClosePaymentMethod(event.target.value as ClosePaymentMethod)}>
