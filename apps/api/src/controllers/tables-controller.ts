@@ -212,7 +212,7 @@ export async function listTables(req: Request, res: Response) {
         sessionUrl: publicTableSessionUrl(req, activeSession.token, subdomain)
       } : null,
       accountTotal: sessionTotal,
-      orderCount: activeSession ? activeOrders.length : table._count.orders,
+      orderCount: activeSession ? activeOrders.length : 0,
       itemCount: sessionItems,
       qrCodeUrl: activeSession
         ? publicTableSessionUrl(req, activeSession.token, subdomain)
@@ -271,7 +271,39 @@ export async function updateTable(req: Request, res: Response) {
 export async function updateTableStatus(req: Request, res: Response) {
   const body = statusSchema.parse(req.body);
   const companyId = getCompanyId(req);
+  const activeSessionForFree = body.status === "FREE"
+    ? await prisma.tableSession.findFirst({
+        where: {
+          companyId,
+          tableId: req.params.id,
+          status: { in: [TableSessionStatus.PENDING_CONFIRMATION, TableSessionStatus.OPEN, TableSessionStatus.CLOSING_REQUESTED] }
+        },
+        include: {
+          orders: {
+            where: { deletedAt: null, status: { notIn: ["CANCELED"] } },
+            select: { id: true }
+          }
+        }
+      })
+    : null;
+
+  if (activeSessionForFree?.orders.length) {
+    return res.status(409).json({ message: "Esta mesa possui comanda aberta. Use Receber e liberar para fechar a conta." });
+  }
+
   const table = await prisma.$transaction(async (tx) => {
+    if (body.status === "FREE" && activeSessionForFree) {
+      await tx.tableSession.update({
+        where: { id: activeSessionForFree.id },
+        data: {
+          status: TableSessionStatus.CANCELLED,
+          closedAt: new Date(),
+          closedByUserId: req.user?.sub ?? null,
+          lastActivityAt: new Date()
+        }
+      });
+    }
+
     const updated = await tx.restaurantTable.update({
       where: { id: req.params.id, companyId },
       data: {
@@ -677,9 +709,6 @@ export async function closeTableAccount(req: Request, res: Response) {
   });
   if (!orders.length) {
     return res.status(400).json({ message: "Nao ha pedidos abertos nesta mesa" });
-  }
-  if (orders.some((order) => order.paidAt)) {
-    return res.status(400).json({ message: "Esta mesa possui pedido ja pago. Finalize os pedidos individualmente por enquanto." });
   }
 
   const session = await prisma.cashSession.findFirst({

@@ -776,9 +776,10 @@ export default function PdvPage() {
                     <p className="text-xs font-black uppercase tracking-[0.18em]">Solicitação do cliente</p>
                     <p className="mt-1 font-black">{selectedTable.activeSession.customerName || "Cliente"}</p>
                     <p className="text-sm opacity-80">{selectedTable.activeSession.customerPhone || "-"} - {selectedTable.activeSession.customerEmail || "-"}</p>
-                    <p className="mt-2 text-sm">Confirme apenas se o cliente estiver presente na mesa.</p>
+                    <p className="mt-2 text-sm">Confirme apenas se o cliente estiver presente na mesa. O QR Code e o codigo aparecem depois da confirmacao.</p>
                   </div>
                 )}
+                {selectedTable.activeSession.status !== "PENDING_CONFIRMATION" && (
                 <div className="grid gap-4 md:grid-cols-[180px_1fr]">
                   <img className="h-44 w-44 rounded-2xl bg-white p-2 shadow" src={qrImage(selectedTable.activeSession.sessionUrl)} alt={`QR Code mesa ${selectedTable.number}`} />
                   <div>
@@ -799,6 +800,7 @@ export default function PdvPage() {
                     </div>
                   </div>
                 </div>
+                )}
               </section>
             )}
 

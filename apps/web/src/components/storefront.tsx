@@ -1053,7 +1053,7 @@ export function Storefront() {
                 <p className="text-xs font-black uppercase tracking-[0.2em]">Aguardando confirmacao</p>
                 <h2 className="mt-1 text-2xl font-black">O garcom precisa liberar sua mesa</h2>
                 <p className="mt-2 text-sm">
-                  Sua solicitacao foi enviada. Quando o PDV confirmar, use o botao abaixo para acessar o cardapio seguro desta sessao.
+                  Sua solicitacao foi enviada. Quando o PDV confirmar, esta tela abre o cardapio seguro automaticamente. Depois disso, o garcom informa o codigo de 6 caracteres.
                 </p>
                 <a className="mt-4 inline-flex w-full justify-center rounded-2xl bg-amber-500 px-4 py-3 font-black text-amber-950" href={tableRequestPendingUrl}>
                   Acompanhar liberacao da mesa
@@ -1088,7 +1088,7 @@ export function Storefront() {
           <p className="text-xs font-black uppercase tracking-[0.2em] text-amber-600">Mesa {tableContext?.number ?? ""}</p>
           <h1 className="mt-2 font-display text-4xl leading-none">Aguardando liberacao</h1>
           <p className="mt-3 text-sm opacity-75">
-            Sua solicitacao chegou no PDV. O cardapio sera liberado automaticamente quando o garcom confirmar a abertura da mesa.
+            Sua solicitacao chegou no PDV. O cardapio sera liberado automaticamente quando o garcom confirmar. Depois, digite o codigo informado pelo garcom.
           </p>
           <div className="mt-5 rounded-3xl bg-amber-50 p-4 text-left text-sm text-amber-950">
             <p><strong>Status:</strong> aguardando confirmacao</p>
