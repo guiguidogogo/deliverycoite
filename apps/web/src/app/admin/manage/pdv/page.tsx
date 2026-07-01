@@ -466,30 +466,71 @@ export default function PdvPage() {
     }
   }
 
-  function printTableAccount() {
+  async function printTableAccount() {
     if (!selectedTable) return;
-    const rows = orders.map((order) => `
+
+    let printableOrders = orders;
+    try {
+      const latest = await request(`/admin/tables/${selectedTable.id}/orders`);
+      printableOrders = latest ?? orders;
+      setOrders(printableOrders);
+    } catch {
+      // Se a atualizacao falhar, imprime o que ja esta carregado na tela.
+    }
+
+    if (!printableOrders.length) {
+      toast.error("Nao ha pedidos para imprimir nesta mesa");
+      return;
+    }
+
+    const subtotal = printableOrders.reduce((sum, order) => sum + Number(order.total), 0);
+    const serviceFee = serviceFeeEnabled ? subtotal * (serviceFeePercent / 100) : 0;
+    const discount = Math.min(Math.max(closeDiscount || 0, 0), subtotal + serviceFee);
+    const total = Math.max(0, subtotal + serviceFee - discount);
+    const rows = printableOrders.map((order) => `
       <div style="border-top:1px dashed #999;padding:8px 0">
         <strong>Pedido #${String(order.orderNumber).padStart(5, "0")}</strong> - ${brl(order.total)}
         ${order.items.map((item) => `<div>${item.quantity}x ${item.product.name} - ${brl(item.total)}${item.complements.map((c) => `<br/><small>+ ${c.quantity}x ${c.name}</small>`).join("")}</div>`).join("")}
       </div>
     `).join("");
     const win = window.open("", "_blank", "width=380,height=640");
-    if (!win) return;
+    if (!win) {
+      toast.error("O navegador bloqueou a janela de impressao. Permita pop-ups para imprimir a pre-conta.");
+      return;
+    }
     win.document.write(`
-      <html><body style="font-family:Arial,sans-serif;max-width:320px">
-        <h2>Conta Mesa ${selectedTable.number}</h2>
+      <html>
+      <head>
+        <title>Pre-conta Mesa ${selectedTable.number}</title>
+        <style>
+          @media print { body { margin: 0; } }
+          body { font-family: Arial, sans-serif; max-width: 320px; padding: 10px; color: #111; }
+          h1, h2, p { margin: 0 0 8px; }
+          .muted { color: #555; font-size: 12px; }
+          .total { border-top: 2px solid #111; margin-top: 10px; padding-top: 8px; font-size: 20px; }
+        </style>
+      </head>
+      <body>
+        <h2>Pre-conta Mesa ${selectedTable.number}</h2>
+        <p class="muted">${new Date().toLocaleString("pt-BR")}</p>
         ${rows}
         <hr/>
-        <p>Subtotal: <strong>${brl(accountTotals.subtotal)}</strong></p>
-        <p>Taxa de servico: <strong>${brl(accountTotals.serviceFee)}</strong></p>
-        <p>Desconto: <strong>${brl(accountTotals.discount)}</strong></p>
-        <h2>Total: ${brl(accountTotals.total)}</h2>
-      </body></html>
+        <p>Subtotal: <strong>${brl(subtotal)}</strong></p>
+        <p>Taxa de servico: <strong>${brl(serviceFee)}</strong></p>
+        <p>Desconto: <strong>${brl(discount)}</strong></p>
+        <h2 class="total">Total: ${brl(total)}</h2>
+        <script>
+          window.onload = function () {
+            setTimeout(function () {
+              window.focus();
+              window.print();
+            }, 250);
+          };
+        </script>
+      </body>
+      </html>
     `);
     win.document.close();
-    win.focus();
-    win.print();
   }
 
   async function updateStatus(table: RestaurantTable, status: TableStatus) {
@@ -676,7 +717,7 @@ export default function PdvPage() {
               )}
               <button className="rounded-xl bg-orange-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void updateStatus(selectedTable, "OCCUPIED")}>Marcar ocupada</button>
               <button className="rounded-xl bg-red-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void updateStatus(selectedTable, "WAITING_PAYMENT")}>Solicitou conta</button>
-              <button className="rounded-xl border px-3 py-2 text-sm font-bold" onClick={printTableAccount}>Imprimir pré-conta</button>
+              <button className="rounded-xl border px-3 py-2 text-sm font-bold" onClick={() => void printTableAccount()}>Imprimir pré-conta</button>
               <button className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void updateStatus(selectedTable, "FREE")}>Liberar mesa</button>
             </div>
 
