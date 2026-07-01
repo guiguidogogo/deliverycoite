@@ -19,6 +19,14 @@ type RestaurantTable = {
   status: "FREE" | "OCCUPIED" | "WAITING_PAYMENT" | "RESERVED" | "CLEANING";
   active: boolean;
   qrCodeUrl: string;
+  orderCount?: number;
+  accountTotal?: number;
+  activeSession?: {
+    id: string;
+    status: string;
+    orderCount?: number;
+    accountTotal?: number;
+  } | null;
   area?: DiningArea | null;
   _count?: { orders: number };
 };
@@ -201,13 +209,19 @@ export default function TablesManagePage() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {activeTables.map((table) => (
               <article key={table.id} className={`rounded-3xl border p-4 ${statusClasses[table.status]}`}>
+                {(() => {
+                  const activeOrderCount = table.orderCount ?? table.activeSession?.orderCount ?? 0;
+                  const activeAccountTotal = table.accountTotal ?? table.activeSession?.accountTotal ?? 0;
+                  return (
+                    <>
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-bold opacity-70">{table.area?.name || "Sem setor"}</p>
                     <h3 className="font-display text-4xl">Mesa {table.number}</h3>
                     <p className="font-bold">{table.name || `${table.seats} lugares`}</p>
                     <p className="mt-1 text-sm">Status: {statusLabels[table.status]}</p>
-                    {!!table._count?.orders && <p className="text-sm font-bold">{table._count.orders} pedido(s) aberto(s)</p>}
+                    {!!activeOrderCount && <p className="text-sm font-bold">{activeOrderCount} pedido(s) da comanda atual</p>}
+                    {!!activeAccountTotal && <p className="text-sm font-black">Conta atual: R$ {activeAccountTotal.toFixed(2).replace(".", ",")}</p>}
                   </div>
                   <img className="h-24 w-24 rounded-xl bg-white p-1" src={qrImage(table.qrCodeUrl)} alt={`QR Code mesa ${table.number}`} />
                 </div>
@@ -238,6 +252,9 @@ export default function TablesManagePage() {
                     Desativar
                   </button>
                 </div>
+                    </>
+                  );
+                })()}
               </article>
             ))}
             {!activeTables.length && <p className="rounded-2xl border bg-white/80 p-5 text-sm opacity-70 dark:bg-slate-900/70">Nenhuma mesa cadastrada ainda.</p>}
