@@ -136,6 +136,7 @@ export function Storefront() {
   const [locatingAddress, setLocatingAddress] = useState(false);
   const [updatingAddressFromMap, setUpdatingAddressFromMap] = useState(false);
   const cartLoadedRef = useRef(false);
+  const tableAccountRef = useRef<HTMLElement | null>(null);
   const [mercadoPagoPix, setMercadoPagoPix] = useState<{
     orderId: string;
     qrCode: string | null;
@@ -175,6 +176,8 @@ export function Storefront() {
   }, [pathname]);
   const isTableMode = Boolean(tableSessionToken || tableContext);
   const tableOrderingBlocked = Boolean(tableSession && tableSession.status !== "OPEN");
+  const tableAccountTotal = Number(tableSession?.account?.total ?? tableSession?.total ?? 0);
+  const tableOrdersCount = Number(tableSession?.orders?.length ?? 0);
 
   useEffect(() => {
     let canceled = false;
@@ -954,7 +957,7 @@ export function Storefront() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-3 pb-28 pt-3 md:px-8 md:pt-6">
+    <main className={`mx-auto w-full max-w-6xl px-3 pt-3 md:px-8 md:pt-6 ${isTableMode ? "pb-44" : "pb-28"}`}>
       <section className="reveal overflow-hidden rounded-[2rem] border border-white/60 bg-white/85 shadow-2xl shadow-orange-950/10 backdrop-blur dark:border-white/10 dark:bg-slate-950/80">
         <div
           className="relative min-h-[260px] overflow-hidden p-4 text-white md:p-7"
@@ -1024,7 +1027,7 @@ export function Storefront() {
               </div>
               <div className="rounded-2xl bg-white/14 p-3 backdrop-blur">
                 <ShoppingCart size={18} />
-                <p className="mt-1 font-black">{money(Number(tableSession?.account?.total ?? tableSession?.total ?? 0))}</p>
+                <p className="mt-1 font-black">{money(tableAccountTotal)}</p>
                 <p className="text-xs text-white/75">conta atual</p>
               </div>
               <div className="rounded-2xl bg-white/14 p-3 backdrop-blur">
@@ -1091,6 +1094,14 @@ export function Storefront() {
                 {tableContext.area?.name ? ` (${tableContext.area.name})` : ""}
               </span>
               <div className="flex flex-wrap justify-center gap-2">
+                {tableSession && (
+                  <button
+                    className="rounded-full bg-slate-950 px-4 py-2 text-sm font-black text-white"
+                    onClick={() => tableAccountRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                  >
+                    Ver pedidos / conta
+                  </button>
+                )}
                 <button className="rounded-full bg-white px-4 py-2 text-sm font-black text-emerald-700" onClick={() => void callWaiter()}>
                   Chamar garçom
                 </button>
@@ -1141,7 +1152,7 @@ export function Storefront() {
       )}
 
       {tableSession && (
-        <section className="mt-4 rounded-3xl border bg-white/85 p-4 shadow-lg shadow-orange-950/5 dark:bg-slate-950/80">
+        <section ref={tableAccountRef} id="conta-da-mesa" className="scroll-mt-24 mt-4 rounded-3xl border bg-white/85 p-4 shadow-lg shadow-orange-950/5 dark:bg-slate-950/80">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.2em] text-ember">Conta da mesa</p>
@@ -1154,7 +1165,7 @@ export function Storefront() {
                     : "Atendimento encerrado"}
               </p>
             </div>
-            <strong className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-800">{money(Number(tableSession.total ?? 0))}</strong>
+            <strong className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-800">{money(tableAccountTotal)}</strong>
           </div>
           {tableSession.status !== "OPEN" && (
             <p className="mt-3 rounded-2xl bg-amber-100 p-3 text-sm font-bold text-amber-900">
@@ -1383,6 +1394,24 @@ export function Storefront() {
             <p className="mt-1 text-sm opacity-70">Pronto para segmentar clientes inativos e ofertas regionais.</p>
           </div>
         </section>
+      )}
+
+      {isTableMode && tableSession && (
+        <button
+          className="fixed bottom-20 left-1/2 z-20 flex w-[calc(100%-1rem)] max-w-xl -translate-x-1/2 items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-left shadow-2xl shadow-emerald-950/15 dark:border-emerald-500/30 dark:bg-slate-950"
+          onClick={() => tableAccountRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+        >
+          <span className="min-w-0">
+            <span className="block text-xs font-black uppercase tracking-[0.18em] text-emerald-600">Conta atual</span>
+            <span className="block truncate text-sm font-bold opacity-70">
+              {tableOrdersCount ? `${tableOrdersCount} pedido(s) na mesa` : "Nenhum pedido enviado ainda"}
+            </span>
+          </span>
+          <span className="shrink-0 text-right">
+            <strong className="block text-lg text-ember">{money(tableAccountTotal)}</strong>
+            <span className="text-xs font-black text-ink dark:text-white">Ver pedidos</span>
+          </span>
+        </button>
       )}
 
       <button
