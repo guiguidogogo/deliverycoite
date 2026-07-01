@@ -488,6 +488,9 @@ export function AdminPanel() {
         {can("ORDERS") && <a className="rounded-lg bg-orange-600 px-3 py-2 text-sm text-white" href="/admin/manage/pdv">
           PDV Mesas
         </a>}
+        {can("ORDERS") && <a className="rounded-lg bg-amber-600 px-3 py-2 text-sm text-white" href="/admin/manage/kitchen">
+          Cozinha
+        </a>}
         {can("CUSTOMERS") && <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/customers">
           Clientes
         </a>}
