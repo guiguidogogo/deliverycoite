@@ -723,6 +723,26 @@ export function Storefront() {
     }
   }
 
+  async function callWaiter() {
+    if (!tableContext) return;
+    try {
+      const response = await api<{ message: string }>(`/tables/${tableContext.number}/call-waiter`, { method: "POST" });
+      toast.success(response.message || "Garcom chamado");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Nao foi possivel chamar o garcom");
+    }
+  }
+
+  async function requestBill() {
+    if (!tableContext) return;
+    try {
+      const response = await api<{ message: string }>(`/tables/${tableContext.number}/request-bill`, { method: "POST" });
+      toast.success(response.message || "Conta solicitada");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Nao foi possivel solicitar a conta");
+    }
+  }
+
   async function finishOrder(values: CheckoutForm) {
     if (!settings) return;
     if (!cart.length) {
@@ -945,10 +965,22 @@ export function Storefront() {
           </div>
         )}
         {tableContext && (
-          <div className="bg-emerald-600 p-3 text-center font-black text-white">
-            Atendimento na mesa {tableContext.number}
-            {tableContext.name ? ` - ${tableContext.name}` : ""}
-            {tableContext.area?.name ? ` (${tableContext.area.name})` : ""}
+          <div className="bg-emerald-600 p-3 text-white">
+            <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-3 text-center font-black sm:flex-row sm:text-left">
+              <span>
+                Atendimento na mesa {tableContext.number}
+                {tableContext.name ? ` - ${tableContext.name}` : ""}
+                {tableContext.area?.name ? ` (${tableContext.area.name})` : ""}
+              </span>
+              <div className="flex flex-wrap justify-center gap-2">
+                <button className="rounded-full bg-white px-4 py-2 text-sm font-black text-emerald-700" onClick={() => void callWaiter()}>
+                  Chamar garçom
+                </button>
+                <button className="rounded-full bg-amber-400 px-4 py-2 text-sm font-black text-amber-950" onClick={() => void requestBill()}>
+                  Solicitar conta
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </section>

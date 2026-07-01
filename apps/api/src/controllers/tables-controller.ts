@@ -490,3 +490,46 @@ export async function getPublicTable(req: Request, res: Response) {
     qrCodeUrl: publicTableUrl(req, table)
   });
 }
+
+export async function callWaiterFromTable(req: Request, res: Response) {
+  const number = z.coerce.number().int().positive().parse(req.params.number);
+  const table = await prisma.restaurantTable.findFirst({
+    where: { ...companyWhere(req), number, active: true },
+    select: { id: true, number: true, status: true }
+  });
+  if (!table) return res.status(404).json({ message: "Mesa nao encontrada para esta loja" });
+
+  const updated = await prisma.restaurantTable.update({
+    where: { id: table.id },
+    data: {
+      status: table.status === "FREE" ? "OCCUPIED" : table.status,
+      openedAt: table.status === "FREE" ? new Date() : undefined
+    }
+  });
+
+  return res.json({
+    ok: true,
+    message: `Garcom chamado na mesa ${updated.number}`,
+    table: updated
+  });
+}
+
+export async function requestBillFromTable(req: Request, res: Response) {
+  const number = z.coerce.number().int().positive().parse(req.params.number);
+  const table = await prisma.restaurantTable.findFirst({
+    where: { ...companyWhere(req), number, active: true },
+    select: { id: true, number: true }
+  });
+  if (!table) return res.status(404).json({ message: "Mesa nao encontrada para esta loja" });
+
+  const updated = await prisma.restaurantTable.update({
+    where: { id: table.id },
+    data: { status: "WAITING_PAYMENT" }
+  });
+
+  return res.json({
+    ok: true,
+    message: `Conta solicitada para a mesa ${updated.number}`,
+    table: updated
+  });
+}

@@ -136,11 +136,13 @@ import { listMarketplaceCompanies, marketplaceSummary } from "../controllers/mar
 import {
   createDiningArea,
   closeTableAccount,
+  callWaiterFromTable,
   createTableOrder,
   createTable,
   deleteDiningArea,
   deleteTable,
   getPublicTable,
+  requestBillFromTable,
   listTableOrders,
   listDiningAreas,
   listTables,
@@ -211,6 +213,8 @@ route.get("/categories", listCategories);
 route.get("/products", listProducts);
 route.get("/complements", listComplements);
 route.get("/tables/:number", getPublicTable);
+route.post("/tables/:number/call-waiter", callWaiterFromTable);
+route.post("/tables/:number/request-bill", requestBillFromTable);
 route.get("/coupons/validate", validateCoupon);
 route.post("/favorites/toggle", toggleFavorite);
 route.post("/orders", createOrder);
