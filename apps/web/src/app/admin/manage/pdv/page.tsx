@@ -20,6 +20,16 @@ type RestaurantTable = {
   status: TableStatus;
   active: boolean;
   qrCodeUrl: string;
+  activeSession?: {
+    id: string;
+    token: string;
+    shortCode: string;
+    status: "OPEN" | "CLOSING_REQUESTED" | "CLOSED" | "CANCELLED";
+    sessionUrl: string;
+    openedAt: string;
+    total: number | string;
+    openedByUser?: { name: string } | null;
+  } | null;
   area?: DiningArea | null;
   _count?: { orders: number };
 };
@@ -75,6 +85,10 @@ type DraftItem = {
 type ClosePaymentMethod = "CASH" | "PIX" | "DEBIT" | "CREDIT" | "CARD";
 type PdvAlert = { id: string; message: string; tone: "bill" | "order" };
 
+function qrImage(url: string) {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(url)}`;
+}
+
 const statusLabels: Record<TableStatus, string> = {
   FREE: "Livre",
   OCCUPIED: "Ocupada",
@@ -126,6 +140,7 @@ export default function PdvPage() {
   const [loading, setLoading] = useState(true);
   const [savingOrder, setSavingOrder] = useState(false);
   const [closingTable, setClosingTable] = useState(false);
+  const [openingSession, setOpeningSession] = useState(false);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [areaFilter, setAreaFilter] = useState("all");
   const [soundEnabled, setSoundEnabled] = useState(false);
@@ -283,6 +298,27 @@ export default function PdvPage() {
       setOrders([]);
     } finally {
       setLoadingOrders(false);
+    }
+  }
+
+  async function openSession(table: RestaurantTable) {
+    if (openingSession) return;
+    setOpeningSession(true);
+    try {
+      const session = await request(`/admin/tables/${table.id}/session`, { method: "POST" });
+      const updated = {
+        ...table,
+        status: "OCCUPIED" as TableStatus,
+        activeSession: session,
+        qrCodeUrl: session.sessionUrl
+      };
+      setSelectedTable(updated);
+      setTables((current) => current.map((item) => item.id === table.id ? updated : item));
+      toast.success("Atendimento aberto com QR Code seguro");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao abrir atendimento");
+    } finally {
+      setOpeningSession(false);
     }
   }
 
@@ -508,7 +544,7 @@ export default function PdvPage() {
                 </div>
                 <div className="rounded-2xl bg-white/65 p-3">
                   <p className="text-xs opacity-70">QR Code</p>
-                  <p className="truncate text-xs font-bold">Abrir mesa</p>
+                  <p className="truncate text-xs font-bold">{table.activeSession ? "Sessão ativa" : "Fechado"}</p>
                 </div>
               </div>
             </button>
@@ -550,13 +586,43 @@ export default function PdvPage() {
             </div>
 
             <div className="mt-4 flex flex-wrap gap-2">
+              {!selectedTable.activeSession && (
+                <button className="rounded-xl bg-emerald-700 px-3 py-2 text-sm font-bold text-white disabled:opacity-60" disabled={openingSession} onClick={() => void openSession(selectedTable)}>
+                  {openingSession ? "Abrindo..." : "Abrir atendimento"}
+                </button>
+              )}
               <a className="rounded-xl bg-ink px-3 py-2 text-sm font-bold text-white" href={selectedTable.qrCodeUrl} target="_blank" rel="noreferrer">
-                Abrir cardápio da mesa
+                Abrir QR/cardápio
               </a>
               <button className="rounded-xl bg-orange-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void updateStatus(selectedTable, "OCCUPIED")}>Marcar ocupada</button>
               <button className="rounded-xl bg-red-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void updateStatus(selectedTable, "WAITING_PAYMENT")}>Solicitou conta</button>
               <button className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void updateStatus(selectedTable, "FREE")}>Liberar mesa</button>
             </div>
+
+            {selectedTable.activeSession && (
+              <section className="mt-4 rounded-3xl border bg-white p-4 text-slate-950">
+                <div className="grid gap-4 md:grid-cols-[180px_1fr]">
+                  <img className="h-44 w-44 rounded-2xl bg-white p-2 shadow" src={qrImage(selectedTable.activeSession.sessionUrl)} alt={`QR Code mesa ${selectedTable.number}`} />
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-700">Atendimento seguro</p>
+                    <h3 className="text-2xl font-black">Código: {selectedTable.activeSession.shortCode}</h3>
+                    <p className="mt-1 text-sm opacity-70">Mostre este código ao cliente. O QR Code só funciona enquanto este atendimento estiver aberto.</p>
+                    <p className="mt-2 break-all rounded-xl bg-slate-100 p-2 text-xs">{selectedTable.activeSession.sessionUrl}</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button className="rounded-xl border px-3 py-2 text-sm font-bold" onClick={() => {
+                        void navigator.clipboard.writeText(selectedTable.activeSession?.sessionUrl ?? "");
+                        toast.success("Link copiado");
+                      }}>
+                        Copiar link
+                      </button>
+                      <a className="rounded-xl border px-3 py-2 text-sm font-bold" href={qrImage(selectedTable.activeSession.sessionUrl)} target="_blank" rel="noreferrer">
+                        Imprimir/abrir QR
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            )}
 
             <section className="mt-5 rounded-3xl border bg-emerald-50 p-4 text-slate-950">
               <div className="flex flex-wrap items-center justify-between gap-2">

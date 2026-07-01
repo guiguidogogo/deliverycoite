@@ -1,10 +1,11 @@
 import crypto from "node:crypto";
 import type { Request, Response } from "express";
-import { FulfillmentType, OrderSource, PaymentMethod, Prisma, TableStatus } from "@prisma/client";
+import { FulfillmentType, OrderSource, PaymentMethod, Prisma, TableSessionStatus, TableStatus } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
 import { recordCashPayments } from "../utils/cash-register.js";
+import { audit } from "../utils/audit.js";
 
 const areaSchema = z.object({
   name: z.string().min(2, "Nome do setor obrigatorio").max(80),
@@ -50,6 +51,13 @@ function publicTableUrl(req: Request, table: { number: number }, explicitSubdoma
   return `https://${rootDomain}/mesa/${table.number}?subdomain=${encodeURIComponent(req.tenant?.subdomain ?? "")}`;
 }
 
+function publicTableSessionUrl(req: Request, token: string, explicitSubdomain?: string | null) {
+  const rootDomain = process.env.ROOT_DOMAIN ?? "hubregional.com.br";
+  const subdomain = explicitSubdomain || req.tenant?.subdomain;
+  if (subdomain) return `https://${subdomain}.${rootDomain}/mesa/sessao/${token}`;
+  return `https://${rootDomain}/mesa/sessao/${token}?subdomain=${encodeURIComponent(req.tenant?.subdomain ?? "")}`;
+}
+
 async function currentCompanySubdomain(req: Request) {
   const company = await prisma.company.findUnique({
     where: { id: getCompanyId(req) },
@@ -60,6 +68,15 @@ async function currentCompanySubdomain(req: Request) {
 
 function newQrToken() {
   return `mesa_${crypto.randomBytes(18).toString("hex")}`;
+}
+
+function newSessionToken() {
+  return `sess_${crypto.randomBytes(32).toString("hex")}`;
+}
+
+function newShortCode() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  return Array.from({ length: 6 }, () => alphabet[crypto.randomInt(0, alphabet.length)]).join("");
 }
 
 function toDecimal(value: number) {
@@ -109,6 +126,12 @@ export async function listTables(req: Request, res: Response) {
     where: companyWhere(req),
     include: {
       area: true,
+      sessions: {
+        where: { status: { in: [TableSessionStatus.OPEN, TableSessionStatus.CLOSING_REQUESTED] } },
+        orderBy: { openedAt: "desc" },
+        take: 1,
+        include: { openedByUser: { select: { id: true, name: true } } }
+      },
       _count: {
         select: {
           orders: {
@@ -123,10 +146,19 @@ export async function listTables(req: Request, res: Response) {
     orderBy: [{ number: "asc" }]
     })
   ]);
-  return res.json(tables.map((table) => ({
-    ...table,
-    qrCodeUrl: publicTableUrl(req, table, subdomain)
-  })));
+  return res.json(tables.map((table) => {
+    const activeSession = table.sessions[0] ?? null;
+    return {
+      ...table,
+      activeSession: activeSession ? {
+        ...activeSession,
+        sessionUrl: publicTableSessionUrl(req, activeSession.token, subdomain)
+      } : null,
+      qrCodeUrl: activeSession
+        ? publicTableSessionUrl(req, activeSession.token, subdomain)
+        : publicTableUrl(req, table, subdomain)
+    };
+  }));
 }
 
 export async function createTable(req: Request, res: Response) {
@@ -220,6 +252,97 @@ export async function listTableOrders(req: Request, res: Response) {
   return res.json(orders);
 }
 
+export async function openTableSession(req: Request, res: Response) {
+  const companyId = getCompanyId(req);
+  const table = await prisma.restaurantTable.findFirst({
+    where: { id: req.params.id, companyId, active: true },
+    include: { area: true }
+  });
+  if (!table) return res.status(404).json({ message: "Mesa nao encontrada" });
+
+  const existing = await prisma.tableSession.findFirst({
+    where: {
+      companyId,
+      tableId: table.id,
+      status: { in: [TableSessionStatus.OPEN, TableSessionStatus.CLOSING_REQUESTED] }
+    },
+    include: { openedByUser: { select: { id: true, name: true } } }
+  });
+  const subdomain = await currentCompanySubdomain(req);
+  if (existing) {
+    return res.json({
+      ...existing,
+      table,
+      sessionUrl: publicTableSessionUrl(req, existing.token, subdomain)
+    });
+  }
+
+  const expiresHours = Number(process.env.TABLE_SESSION_EXPIRES_HOURS ?? 12);
+  const expiresAt = Number.isFinite(expiresHours) && expiresHours > 0
+    ? new Date(Date.now() + expiresHours * 60 * 60 * 1000)
+    : null;
+
+  const session = await prisma.$transaction(async (tx) => {
+    const created = await tx.tableSession.create({
+      data: {
+        companyId,
+        tableId: table.id,
+        token: newSessionToken(),
+        shortCode: newShortCode(),
+        openedByUserId: req.user?.sub ?? null,
+        expiresAt
+      },
+      include: { openedByUser: { select: { id: true, name: true } } }
+    });
+    await tx.restaurantTable.update({
+      where: { id: table.id },
+      data: { status: "OCCUPIED", openedAt: created.openedAt, closedAt: null }
+    });
+    return created;
+  });
+
+  await audit(req, {
+    action: "TABLE_SESSION_OPENED",
+    entity: "TableSession",
+    entityId: session.id,
+    newValue: { tableId: table.id, tableNumber: table.number, shortCode: session.shortCode }
+  });
+
+  return res.status(201).json({
+    ...session,
+    table,
+    sessionUrl: publicTableSessionUrl(req, session.token, subdomain)
+  });
+}
+
+export async function getTableSessionAccount(req: Request, res: Response) {
+  const companyId = getCompanyId(req);
+  const session = await prisma.tableSession.findFirst({
+    where: {
+      id: req.params.sessionId,
+      companyId,
+      tableId: req.params.id
+    },
+    include: {
+      table: { include: { area: true } },
+      openedByUser: { select: { id: true, name: true } },
+      orders: {
+        where: { deletedAt: null, status: { notIn: ["CANCELED"] } },
+        include: {
+          customer: true,
+          items: { include: { product: { select: { id: true, name: true } }, complements: true } }
+        },
+        orderBy: { createdAt: "asc" }
+      }
+    }
+  });
+  if (!session) return res.status(404).json({ message: "Atendimento nao encontrado" });
+  const total = session.orders
+    .filter((order) => !["FINISHED", "CANCELED"].includes(order.status))
+    .reduce((sum, order) => sum + Number(order.total), 0);
+  return res.json({ ...session, total });
+}
+
 export async function createTableOrder(req: Request, res: Response) {
   const body = tableOrderSchema.parse(req.body);
   const companyId = getCompanyId(req);
@@ -228,6 +351,14 @@ export async function createTableOrder(req: Request, res: Response) {
     select: { id: true, number: true }
   });
   if (!table) return res.status(404).json({ message: "Mesa nao encontrada" });
+
+  const activeSession = await prisma.tableSession.findFirst({
+    where: {
+      companyId,
+      tableId: table.id,
+      status: { in: [TableSessionStatus.OPEN, TableSessionStatus.CLOSING_REQUESTED] }
+    }
+  });
 
   const productIds = [...new Set(body.items.map((item) => item.productId))];
   const products = await prisma.product.findMany({
@@ -308,6 +439,7 @@ export async function createTableOrder(req: Request, res: Response) {
       customerId: customer.id,
       source: OrderSource.WAITER,
       tableId: table.id,
+      tableSessionId: activeSession?.id ?? null,
       waiterId: req.user?.sub ?? null,
       paymentMethod: body.paymentMethod,
       fulfillmentType: FulfillmentType.PICKUP,
@@ -347,6 +479,15 @@ export async function createTableOrder(req: Request, res: Response) {
     where: { id: table.id },
     data: { status: "OCCUPIED", openedAt: new Date(), closedAt: null }
   });
+  if (activeSession) {
+    await prisma.tableSession.update({
+      where: { id: activeSession.id },
+      data: {
+        total: { increment: toDecimal(subtotalNumber) },
+        lastActivityAt: new Date()
+      }
+    });
+  }
 
   return res.status(201).json(order);
 }
@@ -360,10 +501,19 @@ export async function closeTableAccount(req: Request, res: Response) {
   });
   if (!table) return res.status(404).json({ message: "Mesa nao encontrada" });
 
+  const activeSession = await prisma.tableSession.findFirst({
+    where: {
+      companyId,
+      tableId: table.id,
+      status: { in: [TableSessionStatus.OPEN, TableSessionStatus.CLOSING_REQUESTED] }
+    }
+  });
+
   const orders = await prisma.order.findMany({
     where: {
       companyId,
       tableId: table.id,
+      ...(activeSession ? { tableSessionId: activeSession.id } : {}),
       deletedAt: null,
       status: { notIn: ["FINISHED", "CANCELED"] }
     },
@@ -429,6 +579,18 @@ export async function closeTableAccount(req: Request, res: Response) {
       where: { id: table.id },
       data: { status: "FREE", closedAt: now, openedAt: null }
     });
+    if (activeSession) {
+      await tx.tableSession.update({
+        where: { id: activeSession.id },
+        data: {
+          status: TableSessionStatus.CLOSED,
+          closedAt: now,
+          closedByUserId: req.user?.sub ?? null,
+          total: toDecimal(orders.reduce((sum, order) => sum + Number(order.total), 0)),
+          lastActivityAt: now
+        }
+      });
+    }
   });
 
   await recordCashPayments(session.id, companyId, orders.map((order) => ({
@@ -489,6 +651,125 @@ export async function getPublicTable(req: Request, res: Response) {
     company: table.company,
     qrCodeUrl: publicTableUrl(req, table)
   });
+}
+
+export async function getPublicTableSession(req: Request, res: Response) {
+  const token = z.string().min(20).parse(req.params.token);
+  const session = await prisma.tableSession.findUnique({
+    where: { token },
+    include: {
+      table: { include: { area: true } },
+      company: {
+        select: {
+          id: true,
+          tradeName: true,
+          logoUrl: true,
+          subdomain: true,
+          active: true
+        }
+      },
+      orders: {
+        where: { deletedAt: null, status: { notIn: ["CANCELED"] } },
+        include: {
+          items: { include: { product: { select: { id: true, name: true } }, complements: true } }
+        },
+        orderBy: { createdAt: "asc" }
+      }
+    }
+  });
+  if (!session) return res.status(404).json({ message: "Atendimento nao encontrado" });
+
+  const expired = Boolean(session.expiresAt && session.expiresAt < new Date());
+  const total = session.orders
+    .filter((order) => !["FINISHED", "CANCELED"].includes(order.status))
+    .reduce((sum, order) => sum + Number(order.total), 0);
+
+  return res.json({
+    id: session.id,
+    token: session.token,
+    status: expired ? "CLOSED" : session.status,
+    requiresCode: session.status === TableSessionStatus.OPEN || session.status === TableSessionStatus.CLOSING_REQUESTED,
+    openedAt: session.openedAt,
+    expiresAt: session.expiresAt,
+    total,
+    table: {
+      id: session.table.id,
+      number: session.table.number,
+      name: session.table.name,
+      seats: session.table.seats,
+      status: session.table.status,
+      area: session.table.area
+    },
+    company: session.company,
+    orders: session.orders
+  });
+}
+
+export async function verifyPublicTableSessionCode(req: Request, res: Response) {
+  const token = z.string().min(20).parse(req.params.token);
+  const body = z.object({ code: z.string().min(4).max(12) }).parse(req.body);
+  const session = await prisma.tableSession.findUnique({ where: { token } });
+  if (!session) return res.status(404).json({ message: "Atendimento nao encontrado" });
+  if (session.status === TableSessionStatus.CLOSED || session.status === TableSessionStatus.CANCELLED) {
+    return res.status(409).json({ message: "Atendimento encerrado" });
+  }
+  if (session.expiresAt && session.expiresAt < new Date()) {
+    return res.status(409).json({ message: "Atendimento expirado. Chame o garcom." });
+  }
+  if (session.shortCode.toUpperCase() !== body.code.trim().toUpperCase()) {
+    return res.status(401).json({ message: "Codigo da mesa invalido" });
+  }
+  await prisma.tableSession.update({
+    where: { id: session.id },
+    data: { lastActivityAt: new Date() }
+  });
+  return res.json({ ok: true, sessionId: session.id, token: session.token });
+}
+
+export async function callWaiterFromSession(req: Request, res: Response) {
+  const token = z.string().min(20).parse(req.params.token);
+  const session = await prisma.tableSession.findUnique({
+    where: { token },
+    include: { table: true }
+  });
+  if (!session) return res.status(404).json({ message: "Atendimento nao encontrado" });
+  if (session.status !== TableSessionStatus.OPEN && session.status !== TableSessionStatus.CLOSING_REQUESTED) {
+    return res.status(409).json({ message: "Atendimento encerrado" });
+  }
+  await prisma.$transaction([
+    prisma.restaurantTable.update({
+      where: { id: session.tableId },
+      data: { status: session.table.status === "FREE" ? "OCCUPIED" : session.table.status, openedAt: session.table.openedAt ?? new Date() }
+    }),
+    prisma.tableSession.update({
+      where: { id: session.id },
+      data: { lastActivityAt: new Date() }
+    })
+  ]);
+  return res.json({ ok: true, message: `Garcom chamado na mesa ${session.table.number}` });
+}
+
+export async function requestBillFromSession(req: Request, res: Response) {
+  const token = z.string().min(20).parse(req.params.token);
+  const session = await prisma.tableSession.findUnique({
+    where: { token },
+    include: { table: true }
+  });
+  if (!session) return res.status(404).json({ message: "Atendimento nao encontrado" });
+  if (session.status !== TableSessionStatus.OPEN) {
+    return res.status(409).json({ message: session.status === TableSessionStatus.CLOSING_REQUESTED ? "Conta ja solicitada" : "Atendimento encerrado" });
+  }
+  await prisma.$transaction([
+    prisma.tableSession.update({
+      where: { id: session.id },
+      data: { status: TableSessionStatus.CLOSING_REQUESTED, lastActivityAt: new Date() }
+    }),
+    prisma.restaurantTable.update({
+      where: { id: session.tableId },
+      data: { status: "WAITING_PAYMENT" }
+    })
+  ]);
+  return res.json({ ok: true, message: `Conta solicitada para a mesa ${session.table.number}` });
 }
 
 export async function callWaiterFromTable(req: Request, res: Response) {

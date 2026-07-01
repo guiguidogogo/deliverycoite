@@ -136,16 +136,22 @@ import { listMarketplaceCompanies, marketplaceSummary } from "../controllers/mar
 import {
   createDiningArea,
   closeTableAccount,
+  callWaiterFromSession,
   callWaiterFromTable,
   createTableOrder,
   createTable,
   deleteDiningArea,
   deleteTable,
   getPublicTable,
+  getPublicTableSession,
+  getTableSessionAccount,
+  openTableSession,
+  requestBillFromSession,
   requestBillFromTable,
   listTableOrders,
   listDiningAreas,
   listTables,
+  verifyPublicTableSessionCode,
   updateDiningArea,
   updateTable,
   updateTableStatus
@@ -215,6 +221,10 @@ route.get("/complements", listComplements);
 route.get("/tables/:number", getPublicTable);
 route.post("/tables/:number/call-waiter", callWaiterFromTable);
 route.post("/tables/:number/request-bill", requestBillFromTable);
+route.get("/table-sessions/:token", getPublicTableSession);
+route.post("/table-sessions/:token/verify", verifyPublicTableSessionCode);
+route.post("/table-sessions/:token/call-waiter", callWaiterFromSession);
+route.post("/table-sessions/:token/request-bill", requestBillFromSession);
 route.get("/coupons/validate", validateCoupon);
 route.post("/favorites/toggle", toggleFavorite);
 route.post("/orders", createOrder);
@@ -273,6 +283,8 @@ route.post("/admin/tables", requirePermission("SETTINGS"), createTable);
 route.patch("/admin/tables/:id", requirePermission("SETTINGS"), updateTable);
 route.patch("/admin/tables/:id/status", requirePermission("SETTINGS"), updateTableStatus);
 route.get("/admin/tables/:id/orders", requirePermission("ORDERS"), listTableOrders);
+route.post("/admin/tables/:id/session", requirePermission("ORDERS"), openTableSession);
+route.get("/admin/tables/:id/session/:sessionId", requirePermission("ORDERS"), getTableSessionAccount);
 route.post("/admin/tables/:id/orders", requirePermission("ORDERS"), createTableOrder);
 route.post("/admin/tables/:id/close", requirePermission("ORDERS"), closeTableAccount);
 route.delete("/admin/tables/:id", requirePermission("SETTINGS"), deleteTable);

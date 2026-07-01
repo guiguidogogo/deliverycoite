@@ -38,8 +38,16 @@ enum FulfillmentType {
 enum OrderSource {
   DELIVERY
   TABLE
+  TABLE_QR
   COUNTER
   WAITER
+}
+
+enum TableSessionStatus {
+  OPEN
+  CLOSING_REQUESTED
+  CLOSED
+  CANCELLED
 }
 
 enum TableStatus {
@@ -78,6 +86,8 @@ model User {
   staffRoleId    String?
   staffRole      StaffRole?      @relation(fields: [staffRoleId], references: [id], onDelete: SetNull)
   waiterOrders   Order[]         @relation("WaiterOrders")
+  openedTableSessions TableSession[] @relation("OpenedTableSessions")
+  closedTableSessions TableSession[] @relation("ClosedTableSessions")
   passwordResets PasswordReset[]
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
@@ -142,6 +152,7 @@ model Company {
   settings               Setting[]
   coupons                Coupon[]
   orders                 Order[]
+  tableSessions          TableSession[]
   cashSessions           CashSession[]
   cashEntries            CashEntry[]
   deliveryFeeTiers       DeliveryFeeTier[]
@@ -519,6 +530,8 @@ model Order {
   fulfillmentType    FulfillmentType   @default(DELIVERY)
   tableId            String?
   table              RestaurantTable?  @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  tableSessionId     String?
+  tableSession       TableSession?     @relation(fields: [tableSessionId], references: [id], onDelete: SetNull)
   waiterId           String?
   waiter             User?             @relation("WaiterOrders", fields: [waiterId], references: [id], onDelete: SetNull)
   changeFor          Decimal?          @db.Decimal(10, 2)
@@ -560,6 +573,7 @@ model Order {
   @@index([companyId])
   @@index([companyId, source])
   @@index([companyId, tableId])
+  @@index([companyId, tableSessionId])
   @@index([companyId, deletedAt])
   @@index([mercadoPagoPreferenceId])
   @@index([mercadoPagoPaymentId])
@@ -595,12 +609,40 @@ model RestaurantTable {
   openedAt     DateTime?
   closedAt     DateTime?
   orders       Order[]
+  sessions     TableSession[]
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
   @@unique([companyId, number])
   @@index([companyId, status])
   @@index([companyId, areaId])
+}
+
+model TableSession {
+  id             String             @id @default(cuid())
+  companyId      String
+  company        Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  tableId        String
+  table          RestaurantTable    @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  status         TableSessionStatus @default(OPEN)
+  token          String             @unique
+  shortCode      String
+  openedByUserId String?
+  openedByUser   User?              @relation("OpenedTableSessions", fields: [openedByUserId], references: [id], onDelete: SetNull)
+  closedByUserId String?
+  closedByUser   User?              @relation("ClosedTableSessions", fields: [closedByUserId], references: [id], onDelete: SetNull)
+  openedAt       DateTime           @default(now())
+  closedAt       DateTime?
+  expiresAt      DateTime?
+  lastActivityAt DateTime           @default(now())
+  total          Decimal            @default(0) @db.Decimal(10, 2)
+  orders         Order[]
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([companyId, status])
+  @@index([companyId, tableId, openedAt])
+  @@index([token])
 }
 
 model Driver {

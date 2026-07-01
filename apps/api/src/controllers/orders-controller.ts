@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { FulfillmentType, OrderSource, OrderStatus, PaymentMethod, Prisma } from "@prisma/client";
+import { FulfillmentType, OrderSource, OrderStatus, PaymentMethod, Prisma, TableSessionStatus } from "@prisma/client";
 import { z } from "zod";
 import { publishNewOrder } from "../services/realtime.js";
 import { printOrder } from "../services/thermal-printer.js";
@@ -44,6 +44,7 @@ const checkoutSchema = z
     fulfillmentType: z.nativeEnum(FulfillmentType).default(FulfillmentType.DELIVERY),
     source: z.nativeEnum(OrderSource).default(OrderSource.DELIVERY),
     tableId: z.string().optional(),
+    tableSessionToken: z.string().optional(),
     paymentMethod: z.nativeEnum(PaymentMethod),
     changeFor: z.coerce.number().optional(),
     couponCode: z.string().optional(),
@@ -62,11 +63,11 @@ const checkoutSchema = z
       .min(1)
   })
   .superRefine((body, ctx) => {
-    if (body.source === OrderSource.TABLE && !body.tableId) {
+    if ((body.source === OrderSource.TABLE || body.source === OrderSource.TABLE_QR) && !body.tableId && !body.tableSessionToken) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["tableId"], message: "Mesa obrigatoria" });
     }
 
-    if (body.fulfillmentType !== FulfillmentType.DELIVERY || body.source === OrderSource.TABLE) return;
+    if (body.fulfillmentType !== FulfillmentType.DELIVERY || body.source === OrderSource.TABLE || body.source === OrderSource.TABLE_QR) return;
 
     if (body.customer.address.trim().length < 3) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["customer", "address"], message: "Endereco obrigatorio" });
@@ -159,7 +160,7 @@ function isStoreOpen(openTime: string | null | undefined, closeTime: string | nu
 export async function createOrder(req: Request, res: Response) {
   const body = checkoutSchema.parse(req.body);
   const companyId = getCompanyId(req);
-  const tableOrder = body.source === OrderSource.TABLE;
+  const tableOrder = body.source === OrderSource.TABLE || body.source === OrderSource.TABLE_QR;
 
   const settings = await prisma.setting.findFirstOrThrow({
     where: { companyId },
@@ -266,7 +267,31 @@ export async function createOrder(req: Request, res: Response) {
     ...customerData
   } = body.customer;
   const phone = normalizePhone(body.customer.phone);
-  const table = body.tableId
+  const tableSession = body.tableSessionToken
+    ? await prisma.tableSession.findUnique({
+        where: { token: body.tableSessionToken },
+        include: { table: { select: { id: true, number: true, name: true, companyId: true, active: true } } }
+      })
+    : null;
+  if (body.source === OrderSource.TABLE_QR) {
+    if (!tableSession || tableSession.companyId !== companyId || !tableSession.table.active) {
+      return res.status(400).json({ message: "Atendimento de mesa invalido" });
+    }
+    if (tableSession.status !== TableSessionStatus.OPEN) {
+      return res.status(409).json({
+        message: tableSession.status === TableSessionStatus.CLOSING_REQUESTED
+          ? "A conta ja foi solicitada. Chame o garcom para incluir novos itens."
+          : "Atendimento encerrado"
+      });
+    }
+    if (tableSession.expiresAt && tableSession.expiresAt < new Date()) {
+      return res.status(409).json({ message: "Atendimento expirado. Chame o garcom." });
+    }
+  }
+
+  const table = tableSession
+    ? tableSession.table
+    : body.tableId
     ? await prisma.restaurantTable.findFirst({
         where: { id: body.tableId, companyId, active: true },
         select: { id: true, number: true, name: true }
@@ -418,6 +443,7 @@ export async function createOrder(req: Request, res: Response) {
       customerId: customer.id,
       source: body.source,
       tableId: table?.id ?? null,
+      tableSessionId: tableSession?.id ?? null,
       waiterId: body.source === OrderSource.WAITER ? req.user?.sub ?? null : null,
       paymentMethod: body.paymentMethod,
       fulfillmentType: tableOrder ? FulfillmentType.PICKUP : body.fulfillmentType,
@@ -461,6 +487,15 @@ export async function createOrder(req: Request, res: Response) {
     await prisma.restaurantTable.update({
       where: { id: table.id },
       data: { status: "OCCUPIED", openedAt: new Date(), closedAt: null }
+    });
+  }
+  if (tableSession) {
+    await prisma.tableSession.update({
+      where: { id: tableSession.id },
+      data: {
+        total: { increment: total },
+        lastActivityAt: new Date()
+      }
     });
   }
 

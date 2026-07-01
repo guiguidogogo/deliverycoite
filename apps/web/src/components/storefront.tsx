@@ -63,8 +63,9 @@ type CheckoutPayload = {
     longitude?: number;
   };
   fulfillmentType: "DELIVERY" | "PICKUP";
-  source?: "DELIVERY" | "TABLE" | "COUNTER" | "WAITER";
+  source?: "DELIVERY" | "TABLE" | "TABLE_QR" | "COUNTER" | "WAITER";
   tableId?: string;
+  tableSessionToken?: string;
   paymentMethod: "CASH" | "PIX" | "CARD" | "MERCADO_PAGO";
   changeFor?: number;
   couponCode?: string;
@@ -107,6 +108,9 @@ export function Storefront() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [company, setCompany] = useState<PublicCompany | null>(null);
   const [tableContext, setTableContext] = useState<{ id: string; number: number; name?: string | null; area?: { name: string } | null } | null>(null);
+  const [tableSession, setTableSession] = useState<any>(null);
+  const [tableSessionCode, setTableSessionCode] = useState("");
+  const [tableSessionVerified, setTableSessionVerified] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [query, setQuery] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -162,6 +166,11 @@ export function Storefront() {
     const match = pathname?.match(/^\/mesa\/(\d+)/);
     return match ? Number(match[1]) : null;
   }, [pathname]);
+  const tableSessionToken = useMemo(() => {
+    const match = pathname?.match(/^\/mesa\/sessao\/([^/?#]+)/);
+    return match ? decodeURIComponent(match[1]) : null;
+  }, [pathname]);
+  const tableOrderingBlocked = Boolean(tableSession && tableSession.status !== "OPEN");
 
   useEffect(() => {
     let canceled = false;
@@ -171,13 +180,21 @@ export function Storefront() {
         const tenantCompany = await api<PublicCompany>("/company");
         if (canceled) return;
         setCompany(tenantCompany);
-        if (tableNumber) {
+        if (tableSessionToken) {
+          const session = await api<any>(`/table-sessions/${tableSessionToken}`);
+          if (canceled) return;
+          setTableSession(session);
+          setTableContext(session?.table ?? null);
+          setTableSessionVerified(localStorage.getItem(`hubregional:table-session:${tableSessionToken}`) === "verified");
+          setValue("fulfillmentType", "PICKUP");
+        } else if (tableNumber) {
           const table = await api<{ id: string; number: number; name?: string | null; area?: { name: string } | null }>(`/tables/${tableNumber}`);
           if (canceled) return;
           setTableContext(table);
           setValue("fulfillmentType", "PICKUP");
         } else {
           setTableContext(null);
+          setTableSession(null);
         }
         document.documentElement.style.setProperty("--tenant-primary", tenantCompany.primaryColor);
         document.documentElement.style.setProperty("--tenant-secondary", tenantCompany.secondaryColor);
@@ -228,7 +245,7 @@ export function Storefront() {
     return () => {
       canceled = true;
     };
-  }, [setValue, tableNumber]);
+  }, [setValue, tableNumber, tableSessionToken]);
 
   useEffect(() => {
 
@@ -726,7 +743,10 @@ export function Storefront() {
   async function callWaiter() {
     if (!tableContext) return;
     try {
-      const response = await api<{ message: string }>(`/tables/${tableContext.number}/call-waiter`, { method: "POST" });
+      const response = await api<{ message: string }>(
+        tableSessionToken ? `/table-sessions/${tableSessionToken}/call-waiter` : `/tables/${tableContext.number}/call-waiter`,
+        { method: "POST" }
+      );
       toast.success(response.message || "Garcom chamado");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Nao foi possivel chamar o garcom");
@@ -736,7 +756,14 @@ export function Storefront() {
   async function requestBill() {
     if (!tableContext) return;
     try {
-      const response = await api<{ message: string }>(`/tables/${tableContext.number}/request-bill`, { method: "POST" });
+      const response = await api<{ message: string }>(
+        tableSessionToken ? `/table-sessions/${tableSessionToken}/request-bill` : `/tables/${tableContext.number}/request-bill`,
+        { method: "POST" }
+      );
+      if (tableSessionToken) {
+        const refreshed = await api<any>(`/table-sessions/${tableSessionToken}`);
+        setTableSession(refreshed);
+      }
       toast.success(response.message || "Conta solicitada");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Nao foi possivel solicitar a conta");
@@ -747,6 +774,14 @@ export function Storefront() {
     if (!settings) return;
     if (!cart.length) {
       toast.error("Adicione itens antes de confirmar");
+      return;
+    }
+    if (tableSessionToken && !tableSessionVerified) {
+      toast.error("Confirme o codigo da mesa antes de pedir");
+      return;
+    }
+    if (tableOrderingBlocked) {
+      toast.error(tableSession?.status === "CLOSING_REQUESTED" ? "Conta solicitada. Chame o garcom para incluir itens." : "Atendimento encerrado");
       return;
     }
     if (
@@ -771,8 +806,9 @@ export function Storefront() {
         longitude: deliveryLocation?.longitude
       },
       fulfillmentType: tableContext ? "PICKUP" : values.fulfillmentType,
-      source: tableContext ? "TABLE" : "DELIVERY",
+      source: tableSessionToken ? "TABLE_QR" : tableContext ? "TABLE" : "DELIVERY",
       tableId: tableContext?.id,
+      tableSessionToken: tableSessionToken ?? undefined,
       paymentMethod: values.paymentMethod === "MERCADO_PAGO_PIX" || values.paymentMethod === "MERCADO_PAGO_CARD" ? "MERCADO_PAGO" : values.paymentMethod,
       changeFor:
         values.paymentMethod === "CASH" && values.needChange && values.changeFor
@@ -837,6 +873,10 @@ export function Storefront() {
       setOpenCart(false);
       setCart([]);
       clearStoredCart(company);
+      if (tableSessionToken) {
+        const refreshed = await api<any>(`/table-sessions/${tableSessionToken}`);
+        setTableSession(refreshed);
+      }
       setCouponDiscount(0);
       setCouponMessage("");
       reset({
@@ -965,7 +1005,7 @@ export function Storefront() {
           </div>
         )}
         {tableContext && (
-          <div className="bg-emerald-600 p-3 text-white">
+          <div className={`${tableOrderingBlocked ? "bg-amber-600" : "bg-emerald-600"} p-3 text-white`}>
             <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-3 text-center font-black sm:flex-row sm:text-left">
               <span>
                 Atendimento na mesa {tableContext.number}
@@ -984,6 +1024,89 @@ export function Storefront() {
           </div>
         )}
       </section>
+
+      {tableSessionToken && tableSession && !tableSessionVerified && tableSession.status === "OPEN" && (
+        <section className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-[2rem] bg-white p-6 text-slate-950 shadow-2xl">
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-ember">Mesa segura</p>
+            <h2 className="mt-1 font-display text-4xl">Confirme o codigo</h2>
+            <p className="mt-2 text-sm opacity-75">
+              Informe o codigo de 6 caracteres mostrado pelo garcom para liberar pedidos nesta mesa.
+            </p>
+            <input
+              className="mt-4 w-full rounded-2xl border px-4 py-3 text-center text-2xl font-black uppercase tracking-[0.25em]"
+              placeholder="A7K9P2"
+              maxLength={6}
+              value={tableSessionCode}
+              onChange={(event) => setTableSessionCode(event.target.value.toUpperCase())}
+            />
+            <button
+              className="mt-3 w-full rounded-2xl bg-emerald-600 px-4 py-3 font-black text-white"
+              onClick={async () => {
+                try {
+                  await api(`/table-sessions/${tableSessionToken}/verify`, {
+                    method: "POST",
+                    body: JSON.stringify({ code: tableSessionCode })
+                  });
+                  localStorage.setItem(`hubregional:table-session:${tableSessionToken}`, "verified");
+                  setTableSessionVerified(true);
+                  toast.success("Mesa confirmada");
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : "Codigo invalido");
+                }
+              }}
+            >
+              Liberar cardapio
+            </button>
+          </div>
+        </section>
+      )}
+
+      {tableSession && (
+        <section className="mt-4 rounded-3xl border bg-white/85 p-4 shadow-lg shadow-orange-950/5 dark:bg-slate-950/80">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.2em] text-ember">Conta da mesa</p>
+              <h2 className="font-display text-3xl">Atendimento #{tableSession.id?.slice(-6)}</h2>
+              <p className="text-sm opacity-70">
+                {tableSession.status === "OPEN"
+                  ? "Aberto para novos pedidos"
+                  : tableSession.status === "CLOSING_REQUESTED"
+                    ? "Fechamento solicitado"
+                    : "Atendimento encerrado"}
+              </p>
+            </div>
+            <strong className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-800">{money(Number(tableSession.total ?? 0))}</strong>
+          </div>
+          {tableSession.status !== "OPEN" && (
+            <p className="mt-3 rounded-2xl bg-amber-100 p-3 text-sm font-bold text-amber-900">
+              {tableSession.status === "CLOSING_REQUESTED"
+                ? "Voce ainda pode visualizar a conta, mas novos pedidos estao bloqueados."
+                : "Este QR Code foi encerrado. Peça ao garcom um novo atendimento."}
+            </p>
+          )}
+          <div className="mt-3 space-y-2">
+            {(tableSession.orders ?? []).length ? tableSession.orders.map((order: any) => (
+              <div key={order.id} className="rounded-2xl bg-slate-50 p-3 dark:bg-white/5">
+                <div className="flex justify-between gap-3">
+                  <p className="font-black">Pedido #{String(order.orderNumber).padStart(5, "0")}</p>
+                  <p className="font-black text-ember">{money(Number(order.total))}</p>
+                </div>
+                {(order.items ?? []).map((item: any) => (
+                  <div key={item.id} className="mt-2 text-sm">
+                    <p><strong>{item.quantity}x</strong> {item.product.name}</p>
+                    {(item.complements ?? []).map((complement: any) => (
+                      <p key={complement.id} className="ml-4 text-xs opacity-65">+ {complement.quantity}x {complement.name}</p>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )) : (
+              <p className="rounded-2xl border border-dashed p-4 text-sm opacity-70">Nenhum pedido enviado ainda.</p>
+            )}
+          </div>
+        </section>
+      )}
 
       <section className="sticky top-0 z-30 -mx-3 mt-3 bg-[#fff7ed]/85 px-3 py-3 backdrop-blur dark:bg-slate-950/85 md:static md:mx-0 md:bg-transparent md:px-0 md:backdrop-blur-0">
         <div className="card-surface flex items-center gap-2 rounded-2xl px-4 py-3 shadow-lg shadow-orange-950/5">
