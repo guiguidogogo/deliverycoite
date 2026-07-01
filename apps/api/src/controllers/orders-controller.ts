@@ -34,6 +34,7 @@ const checkoutSchema = z
     customer: z.object({
       name: z.string().min(2),
       phone: z.string().min(8),
+      email: z.string().email().optional().or(z.literal("")),
       address: z.string(),
       number: z.string(),
       district: z.string(),
@@ -300,7 +301,7 @@ export async function createOrder(req: Request, res: Response) {
   if (tableOrder && !table) {
     return res.status(400).json({ message: "Mesa invalida para esta loja" });
   }
-  const email = normalizeEmail((body.customer as any).email);
+  const email = normalizeEmail(body.customer.email);
   const linkedCustomer = await linkCustomerToCompany({
     companyId,
     name: body.customer.name,

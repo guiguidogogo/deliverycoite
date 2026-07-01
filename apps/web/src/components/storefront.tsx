@@ -18,6 +18,7 @@ const checkoutSchema = z
   .object({
     name: z.string().min(2, "Nome obrigatorio"),
     phone: z.string().min(8, "Telefone obrigatorio"),
+    email: z.string().email("Email invalido").optional().or(z.literal("")),
     fulfillmentType: z.enum(["DELIVERY", "PICKUP"]),
     address: z.string().optional(),
     number: z.string().optional(),
@@ -55,6 +56,7 @@ type CheckoutPayload = {
   customer: {
     name: string;
     phone: string;
+    email?: string;
     address: string;
     number: string;
     district: string;
@@ -80,6 +82,7 @@ type CheckoutPayload = {
 const initialForm: CheckoutForm = {
   name: "",
   phone: "",
+  email: "",
   fulfillmentType: "DELIVERY",
   address: "",
   number: "",
@@ -170,6 +173,7 @@ export function Storefront() {
     const match = pathname?.match(/^\/mesa\/sessao\/([^/?#]+)/);
     return match ? decodeURIComponent(match[1]) : null;
   }, [pathname]);
+  const isTableMode = Boolean(tableSessionToken || tableContext);
   const tableOrderingBlocked = Boolean(tableSession && tableSession.status !== "OPEN");
 
   useEffect(() => {
@@ -186,6 +190,17 @@ export function Storefront() {
           setTableSession(session);
           setTableContext(session?.table ?? null);
           setTableSessionVerified(localStorage.getItem(`hubregional:table-session:${tableSessionToken}`) === "verified");
+          const storedTableCustomer = localStorage.getItem(`hubregional:table-customer:${tableSessionToken}`);
+          if (storedTableCustomer) {
+            try {
+              const parsed = JSON.parse(storedTableCustomer) as { name?: string; phone?: string; email?: string };
+              if (parsed.name) setValue("name", parsed.name);
+              if (parsed.phone) setValue("phone", parsed.phone);
+              if (parsed.email) setValue("email", parsed.email);
+            } catch {
+              localStorage.removeItem(`hubregional:table-customer:${tableSessionToken}`);
+            }
+          }
           setValue("fulfillmentType", "PICKUP");
         } else if (tableNumber) {
           const table = await api<{ id: string; number: number; name?: string | null; area?: { name: string } | null }>(`/tables/${tableNumber}`);
@@ -799,6 +814,14 @@ export function Storefront() {
       toast.error("Confirme o codigo da mesa antes de pedir");
       return;
     }
+    if (tableSessionToken) {
+      const cleanPhone = values.phone.replace(/\D/g, "");
+      const email = values.email?.trim() ?? "";
+      if (!values.name.trim() || cleanPhone.length < 8 || !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        toast.error("Informe nome, telefone e e-mail para acompanhar sua conta da mesa");
+        return;
+      }
+    }
     if (tableOrderingBlocked) {
       toast.error(tableSession?.status === "CLOSING_REQUESTED" ? "Conta solicitada. Chame o garcom para incluir itens." : "Atendimento encerrado");
       return;
@@ -817,6 +840,7 @@ export function Storefront() {
       customer: {
         name: values.name,
         phone: values.phone,
+        email: values.email || undefined,
         address: values.address || "",
         number: values.number || "",
         district: values.district || "",
@@ -855,6 +879,13 @@ export function Storefront() {
         method: "POST",
         body: JSON.stringify(payload)
       });
+
+      if (tableSessionToken) {
+        localStorage.setItem(
+          `hubregional:table-customer:${tableSessionToken}`,
+          JSON.stringify({ name: values.name, phone: values.phone, email: values.email || "" })
+        );
+      }
 
       if (values.paymentMethod === "MERCADO_PAGO_PIX") {
         const pix = await api<{
@@ -905,7 +936,8 @@ export function Storefront() {
         address: values.address || "",
         number: values.number || "",
         district: values.district || "",
-        complement: values.complement || ""
+        complement: values.complement || "",
+        email: values.email || ""
       });
       toast.success("Pedido enviado com sucesso");
 
@@ -956,10 +988,12 @@ export function Storefront() {
                   {company?.category && <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold">{company.category}</span>}
                 </div>
                 <h1 className="font-display text-4xl leading-none tracking-wide md:text-6xl">
-                  {company?.tradeName ?? settings?.companyName ?? "HubRegional"}
+                  {isTableMode && tableContext ? `Mesa ${tableContext.number}` : company?.tradeName ?? settings?.companyName ?? "HubRegional"}
                 </h1>
                 <p className="mt-2 max-w-xl text-sm text-white/85 md:text-base">
-                  {settings?.promoBannerText || "Pe?a seus favoritos com uma experi?ncia r?pida, bonita e feita para delivery regional."}
+                  {isTableMode
+                    ? "Cardapio presencial: faca seus pedidos pelo celular e acompanhe sua conta em tempo real, sem chamar o garcom."
+                    : settings?.promoBannerText || "Pe?a seus favoritos com uma experi?ncia r?pida, bonita e feita para delivery regional."}
                 </p>
               </div>
             </div>
@@ -981,36 +1015,61 @@ export function Storefront() {
             </div>
           </div>
 
-          <div className="relative z-10 mt-6 grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
-            <div className="rounded-2xl bg-white/14 p-3 backdrop-blur">
-              <Clock size={18} />
-              <p className="mt-1 font-black">{company?.deliveryTimeMin ?? 35} min</p>
-              <p className="text-xs text-white/75">tempo m?dio</p>
+          {isTableMode ? (
+            <div className="relative z-10 mt-6 grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
+              <div className="rounded-2xl bg-white/14 p-3 backdrop-blur">
+                <Store size={18} />
+                <p className="mt-1 font-black">{tableContext ? `Mesa ${tableContext.number}` : "Mesa"}</p>
+                <p className="text-xs text-white/75">atendimento</p>
+              </div>
+              <div className="rounded-2xl bg-white/14 p-3 backdrop-blur">
+                <ShoppingCart size={18} />
+                <p className="mt-1 font-black">{money(Number(tableSession?.account?.total ?? tableSession?.total ?? 0))}</p>
+                <p className="text-xs text-white/75">conta atual</p>
+              </div>
+              <div className="rounded-2xl bg-white/14 p-3 backdrop-blur">
+                <Clock size={18} />
+                <p className="mt-1 font-black">{tableSession?.status === "CLOSING_REQUESTED" ? "Conta" : tableSession?.status === "CLOSED" ? "Encerrado" : "Aberto"}</p>
+                <p className="text-xs text-white/75">status</p>
+              </div>
+              <div className="rounded-2xl bg-white/14 p-3 backdrop-blur">
+                <User size={18} />
+                <p className="mt-1 truncate font-black">{customerName || "Identifique-se"}</p>
+                <p className="text-xs text-white/75">cliente</p>
+              </div>
             </div>
-            <div className="rounded-2xl bg-white/14 p-3 backdrop-blur">
-              <Bike size={18} />
-              <p className="mt-1 font-black">{money(Number(company?.deliveryFee ?? settings?.deliveryFee ?? 0))}</p>
-              <p className="text-xs text-white/75">taxa base</p>
+          ) : (
+            <div className="relative z-10 mt-6 grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
+              <div className="rounded-2xl bg-white/14 p-3 backdrop-blur">
+                <Clock size={18} />
+                <p className="mt-1 font-black">{company?.deliveryTimeMin ?? 35} min</p>
+                <p className="text-xs text-white/75">tempo m?dio</p>
+              </div>
+              <div className="rounded-2xl bg-white/14 p-3 backdrop-blur">
+                <Bike size={18} />
+                <p className="mt-1 font-black">{money(Number(company?.deliveryFee ?? settings?.deliveryFee ?? 0))}</p>
+                <p className="text-xs text-white/75">taxa base</p>
+              </div>
+              <div className="rounded-2xl bg-white/14 p-3 backdrop-blur">
+                <Star size={18} />
+                <p className="mt-1 font-black">{Number(company?.rating ?? 5).toFixed(1)}</p>
+                <p className="text-xs text-white/75">avalia??o</p>
+              </div>
+              <div className="rounded-2xl bg-white/14 p-3 backdrop-blur">
+                <MapPin size={18} />
+                <p className="mt-1 truncate font-black">{company?.city || "Sua cidade"}</p>
+                <p className="text-xs text-white/75">atendimento local</p>
+              </div>
             </div>
-            <div className="rounded-2xl bg-white/14 p-3 backdrop-blur">
-              <Star size={18} />
-              <p className="mt-1 font-black">{Number(company?.rating ?? 5).toFixed(1)}</p>
-              <p className="text-xs text-white/75">avalia??o</p>
-            </div>
-            <div className="rounded-2xl bg-white/14 p-3 backdrop-blur">
-              <MapPin size={18} />
-              <p className="mt-1 truncate font-black">{company?.city || "Sua cidade"}</p>
-              <p className="text-xs text-white/75">atendimento local</p>
-            </div>
-          </div>
+          )}
 
           <div className="relative z-10 mt-5 flex flex-wrap gap-2 text-sm">
-            {company?.whatsapp && (
+            {!isTableMode && company?.whatsapp && (
               <a className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 font-black text-slate-900" href={`https://wa.me/55${company.whatsapp.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">
                 <MessageCircle size={16} /> WhatsApp
               </a>
             )}
-            {company?.instagram && (
+            {!isTableMode && company?.instagram && (
               <a className="inline-flex items-center gap-2 rounded-full bg-white/15 px-4 py-2 font-bold backdrop-blur" href={`https://instagram.com/${company.instagram.replace("@", "")}`} target="_blank" rel="noreferrer">
                 <Instagram size={16} /> Instagram
               </a>
@@ -1158,7 +1217,7 @@ export function Storefront() {
         </div>
       </section>
 
-      {promoProducts.length > 0 && selectedCategory === "all" && !query && (
+      {!isTableMode && promoProducts.length > 0 && selectedCategory === "all" && !query && (
         <section className="mt-5">
           <div className="mb-3 flex items-center justify-between">
             <div>
@@ -1188,7 +1247,7 @@ export function Storefront() {
         </section>
       )}
 
-      {bestSellers.length > 0 && selectedCategory === "all" && !query && (
+      {!isTableMode && bestSellers.length > 0 && selectedCategory === "all" && !query && (
         <section className="mt-5">
           <div className="mb-3 flex items-center gap-2">
             <Flame className="text-ember" />
@@ -1211,7 +1270,7 @@ export function Storefront() {
         </section>
       )}
 
-      {newestProducts.length > 0 && selectedCategory === "all" && !query && (
+      {!isTableMode && newestProducts.length > 0 && selectedCategory === "all" && !query && (
         <section className="mt-5">
           <div className="mb-3 flex items-center gap-2">
             <Sparkles className="text-emerald-600" />
@@ -1306,23 +1365,25 @@ export function Storefront() {
         )}
       </section>
 
-      <section className="mt-6 grid gap-3 md:grid-cols-3">
-        <div className="card-surface p-4">
-          <p className="text-xs font-black uppercase tracking-wide text-ember">CRM futuro</p>
-          <h3 className="mt-1 font-black">Clientes e fidelidade</h3>
-          <p className="mt-1 text-sm opacity-70">Estrutura visual preparada para hist?rico, frequ?ncia, cupons e campanhas.</p>
-        </div>
-        <div className="card-surface p-4">
-          <p className="text-xs font-black uppercase tracking-wide text-emerald-600">Compras</p>
-          <h3 className="mt-1 font-black">?ltima compra e total gasto</h3>
-          <p className="mt-1 text-sm opacity-70">Base para relacionamento por loja sem misturar clientes entre empresas.</p>
-        </div>
-        <div className="card-surface p-4">
-          <p className="text-xs font-black uppercase tracking-wide text-blue-600">Marketing</p>
-          <h3 className="mt-1 font-black">Recupera??o e campanhas</h3>
-          <p className="mt-1 text-sm opacity-70">Pronto para segmentar clientes inativos e ofertas regionais.</p>
-        </div>
-      </section>
+      {!isTableMode && (
+        <section className="mt-6 grid gap-3 md:grid-cols-3">
+          <div className="card-surface p-4">
+            <p className="text-xs font-black uppercase tracking-wide text-ember">CRM futuro</p>
+            <h3 className="mt-1 font-black">Clientes e fidelidade</h3>
+            <p className="mt-1 text-sm opacity-70">Estrutura visual preparada para hist?rico, frequ?ncia, cupons e campanhas.</p>
+          </div>
+          <div className="card-surface p-4">
+            <p className="text-xs font-black uppercase tracking-wide text-emerald-600">Compras</p>
+            <h3 className="mt-1 font-black">?ltima compra e total gasto</h3>
+            <p className="mt-1 text-sm opacity-70">Base para relacionamento por loja sem misturar clientes entre empresas.</p>
+          </div>
+          <div className="card-surface p-4">
+            <p className="text-xs font-black uppercase tracking-wide text-blue-600">Marketing</p>
+            <h3 className="mt-1 font-black">Recupera??o e campanhas</h3>
+            <p className="mt-1 text-sm opacity-70">Pronto para segmentar clientes inativos e ofertas regionais.</p>
+          </div>
+        </section>
+      )}
 
       <button
         className="fixed bottom-4 left-1/2 z-20 flex w-[calc(100%-1rem)] max-w-xl -translate-x-1/2 flex-wrap items-center justify-between gap-2 rounded-2xl bg-ink px-4 py-3 text-white shadow-2xl dark:bg-ember"
@@ -1422,10 +1483,15 @@ export function Storefront() {
                 placeholder="Telefone *"
                 {...register("phone", { onBlur: () => void fillCustomerNameByPhone() })}
               />
+              <input
+                className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20 md:col-span-2"
+                placeholder={tableContext ? "E-mail para acompanhar sua conta *" : "E-mail (opcional)"}
+                {...register("email")}
+              />
 
               {tableContext ? (
                 <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-3 font-bold text-emerald-800 md:col-span-2">
-                  Pedido para consumo na mesa {tableContext.number}. A cozinha recebe junto com os pedidos do delivery.
+                  Pedido para consumo na mesa {tableContext.number}. Seus dados ficam salvos neste celular para acompanhar a conta e pedir mais itens.
                 </div>
               ) : (
                 <label className="md:col-span-2">
