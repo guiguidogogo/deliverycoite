@@ -51,12 +51,25 @@ type Product = {
   promoPrice?: number | string | null;
   available: boolean;
   active: boolean;
-  complements?: Array<{ required: boolean }>;
+  complements?: Array<{
+    id: string;
+    complementId: string;
+    required: boolean;
+    complement: {
+      id: string;
+      name: string;
+      description?: string | null;
+      price: number | string;
+      active: boolean;
+    };
+  }>;
 };
 
 type DraftItem = {
+  id: string;
   productId: string;
   quantity: number;
+  complements: Array<{ complementId: string; quantity: number }>;
 };
 
 const statusLabels: Record<TableStatus, string> = {
@@ -100,6 +113,9 @@ export default function PdvPage() {
   const [draftItems, setDraftItems] = useState<DraftItem[]>([]);
   const [draftProductId, setDraftProductId] = useState("");
   const [draftQuantity, setDraftQuantity] = useState(1);
+  const [configuringProduct, setConfiguringProduct] = useState<Product | null>(null);
+  const [configuringQuantity, setConfiguringQuantity] = useState(1);
+  const [configuringComplements, setConfiguringComplements] = useState<Record<string, number>>({});
   const [draftCustomerName, setDraftCustomerName] = useState("Cliente da mesa");
   const [draftNotes, setDraftNotes] = useState("");
   const [loading, setLoading] = useState(true);
@@ -132,8 +148,19 @@ export default function PdvPage() {
   const draftTotal = useMemo(() => draftItems.reduce((sum, item) => {
     const product = products.find((candidate) => candidate.id === item.productId);
     if (!product) return sum;
-    return sum + Number(product.promoPrice ?? product.price) * item.quantity;
+    const complements = item.complements.reduce((acc, selected) => {
+      const link = product.complements?.find((candidate) => candidate.complementId === selected.complementId);
+      return acc + Number(link?.complement.price ?? 0) * selected.quantity;
+    }, 0);
+    return sum + (Number(product.promoPrice ?? product.price) + complements) * item.quantity;
   }, 0), [draftItems, products]);
+
+  const configuringTotal = useMemo(() => {
+    if (!configuringProduct) return 0;
+    const complements = (configuringProduct.complements ?? []).reduce((sum, link) =>
+      sum + Number(link.complement.price) * (configuringComplements[link.complementId] ?? 0), 0);
+    return (Number(configuringProduct.promoPrice ?? configuringProduct.price) + complements) * configuringQuantity;
+  }, [configuringComplements, configuringProduct, configuringQuantity]);
 
   async function request(path: string, init?: RequestInit) {
     const token = localStorage.getItem("delivery:token");
@@ -198,17 +225,39 @@ export default function PdvPage() {
     if (!draftProductId) return;
     const product = products.find((item) => item.id === draftProductId);
     if (!product) return;
-    if (product.complements?.some((link) => link.required)) {
-      toast.error("Este produto possui complemento obrigatorio. Por enquanto, use o QR/cardapio da mesa para montar.");
+    setConfiguringProduct(product);
+    setConfiguringQuantity(draftQuantity);
+    setConfiguringComplements(Object.fromEntries(
+      (product.complements ?? [])
+        .filter((link) => link.required && link.complement.active)
+        .map((link) => [link.complementId, 1])
+    ));
+  }
+
+  function confirmConfiguredItem() {
+    if (!configuringProduct) return;
+    const missing = (configuringProduct.complements ?? []).find((link) =>
+      link.required && link.complement.active && (configuringComplements[link.complementId] ?? 0) <= 0
+    );
+    if (missing) {
+      toast.error(`O complemento ${missing.complement.name} e obrigatorio`);
       return;
     }
-    setDraftItems((current) => {
-      const found = current.find((item) => item.productId === draftProductId);
-      if (found) {
-        return current.map((item) => item.productId === draftProductId ? { ...item, quantity: item.quantity + draftQuantity } : item);
+    const complements = Object.entries(configuringComplements)
+      .filter(([, quantity]) => quantity > 0)
+      .map(([complementId, quantity]) => ({ complementId, quantity }));
+    setDraftItems((current) => [
+      ...current,
+      {
+        id: `${configuringProduct.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        productId: configuringProduct.id,
+        quantity: configuringQuantity,
+        complements
       }
-      return [...current, { productId: draftProductId, quantity: draftQuantity }];
-    });
+    ]);
+    setConfiguringProduct(null);
+    setConfiguringQuantity(1);
+    setConfiguringComplements({});
     setDraftProductId("");
     setDraftQuantity(1);
   }
@@ -226,7 +275,7 @@ export default function PdvPage() {
           items: draftItems.map((item) => ({
             productId: item.productId,
             quantity: item.quantity,
-            complements: []
+            complements: item.complements
           }))
         })
       });
@@ -417,13 +466,23 @@ export default function PdvPage() {
                   {draftItems.map((item) => {
                     const product = products.find((candidate) => candidate.id === item.productId);
                     if (!product) return null;
+                    const complementTotal = item.complements.reduce((sum, selected) => {
+                      const link = product.complements?.find((candidate) => candidate.complementId === selected.complementId);
+                      return sum + Number(link?.complement.price ?? 0) * selected.quantity;
+                    }, 0);
+                    const itemTotal = (Number(product.promoPrice ?? product.price) + complementTotal) * item.quantity;
                     return (
-                      <div key={item.productId} className="flex items-center justify-between gap-3 rounded-2xl bg-white p-3">
+                      <div key={item.id} className="flex items-center justify-between gap-3 rounded-2xl bg-white p-3">
                         <div>
                           <p className="font-black">{item.quantity}x {product.name}</p>
-                          <p className="text-sm opacity-70">{brl(Number(product.promoPrice ?? product.price) * item.quantity)}</p>
+                          {item.complements.map((selected) => {
+                            const link = product.complements?.find((candidate) => candidate.complementId === selected.complementId);
+                            if (!link) return null;
+                            return <p key={selected.complementId} className="text-xs opacity-70">+ {selected.quantity}x {link.complement.name}</p>;
+                          })}
+                          <p className="text-sm opacity-70">{brl(itemTotal)}</p>
                         </div>
-                        <button className="rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white" onClick={() => setDraftItems((current) => current.filter((draft) => draft.productId !== item.productId))}>
+                        <button className="rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white" onClick={() => setDraftItems((current) => current.filter((draft) => draft.id !== item.id))}>
                           Remover
                         </button>
                       </div>
@@ -477,6 +536,80 @@ export default function PdvPage() {
                   <p className="mt-1 text-sm opacity-70">Abra o cardápio da mesa ou leia o QR Code para criar o primeiro pedido.</p>
                 </div>
               )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {configuringProduct && (
+        <section className="fixed inset-0 z-[60] bg-black/60 p-3 md:flex md:items-center md:justify-center" onClick={() => setConfiguringProduct(null)}>
+          <div className="mx-auto max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-[2rem] bg-white p-4 shadow-2xl dark:bg-slate-950" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-ember">Montar item</p>
+                <h2 className="text-2xl font-black">{configuringProduct.name}</h2>
+                <p className="mt-1 text-sm opacity-70">Base: {brl(configuringProduct.promoPrice ?? configuringProduct.price)}</p>
+              </div>
+              <button className="rounded-full bg-black/5 px-4 py-2 font-bold dark:bg-white/10" onClick={() => setConfiguringProduct(null)}>Fechar</button>
+            </div>
+
+            <div className="mt-4 flex items-center justify-between rounded-2xl bg-orange-50 p-3 text-slate-950">
+              <span className="font-black">Quantidade</span>
+              <div className="flex items-center gap-2">
+                <button className="grid h-9 w-9 place-items-center rounded-full bg-white font-black" disabled={configuringQuantity <= 1} onClick={() => setConfiguringQuantity((value) => Math.max(1, value - 1))}>-</button>
+                <strong className="min-w-8 text-center">{configuringQuantity}</strong>
+                <button className="grid h-9 w-9 place-items-center rounded-full bg-ink font-black text-white" onClick={() => setConfiguringQuantity((value) => value + 1)}>+</button>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {(configuringProduct.complements ?? []).filter((link) => link.complement.active).length ? (
+                (configuringProduct.complements ?? []).filter((link) => link.complement.active).map((link) => {
+                  const quantity = configuringComplements[link.complementId] ?? 0;
+                  return (
+                    <article key={link.id} className={`rounded-2xl border p-3 ${quantity ? "border-ember bg-orange-50 text-slate-950" : "border-black/10 dark:border-white/10"}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-black">{link.complement.name}</p>
+                          {link.complement.description && <p className="text-xs opacity-65">{link.complement.description}</p>}
+                          <p className="mt-1 text-sm font-bold text-ember">{Number(link.complement.price) > 0 ? `+ ${brl(link.complement.price)}` : "Sem adicional"}</p>
+                        </div>
+                        <span className={`rounded-full px-2 py-1 text-[11px] font-black ${link.required ? "bg-red-100 text-red-700" : "bg-black/5 dark:bg-white/10"}`}>
+                          {link.required ? "Obrigatorio" : "Opcional"}
+                        </span>
+                      </div>
+                      <div className="mt-3 flex items-center justify-end gap-2">
+                        <button
+                          className="grid h-9 w-9 place-items-center rounded-full bg-black/10 font-black disabled:opacity-40"
+                          disabled={link.required && quantity <= 1}
+                          onClick={() => setConfiguringComplements((current) => ({ ...current, [link.complementId]: Math.max(link.required ? 1 : 0, quantity - 1) }))}
+                        >
+                          -
+                        </button>
+                        <strong className="min-w-8 text-center">{quantity}</strong>
+                        <button
+                          className="grid h-9 w-9 place-items-center rounded-full bg-ink font-black text-white"
+                          onClick={() => setConfiguringComplements((current) => ({ ...current, [link.complementId]: quantity + 1 }))}
+                        >
+                          +
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })
+              ) : (
+                <div className="rounded-2xl border border-dashed p-4 text-sm opacity-70">Este produto nao possui complementos.</div>
+              )}
+            </div>
+
+            <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl bg-slate-100 p-3 text-slate-950">
+              <div>
+                <p className="text-xs font-bold uppercase opacity-60">Total do item</p>
+                <p className="text-2xl font-black text-ember">{brl(configuringTotal)}</p>
+              </div>
+              <button className="rounded-2xl bg-emerald-600 px-4 py-3 font-black text-white" onClick={confirmConfiguredItem}>
+                Adicionar à comanda
+              </button>
             </div>
           </div>
         </section>
