@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import type { Request, Response } from "express";
-import { TableStatus } from "@prisma/client";
+import { FulfillmentType, OrderSource, PaymentMethod, Prisma, TableStatus } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
@@ -23,6 +23,20 @@ const statusSchema = z.object({
   status: z.nativeEnum(TableStatus)
 });
 
+const tableOrderSchema = z.object({
+  customerName: z.string().min(2).default("Cliente da mesa"),
+  notes: z.string().optional(),
+  paymentMethod: z.nativeEnum(PaymentMethod).default(PaymentMethod.PIX),
+  items: z.array(z.object({
+    productId: z.string(),
+    quantity: z.coerce.number().int().positive(),
+    complements: z.array(z.object({
+      complementId: z.string(),
+      quantity: z.coerce.number().int().min(1).max(20)
+    })).default([])
+  })).min(1)
+});
+
 function publicTableUrl(req: Request, table: { number: number }, explicitSubdomain?: string | null) {
   const rootDomain = process.env.ROOT_DOMAIN ?? "hubregional.com.br";
   const subdomain = explicitSubdomain || req.tenant?.subdomain;
@@ -40,6 +54,10 @@ async function currentCompanySubdomain(req: Request) {
 
 function newQrToken() {
   return `mesa_${crypto.randomBytes(18).toString("hex")}`;
+}
+
+function toDecimal(value: number) {
+  return new Prisma.Decimal(value.toFixed(2));
 }
 
 export async function listDiningAreas(req: Request, res: Response) {
@@ -194,6 +212,137 @@ export async function listTableOrders(req: Request, res: Response) {
   });
 
   return res.json(orders);
+}
+
+export async function createTableOrder(req: Request, res: Response) {
+  const body = tableOrderSchema.parse(req.body);
+  const companyId = getCompanyId(req);
+  const table = await prisma.restaurantTable.findFirst({
+    where: { id: req.params.id, companyId, active: true },
+    select: { id: true, number: true }
+  });
+  if (!table) return res.status(404).json({ message: "Mesa nao encontrada" });
+
+  const productIds = [...new Set(body.items.map((item) => item.productId))];
+  const products = await prisma.product.findMany({
+    where: { companyId, id: { in: productIds }, active: true, available: true },
+    include: { complements: { include: { complement: true }, orderBy: { sortOrder: "asc" } } }
+  });
+  if (products.length !== productIds.length) {
+    return res.status(400).json({ message: "Um ou mais produtos estao indisponiveis" });
+  }
+
+  const preparedItems = body.items.map((item) => {
+    const product = products.find((candidate) => candidate.id === item.productId)!;
+    const activeLinks = product.complements.filter((link) => link.complement.active);
+    const selectedById = new Map(item.complements.map((selected) => [selected.complementId, selected.quantity]));
+    const missingRequired = activeLinks.find((link) => link.required && !selectedById.has(link.complementId));
+    if (missingRequired) {
+      throw new z.ZodError([{
+        code: z.ZodIssueCode.custom,
+        path: ["items", item.productId, "complements"],
+        message: `O complemento ${missingRequired.complement.name} e obrigatorio para ${product.name}`
+      }]);
+    }
+    const selectedComplements = item.complements.map((selected) => {
+      const link = activeLinks.find((candidate) => candidate.complementId === selected.complementId);
+      if (!link) {
+        throw new z.ZodError([{
+          code: z.ZodIssueCode.custom,
+          path: ["items", item.productId, "complements"],
+          message: "Complemento indisponivel para este produto"
+        }]);
+      }
+      const price = Number(link.complement.price);
+      return {
+        id: link.complement.id,
+        name: link.complement.name,
+        quantity: selected.quantity,
+        price,
+        total: price * selected.quantity * item.quantity
+      };
+    });
+    const basePrice = Number(product.promoPrice ?? product.price);
+    const complementsPerUnit = selectedComplements.reduce((sum, complement) => sum + complement.price * complement.quantity, 0);
+    return {
+      ...item,
+      product,
+      basePrice,
+      selectedComplements,
+      total: (basePrice + complementsPerUnit) * item.quantity
+    };
+  });
+
+  const subtotalNumber = preparedItems.reduce((sum, item) => sum + item.total, 0);
+  const customerPhone = `mesa-${table.number}`;
+  const customer = await prisma.customer.upsert({
+    where: { companyId_phone: { companyId, phone: customerPhone } },
+    create: {
+      companyId,
+      name: body.customerName,
+      phone: customerPhone,
+      address: `Mesa ${table.number}`,
+      number: "S/N",
+      district: "Atendimento presencial"
+    },
+    update: {
+      name: body.customerName,
+      address: `Mesa ${table.number}`,
+      number: "S/N",
+      district: "Atendimento presencial",
+      deletedAt: null,
+      deletedBy: null,
+      deletionReason: null
+    }
+  });
+
+  const order = await prisma.order.create({
+    data: {
+      companyId,
+      customerId: customer.id,
+      source: OrderSource.WAITER,
+      tableId: table.id,
+      waiterId: req.user?.sub ?? null,
+      paymentMethod: body.paymentMethod,
+      fulfillmentType: FulfillmentType.PICKUP,
+      subtotal: toDecimal(subtotalNumber),
+      deliveryFee: toDecimal(0),
+      discount: toDecimal(0),
+      total: toDecimal(subtotalNumber),
+      customerNotes: body.notes,
+      items: {
+        create: preparedItems.map((item) => ({
+          companyId,
+          productId: item.productId,
+          quantity: item.quantity,
+          price: toDecimal(item.basePrice),
+          total: toDecimal(item.total),
+          complements: {
+            create: item.selectedComplements.map((complement) => ({
+              companyId,
+              complementId: complement.id,
+              name: complement.name,
+              quantity: complement.quantity,
+              price: toDecimal(complement.price),
+              total: toDecimal(complement.total)
+            }))
+          }
+        }))
+      }
+    },
+    include: {
+      customer: true,
+      waiter: { select: { id: true, name: true } },
+      items: { include: { product: { select: { id: true, name: true } }, complements: true } }
+    }
+  });
+
+  await prisma.restaurantTable.update({
+    where: { id: table.id },
+    data: { status: "OCCUPIED", openedAt: new Date(), closedAt: null }
+  });
+
+  return res.status(201).json(order);
 }
 
 export async function deleteTable(req: Request, res: Response) {

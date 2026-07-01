@@ -44,6 +44,21 @@ type TableOrder = {
   }>;
 };
 
+type Product = {
+  id: string;
+  name: string;
+  price: number | string;
+  promoPrice?: number | string | null;
+  available: boolean;
+  active: boolean;
+  complements?: Array<{ required: boolean }>;
+};
+
+type DraftItem = {
+  productId: string;
+  quantity: number;
+};
+
 const statusLabels: Record<TableStatus, string> = {
   FREE: "Livre",
   OCCUPIED: "Ocupada",
@@ -81,7 +96,14 @@ export default function PdvPage() {
   const [tables, setTables] = useState<RestaurantTable[]>([]);
   const [selectedTable, setSelectedTable] = useState<RestaurantTable | null>(null);
   const [orders, setOrders] = useState<TableOrder[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [draftItems, setDraftItems] = useState<DraftItem[]>([]);
+  const [draftProductId, setDraftProductId] = useState("");
+  const [draftQuantity, setDraftQuantity] = useState(1);
+  const [draftCustomerName, setDraftCustomerName] = useState("Cliente da mesa");
+  const [draftNotes, setDraftNotes] = useState("");
   const [loading, setLoading] = useState(true);
+  const [savingOrder, setSavingOrder] = useState(false);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [areaFilter, setAreaFilter] = useState("all");
 
@@ -106,6 +128,12 @@ export default function PdvPage() {
       items: openOrders.reduce((sum, order) => sum + order.items.reduce((acc, item) => acc + item.quantity, 0), 0)
     };
   }, [orders]);
+
+  const draftTotal = useMemo(() => draftItems.reduce((sum, item) => {
+    const product = products.find((candidate) => candidate.id === item.productId);
+    if (!product) return sum;
+    return sum + Number(product.promoPrice ?? product.price) * item.quantity;
+  }, 0), [draftItems, products]);
 
   async function request(path: string, init?: RequestInit) {
     const token = localStorage.getItem("delivery:token");
@@ -138,8 +166,22 @@ export default function PdvPage() {
     }
   }
 
+  async function loadProducts() {
+    try {
+      const loaded = await request("/admin/products");
+      setProducts((loaded ?? []).filter((product: Product) => product.active !== false && product.available !== false));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao carregar produtos");
+    }
+  }
+
   async function loadOrders(table: RestaurantTable) {
     setSelectedTable(table);
+    setDraftItems([]);
+    setDraftProductId("");
+    setDraftQuantity(1);
+    setDraftNotes("");
+    setDraftCustomerName("Cliente da mesa");
     setLoadingOrders(true);
     try {
       const loaded = await request(`/admin/tables/${table.id}/orders`);
@@ -149,6 +191,54 @@ export default function PdvPage() {
       setOrders([]);
     } finally {
       setLoadingOrders(false);
+    }
+  }
+
+  function addDraftItem() {
+    if (!draftProductId) return;
+    const product = products.find((item) => item.id === draftProductId);
+    if (!product) return;
+    if (product.complements?.some((link) => link.required)) {
+      toast.error("Este produto possui complemento obrigatorio. Por enquanto, use o QR/cardapio da mesa para montar.");
+      return;
+    }
+    setDraftItems((current) => {
+      const found = current.find((item) => item.productId === draftProductId);
+      if (found) {
+        return current.map((item) => item.productId === draftProductId ? { ...item, quantity: item.quantity + draftQuantity } : item);
+      }
+      return [...current, { productId: draftProductId, quantity: draftQuantity }];
+    });
+    setDraftProductId("");
+    setDraftQuantity(1);
+  }
+
+  async function createTableOrder() {
+    if (!selectedTable || !draftItems.length || savingOrder) return;
+    setSavingOrder(true);
+    try {
+      await request(`/admin/tables/${selectedTable.id}/orders`, {
+        method: "POST",
+        body: JSON.stringify({
+          customerName: draftCustomerName || "Cliente da mesa",
+          notes: draftNotes || undefined,
+          paymentMethod: "PIX",
+          items: draftItems.map((item) => ({
+            productId: item.productId,
+            quantity: item.quantity,
+            complements: []
+          }))
+        })
+      });
+      toast.success("Pedido enviado para a cozinha");
+      setDraftItems([]);
+      setDraftNotes("");
+      await loadOrders(selectedTable);
+      await loadTables();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao criar pedido");
+    } finally {
+      setSavingOrder(false);
     }
   }
 
@@ -183,6 +273,7 @@ export default function PdvPage() {
 
   useEffect(() => {
     void loadTables();
+    void loadProducts();
     const timer = window.setInterval(() => void loadTables(), 15000);
     return () => window.clearInterval(timer);
   }, []);
@@ -295,6 +386,55 @@ export default function PdvPage() {
               <button className="rounded-xl bg-red-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void updateStatus(selectedTable, "WAITING_PAYMENT")}>Solicitou conta</button>
               <button className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void updateStatus(selectedTable, "FREE")}>Liberar mesa</button>
             </div>
+
+            <section className="mt-5 rounded-3xl border bg-orange-50 p-4 text-slate-950">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-ember">Garçom / PDV</p>
+                  <h3 className="text-xl font-black">Adicionar itens na mesa</h3>
+                </div>
+                <strong className="rounded-full bg-white px-3 py-1 text-ember">{brl(draftTotal)}</strong>
+              </div>
+
+              <div className="mt-3 grid gap-2 md:grid-cols-[1.5fr_.6fr_auto]">
+                <select className="rounded-xl border px-3 py-2" value={draftProductId} onChange={(event) => setDraftProductId(event.target.value)}>
+                  <option value="">Escolha um produto</option>
+                  {products.map((product) => (
+                    <option key={product.id} value={product.id}>
+                      {product.name} - {brl(product.promoPrice ?? product.price)}
+                    </option>
+                  ))}
+                </select>
+                <input className="rounded-xl border px-3 py-2" type="number" min={1} value={draftQuantity} onChange={(event) => setDraftQuantity(Math.max(1, Number(event.target.value || 1)))} />
+                <button className="rounded-xl bg-ink px-4 py-2 font-bold text-white" onClick={addDraftItem}>Adicionar</button>
+              </div>
+
+              <input className="mt-2 w-full rounded-xl border px-3 py-2" placeholder="Nome do cliente opcional" value={draftCustomerName} onChange={(event) => setDraftCustomerName(event.target.value)} />
+              <textarea className="mt-2 w-full rounded-xl border px-3 py-2" placeholder="Observação da cozinha: sem cebola, ponto da carne, etc." value={draftNotes} onChange={(event) => setDraftNotes(event.target.value)} />
+
+              {draftItems.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  {draftItems.map((item) => {
+                    const product = products.find((candidate) => candidate.id === item.productId);
+                    if (!product) return null;
+                    return (
+                      <div key={item.productId} className="flex items-center justify-between gap-3 rounded-2xl bg-white p-3">
+                        <div>
+                          <p className="font-black">{item.quantity}x {product.name}</p>
+                          <p className="text-sm opacity-70">{brl(Number(product.promoPrice ?? product.price) * item.quantity)}</p>
+                        </div>
+                        <button className="rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white" onClick={() => setDraftItems((current) => current.filter((draft) => draft.productId !== item.productId))}>
+                          Remover
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <button className="w-full rounded-2xl bg-emerald-600 px-4 py-3 font-black text-white disabled:opacity-60" disabled={savingOrder} onClick={() => void createTableOrder()}>
+                    {savingOrder ? "Enviando..." : "Enviar pedido para cozinha"}
+                  </button>
+                </div>
+              )}
+            </section>
 
             <div className="mt-5 space-y-3">
               {loadingOrders ? (
