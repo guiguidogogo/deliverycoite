@@ -611,10 +611,6 @@ export async function updateOrderStatus(req: Request, res: Response) {
     return res.status(400).json({ message: "Pedido finalizado nao pode ser alterado" });
   }
 
-  if (current.fulfillmentType === "PICKUP" && body.status === "OUT_FOR_DELIVERY") {
-    return res.status(400).json({ message: "Pedido para retirada nao pode sair para entrega" });
-  }
-
   const order = await prisma.order.update({
     where: { id: req.params.id },
     data: { status: body.status }
@@ -644,8 +640,12 @@ export async function updateOrderStatus(req: Request, res: Response) {
   }
 
   const settings = await prisma.setting.findFirst({ where: companyWhere(req) });
+  const shouldNotifyStatus =
+    !!settings
+    && !(current.fulfillmentType === "PICKUP" && body.status === "OUT_FOR_DELIVERY")
+    && shouldSendStatusWhatsapp(settings, body.status);
   const statusWhatsapp =
-    settings && shouldSendStatusWhatsapp(settings, body.status)
+    settings && shouldNotifyStatus
       ? buildOrderStatusWhatsappMessage(current.customer.phone, current.customer.name, body.status, settings)
       : null;
 
