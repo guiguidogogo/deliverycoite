@@ -199,6 +199,9 @@ export function Storefront() {
           setTableSession(session);
           setTableContext(session?.table ?? null);
           setTableSessionVerified(localStorage.getItem(`hubregional:table-session:${tableSessionToken}`) === "verified");
+          if (session?.customerName) setValue("name", session.customerName);
+          if (session?.customerPhone) setValue("phone", session.customerPhone);
+          if (session?.customerEmail) setValue("email", session.customerEmail);
           const storedTableCustomer = localStorage.getItem(`hubregional:table-customer:${tableSessionToken}`);
           if (storedTableCustomer) {
             try {
@@ -278,6 +281,9 @@ export function Storefront() {
         .then((session) => {
           setTableSession(session);
           setTableContext(session?.table ?? null);
+          if (session?.customerName) setValue("name", session.customerName);
+          if (session?.customerPhone) setValue("phone", session.customerPhone);
+          if (session?.customerEmail) setValue("email", session.customerEmail);
         })
         .catch(() => undefined);
     };
@@ -288,7 +294,7 @@ export function Storefront() {
       window.clearInterval(timer);
       window.removeEventListener("focus", onFocus);
     };
-  }, [tableSessionToken]);
+  }, [setValue, tableSessionToken]);
 
   useEffect(() => {
     if (!tableRequestPendingUrl || tableSessionToken) return;
@@ -349,11 +355,11 @@ export function Storefront() {
     const storedCustomer = localStorage.getItem("delivery:customer");
     const token = localStorage.getItem("delivery:customer-token");
     
-    if (storedCustomer) {
+    if (storedCustomer && !isTableMode) {
       setCustomer(JSON.parse(storedCustomer));
     }
 
-    if (token) {
+    if (token && !isTableMode) {
       // Carregar endereços do cliente
       api<any>("/customer/profile", {
         headers: { Authorization: `Bearer ${token}` }
@@ -388,7 +394,7 @@ export function Storefront() {
           localStorage.removeItem("delivery:customer");
         });
     }
-  }, [setValue]);
+  }, [isTableMode, setValue]);
 
   useEffect(() => {
     localStorage.setItem("delivery:favorites", JSON.stringify(favorites));

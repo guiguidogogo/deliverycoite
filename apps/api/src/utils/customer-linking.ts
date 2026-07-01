@@ -29,22 +29,23 @@ export async function ensureGlobalCustomer(params: {
     ? await bcrypt.hash(params.password, 10)
     : params.passwordHash ?? undefined;
 
-  const existing = await db.globalCustomer.findFirst({
-    where: {
-      OR: [
-        { phone },
-        ...(email ? [{ email }] : [])
-      ]
-    }
-  });
+  const [existingByPhone, existingByEmail] = await Promise.all([
+    db.globalCustomer.findUnique({ where: { phone } }),
+    email ? db.globalCustomer.findUnique({ where: { email } }) : Promise.resolve(null)
+  ]);
+
+  const existing = existingByEmail ?? existingByPhone;
 
   if (existing) {
+    const canUsePhone = existing.phone === phone || !existingByPhone || existingByPhone.id === existing.id;
+    const canUseEmail = !email || existing.email === email || !existingByEmail || existingByEmail.id === existing.id;
+
     return db.globalCustomer.update({
       where: { id: existing.id },
       data: {
         name: params.name || existing.name,
-        phone,
-        ...(email && !existing.email ? { email } : {}),
+        ...(canUsePhone ? { phone } : {}),
+        ...(email && canUseEmail && !existing.email ? { email } : {}),
         ...(passwordHash && !existing.passwordHash ? { passwordHash } : {}),
         lastAccessAt: new Date()
       }
