@@ -135,6 +135,7 @@ import { getSettings, updateSettings } from "../controllers/settings-controller.
 import { listMarketplaceCompanies, marketplaceSummary } from "../controllers/marketplace-controller.js";
 import {
   createDiningArea,
+  closeTableAccount,
   createTableOrder,
   createTable,
   deleteDiningArea,
@@ -269,6 +270,7 @@ route.patch("/admin/tables/:id", requirePermission("SETTINGS"), updateTable);
 route.patch("/admin/tables/:id/status", requirePermission("SETTINGS"), updateTableStatus);
 route.get("/admin/tables/:id/orders", requirePermission("ORDERS"), listTableOrders);
 route.post("/admin/tables/:id/orders", requirePermission("ORDERS"), createTableOrder);
+route.post("/admin/tables/:id/close", requirePermission("ORDERS"), closeTableAccount);
 route.delete("/admin/tables/:id", requirePermission("SETTINGS"), deleteTable);
 route.get("/admin/reports/orders.xlsx", requirePermission("REPORTS"), exportOrdersExcel);
 route.get("/admin/reports/orders.pdf", requirePermission("REPORTS"), exportOrdersPdf);

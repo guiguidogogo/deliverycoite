@@ -4,6 +4,7 @@ import { FulfillmentType, OrderSource, PaymentMethod, Prisma, TableStatus } from
 import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
+import { recordCashPayments } from "../utils/cash-register.js";
 
 const areaSchema = z.object({
   name: z.string().min(2, "Nome do setor obrigatorio").max(80),
@@ -35,6 +36,11 @@ const tableOrderSchema = z.object({
       quantity: z.coerce.number().int().min(1).max(20)
     })).default([])
   })).min(1)
+});
+
+const closeTableSchema = z.object({
+  paymentMethod: z.enum(["CASH", "PIX", "DEBIT", "CREDIT", "CARD"]),
+  notes: z.string().optional()
 });
 
 function publicTableUrl(req: Request, table: { number: number }, explicitSubdomain?: string | null) {
@@ -343,6 +349,104 @@ export async function createTableOrder(req: Request, res: Response) {
   });
 
   return res.status(201).json(order);
+}
+
+export async function closeTableAccount(req: Request, res: Response) {
+  const body = closeTableSchema.parse(req.body);
+  const companyId = getCompanyId(req);
+  const table = await prisma.restaurantTable.findFirst({
+    where: { id: req.params.id, companyId, active: true },
+    select: { id: true, number: true }
+  });
+  if (!table) return res.status(404).json({ message: "Mesa nao encontrada" });
+
+  const orders = await prisma.order.findMany({
+    where: {
+      companyId,
+      tableId: table.id,
+      deletedAt: null,
+      status: { notIn: ["FINISHED", "CANCELED"] }
+    },
+    select: {
+      id: true,
+      orderNumber: true,
+      total: true,
+      paidAt: true,
+      notes: true
+    },
+    orderBy: { createdAt: "asc" }
+  });
+  if (!orders.length) {
+    return res.status(400).json({ message: "Nao ha pedidos abertos nesta mesa" });
+  }
+  if (orders.some((order) => order.paidAt)) {
+    return res.status(400).json({ message: "Esta mesa possui pedido ja pago. Finalize os pedidos individualmente por enquanto." });
+  }
+
+  const session = await prisma.cashSession.findFirst({
+    where: {
+      companyId,
+      openedBy: req.user!.sub,
+      closedAt: null,
+      deletedAt: null,
+      locked: false
+    }
+  });
+  if (!session) {
+    return res.status(400).json({ message: "Abra seu caixa antes de fechar a mesa" });
+  }
+
+  const paymentMethod: PaymentMethod = body.paymentMethod === "CASH" ? "CASH" : body.paymentMethod === "PIX" ? "PIX" : "CARD";
+  const paymentDetail =
+    body.paymentMethod === "DEBIT"
+      ? "Cartao Debito"
+      : body.paymentMethod === "CREDIT"
+        ? "Cartao Credito"
+        : body.paymentMethod === "CARD"
+          ? "Cartao"
+          : body.paymentMethod === "PIX"
+            ? "PIX"
+            : "Dinheiro";
+  const now = new Date();
+
+  await prisma.$transaction(async (tx) => {
+    await Promise.all(orders.map((order) => tx.order.update({
+      where: { id: order.id },
+      data: {
+        paymentMethod,
+        paidAt: now,
+        paidMethodDetail: paymentDetail,
+        status: "FINISHED",
+        notes: [
+          order.notes,
+          body.notes
+            ? `[FECHAMENTO MESA ${table.number}: ${paymentDetail} em ${now.toLocaleString("pt-BR")} - ${body.notes}]`
+            : `[FECHAMENTO MESA ${table.number}: ${paymentDetail} em ${now.toLocaleString("pt-BR")}]`
+        ].filter(Boolean).join(" ")
+      }
+    })));
+    await tx.restaurantTable.update({
+      where: { id: table.id },
+      data: { status: "FREE", closedAt: now, openedAt: null }
+    });
+  });
+
+  await recordCashPayments(session.id, companyId, orders.map((order) => ({
+    amount: order.total,
+    paymentMethod,
+    paymentDetail,
+    orderId: order.id,
+    description: `Fechamento mesa ${table.number} - pedido #${String(order.orderNumber).padStart(5, "0")} via ${paymentDetail}`
+  })));
+
+  return res.json({
+    ok: true,
+    tableId: table.id,
+    tableNumber: table.number,
+    paymentDetail,
+    ordersClosed: orders.length,
+    total: orders.reduce((sum, order) => sum + Number(order.total), 0)
+  });
 }
 
 export async function deleteTable(req: Request, res: Response) {

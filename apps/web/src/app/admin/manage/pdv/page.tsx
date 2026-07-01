@@ -72,6 +72,8 @@ type DraftItem = {
   complements: Array<{ complementId: string; quantity: number }>;
 };
 
+type ClosePaymentMethod = "CASH" | "PIX" | "DEBIT" | "CREDIT" | "CARD";
+
 const statusLabels: Record<TableStatus, string> = {
   FREE: "Livre",
   OCCUPIED: "Ocupada",
@@ -118,8 +120,11 @@ export default function PdvPage() {
   const [configuringComplements, setConfiguringComplements] = useState<Record<string, number>>({});
   const [draftCustomerName, setDraftCustomerName] = useState("Cliente da mesa");
   const [draftNotes, setDraftNotes] = useState("");
+  const [closePaymentMethod, setClosePaymentMethod] = useState<ClosePaymentMethod>("PIX");
+  const [closeNotes, setCloseNotes] = useState("");
   const [loading, setLoading] = useState(true);
   const [savingOrder, setSavingOrder] = useState(false);
+  const [closingTable, setClosingTable] = useState(false);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [areaFilter, setAreaFilter] = useState("all");
 
@@ -209,6 +214,8 @@ export default function PdvPage() {
     setDraftQuantity(1);
     setDraftNotes("");
     setDraftCustomerName("Cliente da mesa");
+    setClosePaymentMethod("PIX");
+    setCloseNotes("");
     setLoadingOrders(true);
     try {
       const loaded = await request(`/admin/tables/${table.id}/orders`);
@@ -288,6 +295,35 @@ export default function PdvPage() {
       toast.error(error instanceof Error ? error.message : "Falha ao criar pedido");
     } finally {
       setSavingOrder(false);
+    }
+  }
+
+  async function closeTableAccount() {
+    if (!selectedTable || closingTable) return;
+    if (!orders.length) {
+      toast.error("Nao ha pedidos para fechar nesta mesa");
+      return;
+    }
+    const confirmed = window.confirm(`Fechar a mesa ${selectedTable.number} no valor de ${brl(totals.total)}?`);
+    if (!confirmed) return;
+    setClosingTable(true);
+    try {
+      const result = await request(`/admin/tables/${selectedTable.id}/close`, {
+        method: "POST",
+        body: JSON.stringify({
+          paymentMethod: closePaymentMethod,
+          notes: closeNotes || undefined
+        })
+      });
+      toast.success(`Mesa fechada: ${brl(result.total)} em ${result.paymentDetail}`);
+      setOrders([]);
+      setSelectedTable((current) => current ? { ...current, status: "FREE", _count: { orders: 0 } } : current);
+      await loadTables();
+      setSelectedTable(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao fechar mesa");
+    } finally {
+      setClosingTable(false);
     }
   }
 
@@ -435,6 +471,35 @@ export default function PdvPage() {
               <button className="rounded-xl bg-red-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void updateStatus(selectedTable, "WAITING_PAYMENT")}>Solicitou conta</button>
               <button className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void updateStatus(selectedTable, "FREE")}>Liberar mesa</button>
             </div>
+
+            <section className="mt-5 rounded-3xl border bg-emerald-50 p-4 text-slate-950">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-700">Fechamento</p>
+                  <h3 className="text-xl font-black">Fechar conta da mesa</h3>
+                  <p className="text-sm opacity-70">Registra pagamento no caixa aberto e finaliza os pedidos da mesa.</p>
+                </div>
+                <strong className="rounded-full bg-white px-3 py-1 text-emerald-700">{brl(totals.total)}</strong>
+              </div>
+              <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1.5fr_auto]">
+                <select className="rounded-xl border px-3 py-2" value={closePaymentMethod} onChange={(event) => setClosePaymentMethod(event.target.value as ClosePaymentMethod)}>
+                  <option value="PIX">Pix</option>
+                  <option value="CASH">Dinheiro</option>
+                  <option value="DEBIT">Cartão Débito</option>
+                  <option value="CREDIT">Cartão Crédito</option>
+                  <option value="CARD">Cartão</option>
+                </select>
+                <input className="rounded-xl border px-3 py-2" placeholder="Observação do fechamento opcional" value={closeNotes} onChange={(event) => setCloseNotes(event.target.value)} />
+                <button
+                  className="rounded-xl bg-emerald-700 px-4 py-2 font-black text-white disabled:opacity-60"
+                  disabled={closingTable || totals.count === 0}
+                  onClick={() => void closeTableAccount()}
+                >
+                  {closingTable ? "Fechando..." : "Receber e liberar"}
+                </button>
+              </div>
+              <p className="mt-2 text-xs opacity-70">Importante: é necessário ter caixa aberto para o operador logado.</p>
+            </section>
 
             <section className="mt-5 rounded-3xl border bg-orange-50 p-4 text-slate-950">
               <div className="flex flex-wrap items-center justify-between gap-2">
