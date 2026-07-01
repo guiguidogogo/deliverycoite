@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { apiFetch } from "../../../../lib/api";
 
@@ -73,6 +73,7 @@ type DraftItem = {
 };
 
 type ClosePaymentMethod = "CASH" | "PIX" | "DEBIT" | "CREDIT" | "CARD";
+type PdvAlert = { id: string; message: string; tone: "bill" | "order" };
 
 const statusLabels: Record<TableStatus, string> = {
   FREE: "Livre",
@@ -127,6 +128,10 @@ export default function PdvPage() {
   const [closingTable, setClosingTable] = useState(false);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [areaFilter, setAreaFilter] = useState("all");
+  const [soundEnabled, setSoundEnabled] = useState(false);
+  const [alerts, setAlerts] = useState<PdvAlert[]>([]);
+  const previousTablesRef = useRef<Map<string, { status: TableStatus; orders: number }>>(new Map());
+  const soundEnabledRef = useRef(false);
 
   const areas = useMemo(() => {
     const byId = new Map<string, DiningArea>();
@@ -186,11 +191,64 @@ export default function PdvPage() {
     return payload;
   }
 
+  function playAlertSound() {
+    if (!soundEnabledRef.current || typeof window === "undefined") return;
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      const ctx = new AudioContextClass();
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(880, ctx.currentTime);
+      oscillator.frequency.setValueAtTime(660, ctx.currentTime + 0.14);
+      gain.gain.setValueAtTime(0.001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.28, ctx.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+      oscillator.start();
+      oscillator.stop(ctx.currentTime + 0.5);
+    } catch {
+      // Som e apenas uma conveniencia visual/operacional.
+    }
+  }
+
+  function pushAlert(message: string, tone: PdvAlert["tone"]) {
+    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    setAlerts((current) => [{ id, message, tone }, ...current].slice(0, 5));
+    toast(tone === "bill" ? "Conta solicitada" : "Nova movimentacao", { description: message });
+    playAlertSound();
+  }
+
+  function detectTableChanges(nextTables: RestaurantTable[]) {
+    const previous = previousTablesRef.current;
+    if (!previous.size) {
+      previousTablesRef.current = new Map(nextTables.map((table) => [table.id, { status: table.status, orders: table._count?.orders ?? 0 }]));
+      return;
+    }
+
+    nextTables.forEach((table) => {
+      const old = previous.get(table.id);
+      const orderCount = table._count?.orders ?? 0;
+      if (!old) return;
+      if (old.status !== "WAITING_PAYMENT" && table.status === "WAITING_PAYMENT") {
+        pushAlert(`Mesa ${table.number} solicitou a conta`, "bill");
+      } else if (orderCount > old.orders) {
+        pushAlert(`Mesa ${table.number} recebeu novo pedido`, "order");
+      } else if (old.status === "FREE" && table.status === "OCCUPIED" && orderCount === old.orders) {
+        pushAlert(`Mesa ${table.number} chamou o garçom`, "order");
+      }
+    });
+    previousTablesRef.current = new Map(nextTables.map((table) => [table.id, { status: table.status, orders: table._count?.orders ?? 0 }]));
+  }
+
   async function loadTables() {
     setLoading(true);
     try {
       const loaded = await request("/admin/tables");
-      setTables(loaded ?? []);
+      const nextTables = loaded ?? [];
+      detectTableChanges(nextTables);
+      setTables(nextTables);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao carregar PDV");
     } finally {
@@ -363,6 +421,10 @@ export default function PdvPage() {
     return () => window.clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    soundEnabledRef.current = soundEnabled;
+  }, [soundEnabled]);
+
   return (
     <main className="mx-auto max-w-7xl p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -372,10 +434,34 @@ export default function PdvPage() {
           <p className="mt-1 text-sm opacity-70">Mapa operacional para acompanhar mesas, pedidos e fechamento.</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button
+            className={`rounded-xl px-3 py-2 font-bold text-white ${soundEnabled ? "bg-emerald-600" : "bg-slate-700"}`}
+            onClick={() => {
+              const next = !soundEnabledRef.current;
+              soundEnabledRef.current = next;
+              setSoundEnabled(next);
+              if (next) setTimeout(() => playAlertSound(), 50);
+            }}
+          >
+            {soundEnabled ? "Som ativo" : "Ativar som"}
+          </button>
           <Link className="rounded-xl border px-3 py-2 font-bold" href="/admin/manage/tables">Cadastrar mesas</Link>
           <Link className="rounded-xl bg-ink px-3 py-2 font-bold text-white" href="/admin">Voltar</Link>
         </div>
       </div>
+
+      {alerts.length > 0 && (
+        <section className="mt-4 space-y-2">
+          {alerts.map((alert) => (
+            <div key={alert.id} className={`flex items-center justify-between gap-3 rounded-2xl border p-3 font-bold ${alert.tone === "bill" ? "border-red-200 bg-red-50 text-red-800" : "border-orange-200 bg-orange-50 text-orange-800"}`}>
+              <span>{alert.message}</span>
+              <button className="rounded-lg bg-white/70 px-2 py-1 text-xs" onClick={() => setAlerts((current) => current.filter((item) => item.id !== alert.id))}>
+                OK
+              </button>
+            </div>
+          ))}
+        </section>
+      )}
 
       <section className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-5">
         {(Object.keys(statusLabels) as TableStatus[]).map((status) => (
