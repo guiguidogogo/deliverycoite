@@ -433,9 +433,7 @@ export async function getTableSessionAccount(req: Request, res: Response) {
   });
   if (!session) return res.status(404).json({ message: "Atendimento nao encontrado" });
   const settings = await prisma.setting.findFirst({ where: { companyId } });
-  const subtotal = session.orders
-    .filter((order) => !["FINISHED", "CANCELED"].includes(order.status))
-    .reduce((sum, order) => sum + Number(order.total), 0);
+  const subtotal = session.orders.reduce((sum, order) => sum + Number(order.total), 0);
   const account = buildAccountTotals(subtotal, {
     serviceFeeEnabled: settings?.tableServiceFeeEnabled ?? false,
     serviceFeePercent: Number(settings?.tableServiceFeePercent ?? 10),
@@ -616,7 +614,7 @@ export async function closeTableAccount(req: Request, res: Response) {
       tableId: table.id,
       ...(activeSession ? { tableSessionId: activeSession.id } : {}),
       deletedAt: null,
-      status: { notIn: ["FINISHED", "CANCELED"] }
+      status: { notIn: ["CANCELED"] }
     },
     select: {
       id: true,
@@ -894,9 +892,7 @@ export async function getPublicTableSession(req: Request, res: Response) {
 
   const expired = Boolean(session.expiresAt && session.expiresAt < new Date());
   const settings = await prisma.setting.findFirst({ where: { companyId: session.companyId } });
-  const subtotal = session.orders
-    .filter((order) => !["FINISHED", "CANCELED"].includes(order.status))
-    .reduce((sum, order) => sum + Number(order.total), 0);
+  const subtotal = session.orders.reduce((sum, order) => sum + Number(order.total), 0);
   const account = buildAccountTotals(subtotal, {
     serviceFeeEnabled: settings?.tableServiceFeeEnabled ?? false,
     serviceFeePercent: Number(settings?.tableServiceFeePercent ?? 10),
