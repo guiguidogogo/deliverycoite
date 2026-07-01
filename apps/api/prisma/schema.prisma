@@ -44,6 +44,7 @@ enum OrderSource {
 }
 
 enum TableSessionStatus {
+  PENDING_CONFIRMATION
   OPEN
   CLOSING_REQUESTED
   CLOSED
@@ -627,6 +628,9 @@ model TableSession {
   status         TableSessionStatus @default(OPEN)
   token          String             @unique
   shortCode      String
+  customerName   String?
+  customerPhone  String?
+  customerEmail  String?
   openedByUserId String?
   openedByUser   User?              @relation("OpenedTableSessions", fields: [openedByUserId], references: [id], onDelete: SetNull)
   closedByUserId String?

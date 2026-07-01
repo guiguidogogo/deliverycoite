@@ -114,6 +114,11 @@ export function Storefront() {
   const [tableSession, setTableSession] = useState<any>(null);
   const [tableSessionCode, setTableSessionCode] = useState("");
   const [tableSessionVerified, setTableSessionVerified] = useState(false);
+  const [tableRequestName, setTableRequestName] = useState("");
+  const [tableRequestPhone, setTableRequestPhone] = useState("");
+  const [tableRequestEmail, setTableRequestEmail] = useState("");
+  const [tableRequestPendingUrl, setTableRequestPendingUrl] = useState("");
+  const [requestingTableSession, setRequestingTableSession] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [query, setQuery] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -176,6 +181,7 @@ export function Storefront() {
   }, [pathname]);
   const isTableMode = Boolean(tableSessionToken || tableContext);
   const tableOrderingBlocked = Boolean(tableSession && tableSession.status !== "OPEN");
+  const tableSessionPending = tableSession?.status === "PENDING_CONFIRMATION";
   const tableAccountTotal = Number(tableSession?.account?.total ?? tableSession?.total ?? 0);
   const tableOrdersCount = Number(tableSession?.orders?.length ?? 0);
 
@@ -807,6 +813,35 @@ export function Storefront() {
     }
   }
 
+  async function requestTableOpening() {
+    if (!tableNumber || requestingTableSession) return;
+    const cleanPhone = tableRequestPhone.replace(/\D/g, "");
+    if (!tableRequestName.trim() || cleanPhone.length < 8 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(tableRequestEmail.trim())) {
+      toast.error("Informe nome, telefone e e-mail para solicitar a mesa");
+      return;
+    }
+    setRequestingTableSession(true);
+    try {
+      const response = await api<{ status: string; sessionUrl: string; message?: string }>(`/tables/${tableNumber}/session-request`, {
+        method: "POST",
+        body: JSON.stringify({
+          name: tableRequestName.trim(),
+          phone: tableRequestPhone.trim(),
+          email: tableRequestEmail.trim()
+        })
+      });
+      setTableRequestPendingUrl(response.sessionUrl);
+      toast.success(response.message || "Solicitacao enviada. Aguarde o garcom confirmar.");
+      if (response.status === "OPEN" || response.status === "CLOSING_REQUESTED") {
+        window.location.href = response.sessionUrl;
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Nao foi possivel solicitar a abertura da mesa");
+    } finally {
+      setRequestingTableSession(false);
+    }
+  }
+
   async function finishOrder(values: CheckoutForm) {
     if (!settings) return;
     if (!cart.length) {
@@ -954,6 +989,82 @@ export function Storefront() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao finalizar pedido");
     }
+  }
+
+  if (tableNumber && !tableSessionToken) {
+    return (
+      <main className="mx-auto flex min-h-screen w-full max-w-xl flex-col justify-center px-4 py-8">
+        <section className="overflow-hidden rounded-[2rem] border bg-white shadow-2xl shadow-orange-950/10 dark:border-white/10 dark:bg-slate-950">
+          <div
+            className="p-6 text-white"
+            style={{ backgroundImage: "linear-gradient(135deg, var(--tenant-primary), #111827 72%)" }}
+          >
+            <div className="flex items-center gap-3">
+              <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white shadow-xl">
+                {company?.logoUrl ? (
+                  <Image src={resolveAssetUrl(company.logoUrl)} alt={`Logo ${company.tradeName}`} width={56} height={56} className="h-full w-full object-contain p-1" unoptimized />
+                ) : (
+                  <Store className="text-slate-900" size={28} />
+                )}
+              </div>
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-white/70">Mesa segura</p>
+                <h1 className="font-display text-4xl leading-none">Mesa {tableNumber}</h1>
+                <p className="mt-1 text-sm text-white/80">{company?.tradeName ?? settings?.companyName ?? "HubRegional"}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4 p-5">
+            {tableRequestPendingUrl ? (
+              <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
+                <p className="text-xs font-black uppercase tracking-[0.2em]">Aguardando confirmacao</p>
+                <h2 className="mt-1 text-2xl font-black">O garcom precisa liberar sua mesa</h2>
+                <p className="mt-2 text-sm">
+                  Sua solicitacao foi enviada. Quando o PDV confirmar, use o botao abaixo para acessar o cardapio seguro desta sessao.
+                </p>
+                <a className="mt-4 inline-flex w-full justify-center rounded-2xl bg-amber-500 px-4 py-3 font-black text-amber-950" href={tableRequestPendingUrl}>
+                  Acompanhar liberacao da mesa
+                </a>
+              </div>
+            ) : (
+              <>
+                <div className="rounded-3xl border border-red-100 bg-red-50 p-4 text-red-950">
+                  <p className="font-black">Este QR fixo nao libera pedidos automaticamente.</p>
+                  <p className="mt-1 text-sm">Para sua seguranca, a mesa so abre depois que o garcom/PDV confirmar que voce esta no restaurante.</p>
+                </div>
+                <div className="grid gap-2">
+                  <input className="rounded-2xl border px-4 py-3 dark:bg-transparent" placeholder="Seu nome *" value={tableRequestName} onChange={(event) => setTableRequestName(event.target.value)} />
+                  <input className="rounded-2xl border px-4 py-3 dark:bg-transparent" placeholder="Telefone/WhatsApp *" value={tableRequestPhone} onChange={(event) => setTableRequestPhone(event.target.value)} />
+                  <input className="rounded-2xl border px-4 py-3 dark:bg-transparent" placeholder="E-mail *" value={tableRequestEmail} onChange={(event) => setTableRequestEmail(event.target.value)} />
+                  <button className="rounded-2xl bg-emerald-600 px-4 py-4 font-black text-white disabled:opacity-60" disabled={requestingTableSession} onClick={() => void requestTableOpening()}>
+                    {requestingTableSession ? "Enviando..." : "Solicitar abertura da mesa"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  if (tableSessionPending) {
+    return (
+      <main className="mx-auto flex min-h-screen w-full max-w-xl flex-col justify-center px-4 py-8">
+        <section className="rounded-[2rem] border bg-white p-6 text-center shadow-2xl shadow-orange-950/10 dark:border-white/10 dark:bg-slate-950">
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-amber-600">Mesa {tableContext?.number ?? ""}</p>
+          <h1 className="mt-2 font-display text-4xl leading-none">Aguardando liberacao</h1>
+          <p className="mt-3 text-sm opacity-75">
+            Sua solicitacao chegou no PDV. O cardapio sera liberado automaticamente quando o garcom confirmar a abertura da mesa.
+          </p>
+          <div className="mt-5 rounded-3xl bg-amber-50 p-4 text-left text-sm text-amber-950">
+            <p><strong>Status:</strong> aguardando confirmacao</p>
+            <p className="mt-1">Mantenha esta tela aberta. Ela atualiza sozinha.</p>
+          </div>
+        </section>
+      </main>
+    );
   }
 
   return (

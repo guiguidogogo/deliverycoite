@@ -24,10 +24,13 @@ type RestaurantTable = {
     id: string;
     token: string;
     shortCode: string;
-    status: "OPEN" | "CLOSING_REQUESTED" | "CLOSED" | "CANCELLED";
+    status: "PENDING_CONFIRMATION" | "OPEN" | "CLOSING_REQUESTED" | "CLOSED" | "CANCELLED";
     sessionUrl: string;
     openedAt: string;
     total: number | string;
+    customerName?: string | null;
+    customerPhone?: string | null;
+    customerEmail?: string | null;
     openedByUser?: { name: string } | null;
   } | null;
   area?: DiningArea | null;
@@ -341,6 +344,24 @@ export default function PdvPage() {
     }
   }
 
+  async function approveSession(table: RestaurantTable) {
+    if (!table.activeSession) return;
+    try {
+      const session = await request(`/admin/tables/${table.id}/session/${table.activeSession.id}/approve`, { method: "POST" });
+      const updated = {
+        ...table,
+        status: "OCCUPIED" as TableStatus,
+        activeSession: session,
+        qrCodeUrl: session.sessionUrl
+      };
+      setSelectedTable(updated);
+      setTables((current) => current.map((item) => item.id === table.id ? updated : item));
+      toast.success("Mesa liberada para o cliente");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao confirmar abertura da mesa");
+    }
+  }
+
   function addDraftItem() {
     if (!draftProductId) return;
     const product = products.find((item) => item.id === draftProductId);
@@ -594,7 +615,9 @@ export default function PdvPage() {
                 </div>
                 <div className="rounded-2xl bg-white/65 p-3">
                   <p className="text-xs opacity-70">QR Code</p>
-                  <p className="truncate text-xs font-bold">{table.activeSession ? "Sessão ativa" : "Fechado"}</p>
+                  <p className="truncate text-xs font-bold">
+                    {table.activeSession?.status === "PENDING_CONFIRMATION" ? "Aguardando confirmação" : table.activeSession ? "Sessão ativa" : "Fechado"}
+                  </p>
                 </div>
               </div>
             </button>
@@ -636,14 +659,21 @@ export default function PdvPage() {
             </div>
 
             <div className="mt-4 flex flex-wrap gap-2">
+              {selectedTable.activeSession?.status === "PENDING_CONFIRMATION" && (
+                <button className="rounded-xl bg-blue-700 px-3 py-2 text-sm font-bold text-white" onClick={() => void approveSession(selectedTable)}>
+                  Confirmar abertura
+                </button>
+              )}
               {!selectedTable.activeSession && (
                 <button className="rounded-xl bg-emerald-700 px-3 py-2 text-sm font-bold text-white disabled:opacity-60" disabled={openingSession} onClick={() => void openSession(selectedTable)}>
                   {openingSession ? "Abrindo..." : "Abrir atendimento"}
                 </button>
               )}
-              <a className="rounded-xl bg-ink px-3 py-2 text-sm font-bold text-white" href={selectedTable.qrCodeUrl} target="_blank" rel="noreferrer">
-                Abrir QR/cardápio
-              </a>
+              {selectedTable.activeSession?.status !== "PENDING_CONFIRMATION" && (
+                <a className="rounded-xl bg-ink px-3 py-2 text-sm font-bold text-white" href={selectedTable.qrCodeUrl} target="_blank" rel="noreferrer">
+                  Abrir QR/cardápio
+                </a>
+              )}
               <button className="rounded-xl bg-orange-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void updateStatus(selectedTable, "OCCUPIED")}>Marcar ocupada</button>
               <button className="rounded-xl bg-red-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void updateStatus(selectedTable, "WAITING_PAYMENT")}>Solicitou conta</button>
               <button className="rounded-xl border px-3 py-2 text-sm font-bold" onClick={printTableAccount}>Imprimir pré-conta</button>
@@ -652,6 +682,14 @@ export default function PdvPage() {
 
             {selectedTable.activeSession && (
               <section className="mt-4 rounded-3xl border bg-white p-4 text-slate-950">
+                {selectedTable.activeSession.status === "PENDING_CONFIRMATION" && (
+                  <div className="mb-4 rounded-2xl border border-blue-200 bg-blue-50 p-3 text-blue-950">
+                    <p className="text-xs font-black uppercase tracking-[0.18em]">Solicitação do cliente</p>
+                    <p className="mt-1 font-black">{selectedTable.activeSession.customerName || "Cliente"}</p>
+                    <p className="text-sm opacity-80">{selectedTable.activeSession.customerPhone || "-"} - {selectedTable.activeSession.customerEmail || "-"}</p>
+                    <p className="mt-2 text-sm">Confirme apenas se o cliente estiver presente na mesa.</p>
+                  </div>
+                )}
                 <div className="grid gap-4 md:grid-cols-[180px_1fr]">
                   <img className="h-44 w-44 rounded-2xl bg-white p-2 shadow" src={qrImage(selectedTable.activeSession.sessionUrl)} alt={`QR Code mesa ${selectedTable.number}`} />
                   <div>
