@@ -267,18 +267,29 @@ export async function updateTableStatus(req: Request, res: Response) {
 }
 
 export async function listTableOrders(req: Request, res: Response) {
+  const companyId = getCompanyId(req);
   const table = await prisma.restaurantTable.findFirst({
-    where: { id: req.params.id, companyId: getCompanyId(req), active: true },
+    where: { id: req.params.id, companyId, active: true },
     select: { id: true }
   });
   if (!table) return res.status(404).json({ message: "Mesa nao encontrada" });
 
+  const activeSession = await prisma.tableSession.findFirst({
+    where: {
+      companyId,
+      tableId: table.id,
+      status: { in: [TableSessionStatus.OPEN, TableSessionStatus.CLOSING_REQUESTED] }
+    },
+    orderBy: { openedAt: "desc" }
+  });
+
   const orders = await prisma.order.findMany({
     where: {
-      companyId: getCompanyId(req),
+      companyId,
       tableId: table.id,
+      ...(activeSession ? { tableSessionId: activeSession.id } : {}),
       deletedAt: null,
-      status: { notIn: ["FINISHED", "CANCELED"] }
+      status: { notIn: ["CANCELED"] }
     },
     include: {
       customer: true,
