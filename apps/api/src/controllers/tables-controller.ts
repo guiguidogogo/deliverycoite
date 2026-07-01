@@ -350,12 +350,13 @@ export async function listTableOrders(req: Request, res: Response) {
     },
     orderBy: { openedAt: "desc" }
   });
+  if (!activeSession) return res.json([]);
 
   const orders = await prisma.order.findMany({
     where: {
       companyId,
       tableId: table.id,
-      ...(activeSession ? { tableSessionId: activeSession.id } : {}),
+      tableSessionId: activeSession.id,
       deletedAt: null,
       status: { notIn: ["CANCELED"] }
     },
@@ -689,12 +690,15 @@ export async function closeTableAccount(req: Request, res: Response) {
       status: { in: [TableSessionStatus.OPEN, TableSessionStatus.CLOSING_REQUESTED] }
     }
   });
+  if (!activeSession) {
+    return res.status(400).json({ message: "Nao ha atendimento aberto nesta mesa" });
+  }
 
   const orders = await prisma.order.findMany({
     where: {
       companyId,
       tableId: table.id,
-      ...(activeSession ? { tableSessionId: activeSession.id } : {}),
+      tableSessionId: activeSession.id,
       deletedAt: null,
       status: { notIn: ["CANCELED"] }
     },

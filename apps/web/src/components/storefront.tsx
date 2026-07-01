@@ -891,10 +891,19 @@ export function Storefront() {
       return;
     }
     if (tableSessionToken) {
+      setValue("fulfillmentType", "PICKUP", { shouldValidate: true });
       const cleanPhone = values.phone.replace(/\D/g, "");
       const email = values.email?.trim() ?? "";
-      if (!values.name.trim() || cleanPhone.length < 8 || !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        toast.error("Informe nome, telefone e e-mail para acompanhar sua conta da mesa");
+      if (!values.name.trim()) {
+        toast.error("Informe seu nome para acompanhar a conta da mesa");
+        return;
+      }
+      if (cleanPhone.length < 8) {
+        toast.error("Informe seu telefone/WhatsApp para acompanhar a conta da mesa");
+        return;
+      }
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        toast.error("Informe um e-mail valido para acompanhar a conta da mesa");
         return;
       }
     }
@@ -924,7 +933,7 @@ export function Storefront() {
         latitude: deliveryLocation?.latitude,
         longitude: deliveryLocation?.longitude
       },
-      fulfillmentType: tableContext ? "PICKUP" : values.fulfillmentType,
+      fulfillmentType: tableContext || tableSessionToken ? "PICKUP" : values.fulfillmentType,
       source: tableSessionToken ? "TABLE_QR" : tableContext ? "TABLE" : "DELIVERY",
       tableId: tableContext?.id,
       tableSessionToken: tableSessionToken ?? undefined,
@@ -1027,6 +1036,29 @@ export function Storefront() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao finalizar pedido");
     }
+  }
+
+  function submitCheckout() {
+    if (tableContext || tableSessionToken) {
+      setValue("fulfillmentType", "PICKUP", { shouldValidate: false });
+      setValue("address", "", { shouldValidate: false });
+      setValue("number", "", { shouldValidate: false });
+      setValue("district", "", { shouldValidate: false });
+    }
+
+    void handleSubmit(finishOrder, (formErrors) => {
+      const firstMessage =
+        formErrors.name?.message ||
+        formErrors.phone?.message ||
+        formErrors.email?.message ||
+        formErrors.address?.message ||
+        formErrors.number?.message ||
+        formErrors.district?.message ||
+        formErrors.paymentMethod?.message ||
+        formErrors.changeFor?.message ||
+        "Confira os campos obrigatorios antes de enviar o pedido";
+      toast.error(String(firstMessage));
+    })();
   }
 
   if (tableNumber && !tableSessionToken) {
@@ -1855,7 +1887,7 @@ export function Storefront() {
             <button
               className="mt-4 w-full rounded-2xl bg-ember px-4 py-4 text-lg font-black text-white shadow-xl shadow-orange-500/25 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={isSubmitting || settings?.ordersPaused}
-              onClick={() => void handleSubmit(finishOrder)()}
+              onClick={submitCheckout}
             >
               {settings?.ordersPaused ? "Loja pausada" : isSubmitting ? "Enviando pedido..." : "Confirmar Pedido"}
             </button>
