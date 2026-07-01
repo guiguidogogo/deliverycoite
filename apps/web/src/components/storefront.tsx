@@ -291,6 +291,38 @@ export function Storefront() {
   }, [tableSessionToken]);
 
   useEffect(() => {
+    if (!tableRequestPendingUrl || tableSessionToken) return;
+
+    const token = tableRequestPendingUrl.match(/\/mesa\/sessao\/([^/?#]+)/)?.[1];
+    if (!token) return;
+
+    let canceled = false;
+    const refreshPendingRequest = async () => {
+      try {
+        const session = await api<any>(`/table-sessions/${decodeURIComponent(token)}`);
+        if (canceled) return;
+        if (session?.status === "OPEN" || session?.status === "CLOSING_REQUESTED") {
+          toast.success("Mesa liberada! Abrindo cardapio seguro...");
+          window.location.href = tableRequestPendingUrl;
+        }
+      } catch {
+        // A tela continua aguardando; a proxima consulta tenta novamente.
+      }
+    };
+
+    void refreshPendingRequest();
+    const timer = window.setInterval(() => void refreshPendingRequest(), 3000);
+    const onFocus = () => void refreshPendingRequest();
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      canceled = true;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [tableRequestPendingUrl, tableSessionToken]);
+
+  useEffect(() => {
 
     api<Settings>("/settings")
       .then((s) => {
