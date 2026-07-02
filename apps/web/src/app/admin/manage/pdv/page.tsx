@@ -213,6 +213,13 @@ export default function PdvPage() {
       total: Math.max(0, totals.total + serviceFee - discount)
     };
   }, [closeDiscount, serviceFeeEnabled, serviceFeePercent, totals.total]);
+  const splitPaidTotal = useMemo(
+    () => splitPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0),
+    [splitPayments]
+  );
+  const splitRemaining = Math.max(0, accountTotals.total - splitPaidTotal);
+  const splitDifference = splitPayments.length ? splitPaidTotal - accountTotals.total : 0;
+  const splitIsBalanced = !splitPayments.length || Math.abs(splitDifference) <= 0.02;
 
   const configuringTotal = useMemo(() => {
     if (!configuringProduct) return 0;
@@ -520,6 +527,10 @@ export default function PdvPage() {
       toast.error("Nao ha pedidos para fechar nesta mesa");
       return;
     }
+    if (splitPayments.length && !splitIsBalanced) {
+      toast.error(`Pagamento dividido nao bate com o total. Diferença: ${brl(Math.abs(splitDifference))}`);
+      return;
+    }
     const confirmed = window.confirm(`Fechar a mesa ${selectedTable.number} no valor de ${brl(accountTotals.total)}?`);
     if (!confirmed) return;
     setClosingTable(true);
@@ -630,6 +641,21 @@ export default function PdvPage() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao atualizar mesa");
     }
+  }
+
+  function addSplitPayment(method: ClosePaymentMethod = closePaymentMethod) {
+    const amount = Number(splitRemaining > 0 ? splitRemaining.toFixed(2) : accountTotals.total.toFixed(2));
+    setSplitPayments((current) => [...current, { method, amount }]);
+  }
+
+  function updateSplitPayment(index: number, patch: Partial<{ method: ClosePaymentMethod; amount: number }>) {
+    setSplitPayments((current) => current.map((payment, currentIndex) =>
+      currentIndex === index ? { ...payment, ...patch } : payment
+    ));
+  }
+
+  function removeSplitPayment(index: number) {
+    setSplitPayments((current) => current.filter((_, currentIndex) => currentIndex !== index));
   }
 
   async function updateOrderStatus(order: TableOrder, status: TableOrder["status"]) {
@@ -903,6 +929,69 @@ export default function PdvPage() {
                 >
                   {closingTable ? "Fechando..." : "Receber e liberar"}
                 </button>
+              </div>
+              <div className="mt-3 rounded-2xl border border-emerald-200 bg-white/80 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-700">Pagamento dividido</p>
+                    <p className="text-xs opacity-70">Use quando a conta for paga em mais de uma forma.</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded-xl bg-ink px-3 py-2 text-xs font-black text-white"
+                    onClick={() => addSplitPayment()}
+                  >
+                    Adicionar pagamento
+                  </button>
+                </div>
+
+                {splitPayments.length > 0 ? (
+                  <div className="mt-3 space-y-2">
+                    {splitPayments.map((payment, index) => (
+                      <div key={index} className="grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+                        <select
+                          className="rounded-xl border px-3 py-2"
+                          value={payment.method}
+                          onChange={(event) => updateSplitPayment(index, { method: event.target.value as ClosePaymentMethod })}
+                        >
+                          <option value="PIX">Pix</option>
+                          <option value="CASH">Dinheiro</option>
+                          <option value="DEBIT">Cartão Débito</option>
+                          <option value="CREDIT">Cartão Crédito</option>
+                          <option value="CARD">Cartão</option>
+                        </select>
+                        <input
+                          className="rounded-xl border px-3 py-2"
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={payment.amount}
+                          onChange={(event) => updateSplitPayment(index, { amount: Number(event.target.value || 0) })}
+                        />
+                        <button
+                          type="button"
+                          className="rounded-xl border border-red-200 px-3 py-2 text-xs font-black text-red-700"
+                          onClick={() => removeSplitPayment(index)}
+                        >
+                          Remover
+                        </button>
+                      </div>
+                    ))}
+                    <div className={`rounded-xl p-3 text-sm font-bold ${splitIsBalanced ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>
+                      <p>Total da conta: {brl(accountTotals.total)}</p>
+                      <p>Total informado: {brl(splitPaidTotal)}</p>
+                      <p>
+                        {splitIsBalanced
+                          ? "Pagamentos conferidos."
+                          : splitDifference < 0
+                            ? `Falta receber ${brl(splitRemaining)}.`
+                            : `Sobra ${brl(splitDifference)}.`}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs opacity-70">Sem divisão: será usado apenas o método selecionado acima.</p>
+                )}
               </div>
               <p className="mt-2 text-xs opacity-70">Importante: é necessário ter caixa aberto para o operador logado.</p>
             </section>
