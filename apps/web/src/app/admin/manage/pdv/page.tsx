@@ -942,6 +942,24 @@ export default function PdvPage() {
     }
   }
 
+  function tableMenuWhatsappUrl(table: RestaurantTable) {
+    const session = table.activeSession;
+    const menuUrl = session?.sessionUrl || table.qrCodeUrl || "";
+    const code = session?.shortCode ? `\nCodigo de acesso: ${session.shortCode}` : "";
+    const message = [
+      `Ola! Segue o cardapio digital da mesa ${table.number}:`,
+      menuUrl,
+      code,
+      "",
+      "Abra o link, confirme o codigo com o garcom e faca seus pedidos pelo celular."
+    ].filter(Boolean).join("\n");
+    const rawPhone = session?.customerPhone?.replace(/\D/g, "") ?? "";
+    const phone = rawPhone
+      ? rawPhone.startsWith("55") ? rawPhone : `55${rawPhone}`
+      : "";
+    return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+  }
+
   async function moveSelectedTable(mode: "TRANSFER" | "MERGE") {
     if (!selectedTable || !targetTableId || movingTable) return;
     const target = tables.find((table) => table.id === targetTableId);
@@ -1142,6 +1160,21 @@ export default function PdvPage() {
               </div>
             </div>
 
+            {selectedTable.activeSession?.status !== "PENDING_CONFIRMATION" && selectedTable.activeSession && (
+              <div className="mt-4 rounded-3xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950">
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-700">Acesso do cliente</p>
+                <div className="mt-2 grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
+                  <div>
+                    <p className="text-sm opacity-80">Mostre ou fale este codigo ao cliente para liberar o cardapio da mesa.</p>
+                    <p className="mt-1 text-4xl font-black tracking-[0.18em]">{selectedTable.activeSession.shortCode}</p>
+                  </div>
+                  <a className="rounded-2xl bg-emerald-700 px-4 py-3 text-center text-sm font-black text-white" href={tableMenuWhatsappUrl(selectedTable)} target="_blank" rel="noreferrer">
+                    Enviar cardapio no WhatsApp
+                  </a>
+                </div>
+              </div>
+            )}
+
             <div className="mt-4 flex flex-wrap gap-2">
               {selectedTable.activeSession?.status === "PENDING_CONFIRMATION" && (
                 <button className="rounded-xl bg-blue-700 px-3 py-2 text-sm font-bold text-white" onClick={() => void approveSession(selectedTable)}>
@@ -1161,6 +1194,11 @@ export default function PdvPage() {
               {selectedTable.activeSession?.status !== "PENDING_CONFIRMATION" && (
                 <a className="rounded-xl bg-ink px-3 py-2 text-sm font-bold text-white" href={selectedTable.qrCodeUrl} target="_blank" rel="noreferrer">
                   Abrir QR/cardápio
+                </a>
+              )}
+              {selectedTable.activeSession?.status !== "PENDING_CONFIRMATION" && (
+                <a className="rounded-xl bg-green-700 px-3 py-2 text-sm font-bold text-white" href={tableMenuWhatsappUrl(selectedTable)} target="_blank" rel="noreferrer">
+                  Enviar cardapio
                 </a>
               )}
               <button className="rounded-xl bg-orange-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void updateStatus(selectedTable, "OCCUPIED")}>Marcar ocupada</button>
