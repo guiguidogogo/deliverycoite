@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { API_URL, apiFetch } from "../../../../lib/api";
 
-type Tab = "dashboard" | "cash" | "payables" | "receivables" | "history" | "audit";
+type Tab = "dashboard" | "cash" | "tables" | "payables" | "receivables" | "history" | "audit";
 type Summary = {
   session: null | { id: string; operatorName: string; openingAmount: number; openedAt: string; notes?: string };
   totals: null | {
@@ -41,6 +41,12 @@ type Audit = {
   id: string; userName?: string; action: string; entity: string; entityId?: string;
   oldValue?: unknown; newValue?: unknown; ipAddress?: string; device?: string; createdAt: string;
 };
+type TableSessionHistory = {
+  id: string; shortCode: string; customerName?: string | null; customerPhone?: string | null;
+  openedAt: string; closedAt?: string | null; total: number | string; orderCount: number; itemCount: number;
+  table: { id: string; number: number; name?: string | null; area?: { name: string } | null };
+  openedByUser?: { name: string } | null; closedByUser?: { name: string } | null;
+};
 
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const entryOptions = [
@@ -58,6 +64,7 @@ export default function FinanceManagePage() {
   const [payables, setPayables] = useState<Account[]>([]);
   const [receivables, setReceivables] = useState<Account[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [tableSessions, setTableSessions] = useState<TableSessionHistory[]>([]);
   const [audits, setAudits] = useState<Audit[]>([]);
   const [dateFrom, setDateFrom] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10));
   const [dateTo, setDateTo] = useState(() => new Date().toISOString().slice(0, 10));
@@ -97,16 +104,17 @@ export default function FinanceManagePage() {
       const allowed = (permission: string) => me.permissions.includes("*") || me.permissions.includes(permission);
       setPermissions(me.permissions);
       if (!allowed("FINANCE") && allowed("CASH_MANAGE")) setTab("cash");
-      const [sum, dash, payableRows, receivableRows, sessionRows, auditRows] = await Promise.all([
+      const [sum, dash, payableRows, receivableRows, sessionRows, tableSessionRows, auditRows] = await Promise.all([
         request<Summary>("/admin/finance/summary"),
         allowed("FINANCE") ? request<Dashboard>("/admin/finance/dashboard") : Promise.resolve(null),
         allowed("FINANCE") ? request<Account[]>("/admin/finance/payables") : Promise.resolve([]),
         allowed("FINANCE") ? request<Account[]>("/admin/finance/receivables") : Promise.resolve([]),
         request<Session[]>(`/admin/finance/sessions?${query}`),
+        request<TableSessionHistory[]>(`/admin/finance/table-sessions?${query}`),
         allowed("AUDIT_VIEW") ? request<Audit[]>(`/admin/finance/audit?${query}`) : Promise.resolve([])
       ]);
       setSummary(sum); setDashboard(dash as Dashboard | null); setPayables(payableRows); setReceivables(receivableRows);
-      setSessions(sessionRows); setAudits(auditRows);
+      setSessions(sessionRows); setTableSessions(tableSessionRows); setAudits(auditRows);
       if (sum.totals) setClosing((value) => ({ ...value, amount: sum.totals!.expectedCash.toFixed(2) }));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao carregar financeiro");
@@ -123,6 +131,36 @@ export default function FinanceManagePage() {
       toast.success(success); await load(); return true;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha na operação"); return false;
+    }
+  }
+
+  function printReceiptText(text: string) {
+    const popup = window.open("", "_blank", "width=480,height=720");
+    if (!popup) {
+      toast.error("Permita pop-ups para imprimir");
+      return;
+    }
+    popup.document.open();
+    popup.document.write(`<pre style="font-family:monospace;white-space:pre-wrap;font-size:12px">${text
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")}</pre><script>window.onload=function(){setTimeout(function(){window.print()},250)}</script>`);
+    popup.document.close();
+  }
+
+  async function reprintTableSession(session: TableSessionHistory, type: "PRE_BILL" | "RECEIPT") {
+    try {
+      const result = await request<{ id?: string; message?: string; receipt?: string }>(`/admin/finance/table-sessions/${session.id}/reprint`, {
+        method: "POST",
+        body: JSON.stringify({
+          type,
+          notes: `Reimpressao solicitada no caixa em ${new Date().toLocaleString("pt-BR")}`
+        })
+      });
+      toast.success(result.message ?? "Reimpressao enviada");
+      if (result.receipt && !result.id) printReceiptText(result.receipt);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao reimprimir atendimento");
     }
   }
 
@@ -148,10 +186,10 @@ export default function FinanceManagePage() {
 
       <div className="mt-5 flex flex-wrap gap-2">
         {([
-          ["dashboard", "Painel"], ["cash", "Caixa"], ["payables", "Contas a pagar"],
+          ["dashboard", "Painel"], ["cash", "Caixa"], ["tables", "Mesas"], ["payables", "Contas a pagar"],
           ["receivables", "Contas a receber"], ["history", "Fechamentos"], ["audit", "Auditoria"]
         ] as Array<[Tab, string]>).filter(([value]) => {
-          if (value === "cash" || value === "history") return can("CASH_MANAGE") || can("FINANCE");
+          if (value === "cash" || value === "history" || value === "tables") return can("CASH_MANAGE") || can("FINANCE");
           if (value === "payables" || value === "receivables") return can("FINANCE");
           if (value === "audit") return can("AUDIT_VIEW");
           return can("FINANCE");
@@ -299,6 +337,46 @@ export default function FinanceManagePage() {
             </Panel>
           </div>
         </div>
+      )}
+
+      {!loading && tab === "tables" && (
+        <Panel title="Histórico de mesas e comandas">
+          <p className="mb-4 text-sm opacity-70">Consulte todos os atendimentos fechados no período selecionado e reimprima recibos ou pré-contas.</p>
+          <div className="space-y-3">
+            {tableSessions.map((session) => (
+              <article key={session.id} className="rounded-xl border p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <strong>Mesa {session.table.number}{session.table.area?.name ? ` - ${session.table.area.name}` : ""}</strong>
+                    <p className="text-xs opacity-60">
+                      Atendimento #{session.shortCode} • Fechado em {session.closedAt ? new Date(session.closedAt).toLocaleString("pt-BR") : "-"}
+                    </p>
+                    <p className="text-xs opacity-60">
+                      Cliente: {session.customerName || "-"} {session.customerPhone ? `• ${session.customerPhone}` : ""}
+                    </p>
+                    <p className="text-xs opacity-60">
+                      Operador fechamento: {session.closedByUser?.name || "-"} • {session.orderCount} pedido(s) • {session.itemCount} item(ns)
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <strong className="text-lg text-emerald-700">{BRL.format(Number(session.total))}</strong>
+                    <div className="mt-2 flex flex-wrap justify-end gap-2">
+                      <button className="rounded-lg border px-3 py-2 text-xs font-bold" onClick={() => void reprintTableSession(session, "PRE_BILL")}>
+                        Reimprimir pré-conta
+                      </button>
+                      <button className="rounded-lg bg-ink px-3 py-2 text-xs font-bold text-white" onClick={() => void reprintTableSession(session, "RECEIPT")}>
+                        Reimprimir recibo
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            ))}
+            {!tableSessions.length && (
+              <p className="rounded-xl border bg-white/70 p-4 text-sm opacity-70">Nenhum atendimento de mesa fechado no período selecionado.</p>
+            )}
+          </div>
+        </Panel>
       )}
 
       {!loading && tab === "payables" && (

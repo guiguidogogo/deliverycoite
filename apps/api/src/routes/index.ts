@@ -150,6 +150,7 @@ import {
   getTableSessionAccount,
   openTableSession,
   requestTableSession,
+  listAllClosedTableSessions,
   reopenTableSession,
   requestBillFromSession,
   requestBillFromTable,
@@ -159,6 +160,7 @@ import {
   listTables,
   moveTableAccount,
   reprintClosedTableSession,
+  reprintClosedTableSessionFromFinance,
   verifyPublicTableSessionCode,
   updateDiningArea,
   updateTable,
@@ -314,6 +316,8 @@ route.delete("/admin/customers/:id", requirePermission("CUSTOMERS"), deleteCusto
 route.get("/admin/finance/summary", requireAnyPermission(["FINANCE", "CASH_MANAGE"]), getFinanceSummary);
 route.get("/admin/finance/dashboard", requirePermission("FINANCE"), getFinanceDashboard);
 route.get("/admin/finance/sessions", requireAnyPermission(["FINANCE", "CASH_MANAGE"]), listCashSessions);
+route.get("/admin/finance/table-sessions", requireAnyPermission(["FINANCE", "CASH_MANAGE"]), listAllClosedTableSessions);
+route.post("/admin/finance/table-sessions/:sessionId/reprint", requireAnyPermission(["FINANCE", "CASH_MANAGE"]), reprintClosedTableSessionFromFinance);
 route.get("/admin/finance/audit", requirePermission("AUDIT_VIEW"), listAuditLogs);
 route.get("/admin/finance/payables", requirePermission("FINANCE"), listPayables);
 route.post("/admin/finance/payables", requirePermission("ACCOUNTS_MANAGE"), createPayable);

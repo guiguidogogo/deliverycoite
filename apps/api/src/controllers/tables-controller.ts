@@ -547,6 +547,51 @@ export async function listClosedTableSessions(req: Request, res: Response) {
   })));
 }
 
+export async function listAllClosedTableSessions(req: Request, res: Response) {
+  const companyId = getCompanyId(req);
+  const dateFrom = req.query.dateFrom ? new Date(`${req.query.dateFrom}T00:00:00`) : undefined;
+  const dateTo = req.query.dateTo ? new Date(`${req.query.dateTo}T23:59:59`) : undefined;
+  const tableId = typeof req.query.tableId === "string" && req.query.tableId ? req.query.tableId : undefined;
+  const sessions = await prisma.tableSession.findMany({
+    where: {
+      companyId,
+      ...(tableId ? { tableId } : {}),
+      status: TableSessionStatus.CLOSED,
+      ...(dateFrom || dateTo ? { closedAt: { ...(dateFrom ? { gte: dateFrom } : {}), ...(dateTo ? { lte: dateTo } : {}) } } : {})
+    },
+    select: {
+      id: true,
+      shortCode: true,
+      customerName: true,
+      customerPhone: true,
+      openedAt: true,
+      closedAt: true,
+      total: true,
+      table: { select: { id: true, number: true, name: true, area: { select: { name: true } } } },
+      openedByUser: { select: { name: true } },
+      closedByUser: { select: { name: true } },
+      orders: {
+        where: { deletedAt: null, status: { notIn: ["CANCELED"] } },
+        select: {
+          id: true,
+          orderNumber: true,
+          total: true,
+          items: { select: { quantity: true } }
+        },
+        orderBy: { createdAt: "asc" }
+      }
+    },
+    orderBy: { closedAt: "desc" },
+    take: 200
+  });
+
+  return res.json(sessions.map((session) => ({
+    ...session,
+    orderCount: session.orders.length,
+    itemCount: session.orders.reduce((sum, order) => sum + order.items.reduce((acc, item) => acc + item.quantity, 0), 0)
+  })));
+}
+
 export async function openTableSession(req: Request, res: Response) {
   const companyId = getCompanyId(req);
   const table = await prisma.restaurantTable.findFirst({
@@ -1029,6 +1074,20 @@ export async function reprintClosedTableSession(req: Request, res: Response) {
     ...job,
     message: `${job.title} enviada para a fila do Printer Agent`
   });
+}
+
+export async function reprintClosedTableSessionFromFinance(req: Request, res: Response) {
+  const session = await prisma.tableSession.findFirst({
+    where: {
+      id: req.params.sessionId,
+      companyId: getCompanyId(req),
+      status: TableSessionStatus.CLOSED
+    },
+    select: { tableId: true }
+  });
+  if (!session) return res.status(404).json({ message: "Atendimento fechado nao encontrado" });
+  req.params.id = session.tableId;
+  return reprintClosedTableSession(req, res);
 }
 
 export async function moveTableAccount(req: Request, res: Response) {
