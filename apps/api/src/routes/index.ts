@@ -156,6 +156,7 @@ import {
   listTableOrders,
   listDiningAreas,
   listTables,
+  moveTableAccount,
   verifyPublicTableSessionCode,
   updateDiningArea,
   updateTable,
@@ -296,6 +297,7 @@ route.post("/admin/tables/:id/session/:sessionId/reopen", requirePermission("ORD
 route.get("/admin/tables/:id/session/:sessionId", requirePermission("ORDERS"), getTableSessionAccount);
 route.post("/admin/tables/:id/orders", requirePermission("ORDERS"), createTableOrder);
 route.post("/admin/tables/:id/print-job", requirePermission("ORDERS"), createTablePrintJob);
+route.post("/admin/tables/:id/move", requirePermission("ORDERS"), moveTableAccount);
 route.post("/admin/tables/:id/close", requirePermission("ORDERS"), closeTableAccount);
 route.delete("/admin/tables/:id", requirePermission("SETTINGS"), deleteTable);
 route.get("/admin/reports/orders.xlsx", requirePermission("REPORTS"), exportOrdersExcel);

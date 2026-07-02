@@ -631,7 +631,10 @@ export async function listOrders(req: Request, res: Response) {
 }
 
 export async function updateOrderStatus(req: Request, res: Response) {
-  const schema = z.object({ status: z.nativeEnum(OrderStatus) });
+  const schema = z.object({
+    status: z.nativeEnum(OrderStatus),
+    reason: z.string().max(240).optional()
+  });
   const body = schema.parse(req.body);
 
   const current = await prisma.order.findFirst({
@@ -649,14 +652,19 @@ export async function updateOrderStatus(req: Request, res: Response) {
 
   const order = await prisma.order.update({
     where: { id: req.params.id },
-    data: { status: body.status }
+    data: {
+      status: body.status,
+      ...(body.status === "CANCELED" && body.reason
+        ? { notes: [current.notes, `[CANCELADO: ${body.reason}]`].filter(Boolean).join(" ") }
+        : {})
+    }
   });
   await audit(req, {
     action: body.status === "CANCELED" ? "ORDER_CANCELED" : "ORDER_STATUS_CHANGED",
     entity: "Order",
     entityId: current.id,
     oldValue: { status: current.status },
-    newValue: { status: body.status }
+    newValue: { status: body.status, reason: body.reason ?? null }
   });
 
   if (body.status === "CANCELED" && current.paidAt) {

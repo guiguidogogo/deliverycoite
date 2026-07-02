@@ -71,6 +71,11 @@ const tablePrintJobSchema = z.object({
   paymentDetail: z.string().max(240).optional()
 });
 
+const tableMoveSchema = z.object({
+  targetTableId: z.string().min(1),
+  mode: z.enum(["TRANSFER", "MERGE"]).default("TRANSFER")
+});
+
 function publicTableUrl(req: Request, table: { number: number }, explicitSubdomain?: string | null) {
   const rootDomain = process.env.ROOT_DOMAIN ?? "hubregional.com.br";
   const subdomain = explicitSubdomain || req.tenant?.subdomain;
@@ -847,6 +852,135 @@ export async function createTablePrintJob(req: Request, res: Response) {
   return res.status(201).json({
     ...job,
     message: `${body.type === "PRE_BILL" ? "Pre-conta" : "Recibo"} enviada para a fila do Printer Agent`
+  });
+}
+
+export async function moveTableAccount(req: Request, res: Response) {
+  const body = tableMoveSchema.parse(req.body);
+  const companyId = getCompanyId(req);
+  if (req.params.id === body.targetTableId) {
+    return res.status(400).json({ message: "Escolha uma mesa diferente" });
+  }
+
+  const [sourceTable, targetTable] = await Promise.all([
+    prisma.restaurantTable.findFirst({ where: { id: req.params.id, companyId, active: true } }),
+    prisma.restaurantTable.findFirst({ where: { id: body.targetTableId, companyId, active: true } })
+  ]);
+  if (!sourceTable) return res.status(404).json({ message: "Mesa de origem nao encontrada" });
+  if (!targetTable) return res.status(404).json({ message: "Mesa de destino nao encontrada" });
+
+  const sourceSession = await prisma.tableSession.findFirst({
+    where: {
+      companyId,
+      tableId: sourceTable.id,
+      status: { in: [TableSessionStatus.OPEN, TableSessionStatus.CLOSING_REQUESTED] }
+    },
+    orderBy: { openedAt: "desc" }
+  });
+  if (!sourceSession) return res.status(400).json({ message: "Mesa de origem nao possui atendimento aberto" });
+
+  const targetSession = await prisma.tableSession.findFirst({
+    where: {
+      companyId,
+      tableId: targetTable.id,
+      status: { in: [TableSessionStatus.OPEN, TableSessionStatus.CLOSING_REQUESTED] }
+    },
+    orderBy: { openedAt: "desc" }
+  });
+
+  if (body.mode === "TRANSFER" && targetSession) {
+    return res.status(400).json({ message: "Para transferir, escolha uma mesa livre. Para somar comandas, use Juntar mesas." });
+  }
+  if (body.mode === "MERGE" && !targetSession) {
+    return res.status(400).json({ message: "Para juntar mesas, a mesa de destino precisa ter atendimento aberto" });
+  }
+
+  const activeSourceOrders = await prisma.order.findMany({
+    where: {
+      companyId,
+      tableId: sourceTable.id,
+      tableSessionId: sourceSession.id,
+      deletedAt: null,
+      status: { notIn: ["CANCELED", "FINISHED"] }
+    },
+    select: { id: true, total: true, orderNumber: true }
+  });
+  if (!activeSourceOrders.length) return res.status(400).json({ message: "Nao ha pedidos abertos para mover" });
+  const movedTotal = activeSourceOrders.reduce((sum, order) => sum + Number(order.total), 0);
+  const now = new Date();
+
+  const result = await prisma.$transaction(async (tx) => {
+    if (body.mode === "TRANSFER") {
+      await tx.order.updateMany({
+        where: { id: { in: activeSourceOrders.map((order) => order.id) }, companyId },
+        data: { tableId: targetTable.id }
+      });
+      const movedSession = await tx.tableSession.update({
+        where: { id: sourceSession.id },
+        data: { tableId: targetTable.id, lastActivityAt: now }
+      });
+      await tx.restaurantTable.update({
+        where: { id: sourceTable.id },
+        data: { status: TableStatus.FREE, openedAt: null, closedAt: now }
+      });
+      await tx.restaurantTable.update({
+        where: { id: targetTable.id },
+        data: { status: TableStatus.OCCUPIED, openedAt: targetTable.openedAt ?? sourceTable.openedAt ?? now, closedAt: null }
+      });
+      return { sessionId: movedSession.id, mode: "TRANSFER" as const };
+    }
+
+    await tx.order.updateMany({
+      where: { id: { in: activeSourceOrders.map((order) => order.id) }, companyId },
+      data: { tableId: targetTable.id, tableSessionId: targetSession!.id }
+    });
+    await tx.tableSession.update({
+      where: { id: targetSession!.id },
+      data: { total: { increment: toDecimal(movedTotal) }, lastActivityAt: now }
+    });
+    await tx.tableSession.update({
+      where: { id: sourceSession.id },
+      data: {
+        status: TableSessionStatus.CANCELLED,
+        closedAt: now,
+        closedByUserId: req.user?.sub ?? null,
+        lastActivityAt: now
+      }
+    });
+    await tx.restaurantTable.update({
+      where: { id: sourceTable.id },
+      data: { status: TableStatus.FREE, openedAt: null, closedAt: now }
+    });
+    await tx.restaurantTable.update({
+      where: { id: targetTable.id },
+      data: { status: TableStatus.OCCUPIED, closedAt: null }
+    });
+    return { sessionId: targetSession!.id, mode: "MERGE" as const };
+  });
+
+  await audit(req, {
+    action: result.mode === "TRANSFER" ? "TABLE_TRANSFERRED" : "TABLES_MERGED",
+    entity: "RestaurantTable",
+    entityId: sourceTable.id,
+    oldValue: { sourceTableId: sourceTable.id, sourceTableNumber: sourceTable.number, sourceSessionId: sourceSession.id },
+    newValue: {
+      targetTableId: targetTable.id,
+      targetTableNumber: targetTable.number,
+      targetSessionId: result.sessionId,
+      orders: activeSourceOrders.map((order) => order.orderNumber),
+      total: movedTotal
+    }
+  });
+
+  return res.json({
+    ok: true,
+    mode: result.mode,
+    sourceTableId: sourceTable.id,
+    sourceTableNumber: sourceTable.number,
+    targetTableId: targetTable.id,
+    targetTableNumber: targetTable.number,
+    movedOrders: activeSourceOrders.length,
+    movedTotal
   });
 }
 

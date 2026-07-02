@@ -290,6 +290,8 @@ export default function PdvPage() {
   const [areaFilter, setAreaFilter] = useState("all");
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [alerts, setAlerts] = useState<PdvAlert[]>([]);
+  const [targetTableId, setTargetTableId] = useState("");
+  const [movingTable, setMovingTable] = useState(false);
   const [printSettings, setPrintSettings] = useState<PdvPrintSettings>({
     companyName: "HubRegional",
     printerEnabled: false,
@@ -476,6 +478,7 @@ export default function PdvPage() {
     setCloseDiscount(0);
     setCloseDiscountReason("");
     setSplitPayments([]);
+    setTargetTableId("");
     setLoadingOrders(true);
     try {
       const loaded = await request(`/admin/tables/${table.id}/orders`);
@@ -819,11 +822,50 @@ export default function PdvPage() {
     setSplitPayments((current) => current.filter((_, currentIndex) => currentIndex !== index));
   }
 
+  async function moveSelectedTable(mode: "TRANSFER" | "MERGE") {
+    if (!selectedTable || !targetTableId || movingTable) return;
+    const target = tables.find((table) => table.id === targetTableId);
+    const confirmed = window.confirm(
+      mode === "TRANSFER"
+        ? `Transferir a comanda da mesa ${selectedTable.number} para a mesa ${target?.number ?? ""}?`
+        : `Juntar a comanda da mesa ${selectedTable.number} na mesa ${target?.number ?? ""}?`
+    );
+    if (!confirmed) return;
+    setMovingTable(true);
+    try {
+      const result = await request(`/admin/tables/${selectedTable.id}/move`, {
+        method: "POST",
+        body: JSON.stringify({ targetTableId, mode })
+      });
+      toast.success(
+        mode === "TRANSFER"
+          ? `Mesa ${result.sourceTableNumber} transferida para mesa ${result.targetTableNumber}`
+          : `Mesa ${result.sourceTableNumber} juntada na mesa ${result.targetTableNumber}`
+      );
+      setSelectedTable(null);
+      setOrders([]);
+      setTargetTableId("");
+      await loadTables();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao mover mesa");
+    } finally {
+      setMovingTable(false);
+    }
+  }
+
   async function updateOrderStatus(order: TableOrder, status: TableOrder["status"]) {
     try {
+      let reason: string | undefined;
+      if (status === "CANCELED" && order.status !== "CANCELED") {
+        reason = window.prompt(`Motivo do cancelamento do pedido #${String(order.orderNumber).padStart(5, "0")}:`)?.trim();
+        if (!reason) {
+          toast.error("Informe o motivo para cancelar");
+          return;
+        }
+      }
       const updated = await request(`/admin/orders/${order.id}/status`, {
         method: "PATCH",
-        body: JSON.stringify({ status })
+        body: JSON.stringify({ status, reason })
       });
       setOrders((current) => current.map((item) => item.id === order.id ? { ...item, status: updated.status } : item));
       toast.success("Pedido atualizado");
@@ -1008,6 +1050,36 @@ export default function PdvPage() {
               <button className="rounded-xl border px-3 py-2 text-sm font-bold" onClick={() => void printTableAccount()}>Imprimir pré-conta</button>
               <button className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void updateStatus(selectedTable, "FREE")}>Liberar mesa</button>
             </div>
+
+            {selectedTable.activeSession && (
+              <section className="mt-4 rounded-3xl border bg-slate-50 p-4 text-slate-950">
+                <div className="flex flex-wrap items-end gap-2">
+                  <label className="min-w-64 flex-1">
+                    <span className="mb-1 block text-xs font-black uppercase tracking-[0.16em] text-slate-500">Mover comanda</span>
+                    <select className="w-full rounded-xl border px-3 py-2" value={targetTableId} onChange={(event) => setTargetTableId(event.target.value)}>
+                      <option value="">Escolha a mesa destino</option>
+                      {tables
+                        .filter((table) => table.id !== selectedTable.id && table.active)
+                        .sort((a, b) => a.number - b.number)
+                        .map((table) => (
+                          <option key={table.id} value={table.id}>
+                            Mesa {table.number} - {statusLabels[table.status]} - {brl(table.accountTotal ?? 0)}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <button className="rounded-xl bg-blue-700 px-3 py-2 text-sm font-black text-white disabled:opacity-60" disabled={!targetTableId || movingTable} onClick={() => void moveSelectedTable("TRANSFER")}>
+                    Transferir
+                  </button>
+                  <button className="rounded-xl bg-purple-700 px-3 py-2 text-sm font-black text-white disabled:opacity-60" disabled={!targetTableId || movingTable} onClick={() => void moveSelectedTable("MERGE")}>
+                    Juntar mesas
+                  </button>
+                </div>
+                <p className="mt-2 text-xs opacity-70">
+                  Transferir move a comanda para uma mesa livre. Juntar soma os pedidos desta mesa em outra mesa aberta.
+                </p>
+              </section>
+            )}
 
             {selectedTable.activeSession && (
               <section className="mt-4 rounded-3xl border bg-white p-4 text-slate-950">
