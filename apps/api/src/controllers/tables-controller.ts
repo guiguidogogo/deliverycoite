@@ -636,6 +636,9 @@ export async function createTableOrder(req: Request, res: Response) {
   if (activeSession?.status === TableSessionStatus.CLOSING_REQUESTED) {
     return res.status(409).json({ message: "Conta solicitada. Reabra a conta para fazer novos pedidos." });
   }
+  if (!activeSession || activeSession.status !== TableSessionStatus.OPEN) {
+    return res.status(409).json({ message: "Abra o atendimento da mesa antes de adicionar produtos." });
+  }
 
   const productIds = [...new Set(body.items.map((item) => item.productId))];
   const products = await prisma.product.findMany({

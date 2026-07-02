@@ -269,6 +269,7 @@ export default function PdvPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [draftItems, setDraftItems] = useState<DraftItem[]>([]);
   const [draftProductId, setDraftProductId] = useState("");
+  const [draftProductSearch, setDraftProductSearch] = useState("");
   const [draftQuantity, setDraftQuantity] = useState(1);
   const [configuringProduct, setConfiguringProduct] = useState<Product | null>(null);
   const [configuringQuantity, setConfiguringQuantity] = useState(1);
@@ -292,6 +293,8 @@ export default function PdvPage() {
   const [alerts, setAlerts] = useState<PdvAlert[]>([]);
   const [targetTableId, setTargetTableId] = useState("");
   const [movingTable, setMovingTable] = useState(false);
+  const [showQrPanel, setShowQrPanel] = useState(false);
+  const [showClosePanel, setShowClosePanel] = useState(false);
   const [printSettings, setPrintSettings] = useState<PdvPrintSettings>({
     companyName: "HubRegional",
     printerEnabled: false,
@@ -350,6 +353,15 @@ export default function PdvPage() {
   const splitRemaining = Math.max(0, accountTotals.total - splitPaidTotal);
   const splitDifference = splitPayments.length ? splitPaidTotal - accountTotals.total : 0;
   const splitIsBalanced = !splitPayments.length || Math.abs(splitDifference) <= 0.02;
+  const tableCanReceiveOrders = selectedTable?.activeSession?.status === "OPEN";
+  const filteredProductsForDraft = useMemo(() => {
+    const term = draftProductSearch.trim().toLowerCase();
+    if (!term) return products;
+    return products.filter((product) =>
+      product.name.toLowerCase().includes(term)
+      || product.complements?.some((link) => link.complement.name.toLowerCase().includes(term))
+    );
+  }, [draftProductSearch, products]);
 
   const configuringTotal = useMemo(() => {
     if (!configuringProduct) return 0;
@@ -470,6 +482,7 @@ export default function PdvPage() {
     setSelectedTable(table);
     setDraftItems([]);
     setDraftProductId("");
+    setDraftProductSearch("");
     setDraftQuantity(1);
     setDraftNotes("");
     setDraftCustomerName("Cliente da mesa");
@@ -479,6 +492,8 @@ export default function PdvPage() {
     setCloseDiscountReason("");
     setSplitPayments([]);
     setTargetTableId("");
+    setShowQrPanel(false);
+    setShowClosePanel(false);
     setLoadingOrders(true);
     try {
       const loaded = await request(`/admin/tables/${table.id}/orders`);
@@ -598,6 +613,10 @@ export default function PdvPage() {
   }
 
   function addDraftItem() {
+    if (!tableCanReceiveOrders) {
+      toast.error("Abra o atendimento da mesa antes de adicionar produtos.");
+      return;
+    }
     if (!draftProductId) return;
     const product = products.find((item) => item.id === draftProductId);
     if (!product) return;
@@ -640,6 +659,10 @@ export default function PdvPage() {
 
   async function createTableOrder() {
     if (!selectedTable || !draftItems.length || savingOrder) return;
+    if (!tableCanReceiveOrders) {
+      toast.error("Abra o atendimento da mesa antes de enviar pedidos.");
+      return;
+    }
     if (selectedTable.activeSession?.status === "CLOSING_REQUESTED") {
       toast.error("A conta foi solicitada. Reabra a conta para fazer novos pedidos.");
       return;
@@ -1081,7 +1104,7 @@ export default function PdvPage() {
               </section>
             )}
 
-            {selectedTable.activeSession && (
+            {selectedTable.activeSession && (selectedTable.activeSession.status === "PENDING_CONFIRMATION" || showQrPanel) && (
               <section className="mt-4 rounded-3xl border bg-white p-4 text-slate-950">
                 {selectedTable.activeSession.status === "PENDING_CONFIRMATION" && (
                   <div className="mb-4 rounded-2xl border border-blue-200 bg-blue-50 p-3 text-blue-950">
@@ -1121,10 +1144,14 @@ export default function PdvPage() {
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-700">Fechamento</p>
                   <h3 className="text-xl font-black">Fechar conta da mesa</h3>
-                  <p className="text-sm opacity-70">Registra pagamento no caixa aberto e finaliza os pedidos da mesa.</p>
+                  <p className="text-sm opacity-70">Total atual: {brl(accountTotals.total)}</p>
                 </div>
-                <strong className="rounded-full bg-white px-3 py-1 text-emerald-700">{brl(accountTotals.total)}</strong>
+                <button className="rounded-xl bg-emerald-700 px-3 py-2 text-sm font-black text-white" onClick={() => setShowClosePanel((value) => !value)}>
+                  {showClosePanel ? "Ocultar fechamento" : "Receber / fechar"}
+                </button>
               </div>
+              {showClosePanel && (
+              <>
               <div className="mt-3 grid gap-2 md:grid-cols-4">
                 <div className="rounded-2xl bg-white p-3">
                   <p className="text-xs opacity-70">Subtotal</p>
@@ -1228,7 +1255,9 @@ export default function PdvPage() {
                 )}
               </div>
               <p className="mt-2 text-xs opacity-70">Importante: é necessário ter caixa aberto para o operador logado.</p>
-            </section>
+                          </>
+              )}
+</section>
 
             <section className="mt-5 rounded-3xl border bg-orange-50 p-4 text-slate-950">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1239,17 +1268,30 @@ export default function PdvPage() {
                 <strong className="rounded-full bg-white px-3 py-1 text-ember">{brl(draftTotal)}</strong>
               </div>
 
-              <div className="mt-3 grid gap-2 md:grid-cols-[1.5fr_.6fr_auto]">
-                <select className="rounded-xl border px-3 py-2" value={draftProductId} onChange={(event) => setDraftProductId(event.target.value)}>
+              {!tableCanReceiveOrders && (
+                <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">
+                  Abra/libere o atendimento da mesa para adicionar produtos.
+                </div>
+              )}
+
+              <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1.5fr_.5fr_auto]">
+                <input
+                  className="rounded-xl border px-3 py-2 disabled:opacity-60"
+                  placeholder="Buscar produto"
+                  value={draftProductSearch}
+                  disabled={!tableCanReceiveOrders}
+                  onChange={(event) => setDraftProductSearch(event.target.value)}
+                />
+                <select className="rounded-xl border px-3 py-2 disabled:opacity-60" value={draftProductId} disabled={!tableCanReceiveOrders} onChange={(event) => setDraftProductId(event.target.value)}>
                   <option value="">Escolha um produto</option>
-                  {products.map((product) => (
+                  {filteredProductsForDraft.map((product) => (
                     <option key={product.id} value={product.id}>
                       {product.name} - {brl(product.promoPrice ?? product.price)}
                     </option>
                   ))}
                 </select>
-                <input className="rounded-xl border px-3 py-2" type="number" min={1} value={draftQuantity} onChange={(event) => setDraftQuantity(Math.max(1, Number(event.target.value || 1)))} />
-                <button className="rounded-xl bg-ink px-4 py-2 font-bold text-white" onClick={addDraftItem}>Adicionar</button>
+                <input className="rounded-xl border px-3 py-2 disabled:opacity-60" type="number" min={1} value={draftQuantity} disabled={!tableCanReceiveOrders} onChange={(event) => setDraftQuantity(Math.max(1, Number(event.target.value || 1)))} />
+                <button className="rounded-xl bg-ink px-4 py-2 font-bold text-white disabled:opacity-60" disabled={!tableCanReceiveOrders} onClick={addDraftItem}>Adicionar</button>
               </div>
 
               <input className="mt-2 w-full rounded-xl border px-3 py-2" placeholder="Nome do cliente opcional" value={draftCustomerName} onChange={(event) => setDraftCustomerName(event.target.value)} />
