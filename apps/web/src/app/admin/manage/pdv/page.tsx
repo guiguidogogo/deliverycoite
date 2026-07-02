@@ -283,6 +283,8 @@ export default function PdvPage() {
   const [serviceFeeEnabled, setServiceFeeEnabled] = useState(false);
   const [serviceFeePercent, setServiceFeePercent] = useState(10);
   const [splitPayments, setSplitPayments] = useState<Array<{ method: ClosePaymentMethod; amount: number }>>([]);
+  const [billPeople, setBillPeople] = useState(["Pessoa 1", "Pessoa 2"]);
+  const [itemSplitAssignments, setItemSplitAssignments] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [savingOrder, setSavingOrder] = useState(false);
   const [closingTable, setClosingTable] = useState(false);
@@ -353,6 +355,39 @@ export default function PdvPage() {
   const splitRemaining = Math.max(0, accountTotals.total - splitPaidTotal);
   const splitDifference = splitPayments.length ? splitPaidTotal - accountTotals.total : 0;
   const splitIsBalanced = !splitPayments.length || Math.abs(splitDifference) <= 0.02;
+  const billSplit = useMemo(() => {
+    const people = billPeople.length ? billPeople : ["Pessoa 1"];
+    const rows = people.map((name, index) => ({
+      name: name.trim() || `Pessoa ${index + 1}`,
+      subtotal: 0,
+      serviceFee: 0,
+      discount: 0,
+      total: 0,
+      items: [] as string[]
+    }));
+    const activeOrders = orders.filter((order) => order.status !== "CANCELED");
+    activeOrders.forEach((order) => {
+      order.items.forEach((item) => {
+        const assigned = itemSplitAssignments[item.id] ?? 0;
+        const index = Math.min(rows.length - 1, Math.max(0, assigned));
+        const value = Number(item.total ?? 0);
+        rows[index].subtotal += value;
+        rows[index].items.push(`#${String(order.orderNumber).padStart(5, "0")} - ${item.quantity}x ${item.product.name}`);
+      });
+    });
+    const subtotal = rows.reduce((sum, row) => sum + row.subtotal, 0);
+    return rows.map((row) => {
+      const ratio = subtotal > 0 ? row.subtotal / subtotal : 0;
+      const serviceFee = accountTotals.serviceFee * ratio;
+      const discount = accountTotals.discount * ratio;
+      return {
+        ...row,
+        serviceFee,
+        discount,
+        total: Math.max(0, row.subtotal + serviceFee - discount)
+      };
+    });
+  }, [accountTotals.discount, accountTotals.serviceFee, billPeople, itemSplitAssignments, orders]);
   const tableCanReceiveOrders = selectedTable?.activeSession?.status === "OPEN";
   const filteredProductsForDraft = useMemo(() => {
     const term = draftProductSearch.trim().toLowerCase();
@@ -491,6 +526,8 @@ export default function PdvPage() {
     setCloseDiscount(0);
     setCloseDiscountReason("");
     setSplitPayments([]);
+    setBillPeople(["Pessoa 1", "Pessoa 2"]);
+    setItemSplitAssignments({});
     setTargetTableId("");
     setShowQrPanel(false);
     setShowClosePanel(false);
@@ -843,6 +880,53 @@ export default function PdvPage() {
 
   function removeSplitPayment(index: number) {
     setSplitPayments((current) => current.filter((_, currentIndex) => currentIndex !== index));
+  }
+
+  function addBillPerson() {
+    setBillPeople((current) => [...current, `Pessoa ${current.length + 1}`]);
+  }
+
+  function updateBillPerson(index: number, name: string) {
+    setBillPeople((current) => current.map((person, currentIndex) => currentIndex === index ? name : person));
+  }
+
+  function removeBillPerson(index: number) {
+    if (billPeople.length <= 1) {
+      toast.error("A divisao precisa ter pelo menos uma pessoa");
+      return;
+    }
+    setBillPeople((current) => current.filter((_, currentIndex) => currentIndex !== index));
+    setItemSplitAssignments((current) => {
+      const next: Record<string, number> = {};
+      Object.entries(current).forEach(([itemId, personIndex]) => {
+        if (personIndex === index) {
+          next[itemId] = 0;
+        } else if (personIndex > index) {
+          next[itemId] = personIndex - 1;
+        } else {
+          next[itemId] = personIndex;
+        }
+      });
+      return next;
+    });
+  }
+
+  async function copyBillSplit() {
+    const text = [
+      selectedTable ? `Divisao da mesa ${selectedTable.number}` : "Divisao da conta",
+      `Total: ${brl(accountTotals.total)}`,
+      "",
+      ...billSplit.map((person) => [
+        `${person.name}: ${brl(person.total)}`,
+        person.items.length ? person.items.map((item) => `- ${item}`).join("\n") : "- sem itens"
+      ].join("\n"))
+    ].join("\n\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success("Divisao copiada");
+    } catch {
+      toast.error("Nao foi possivel copiar a divisao");
+    }
   }
 
   async function moveSelectedTable(mode: "TRANSFER" | "MERGE") {
@@ -1255,6 +1339,60 @@ export default function PdvPage() {
                 )}
               </div>
               <p className="mt-2 text-xs opacity-70">Importante: é necessário ter caixa aberto para o operador logado.</p>
+              <div className="mt-3 rounded-2xl border border-blue-200 bg-white/80 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-700">Divisao por pessoa/item</p>
+                    <p className="text-xs opacity-70">Separe os itens da mesa por cliente antes de receber a conta.</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" className="rounded-xl bg-blue-700 px-3 py-2 text-xs font-black text-white" onClick={addBillPerson}>Adicionar pessoa</button>
+                    <button type="button" className="rounded-xl border border-blue-200 px-3 py-2 text-xs font-black text-blue-800" onClick={() => void copyBillSplit()}>Copiar divisao</button>
+                  </div>
+                </div>
+                <div className="mt-3 grid gap-2 md:grid-cols-2">
+                  {billPeople.map((person, index) => (
+                    <div key={index} className="grid grid-cols-[1fr_auto] gap-2">
+                      <input className="rounded-xl border px-3 py-2 text-sm" value={person} onChange={(event) => updateBillPerson(index, event.target.value)} placeholder={`Pessoa ${index + 1}`} />
+                      <button type="button" className="rounded-xl border border-red-200 px-3 py-2 text-xs font-black text-red-700 disabled:opacity-40" disabled={billPeople.length <= 1} onClick={() => removeBillPerson(index)}>Remover</button>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 space-y-2">
+                  {orders.filter((order) => order.status !== "CANCELED").flatMap((order) =>
+                    order.items.map((item) => (
+                      <div key={item.id} className="grid gap-2 rounded-2xl bg-slate-50 p-3 text-sm md:grid-cols-[1fr_180px]">
+                        <div>
+                          <p className="font-black">Pedido #{String(order.orderNumber).padStart(5, "0")} - {item.quantity}x {item.product.name}</p>
+                          <p className="text-xs opacity-70">{brl(item.total)}</p>
+                        </div>
+                        <select className="rounded-xl border px-3 py-2" value={itemSplitAssignments[item.id] ?? 0} onChange={(event) => setItemSplitAssignments((current) => ({ ...current, [item.id]: Number(event.target.value) }))}>
+                          {billPeople.map((person, personIndex) => (
+                            <option key={personIndex} value={personIndex}>{person || `Pessoa ${personIndex + 1}`}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ))
+                  )}
+                  {!orders.some((order) => order.status !== "CANCELED" && order.items.length > 0) && (
+                    <p className="rounded-xl bg-slate-50 p-3 text-sm opacity-70">Nenhum item para dividir.</p>
+                  )}
+                </div>
+                <div className="mt-3 grid gap-2 md:grid-cols-2">
+                  {billSplit.map((person, index) => (
+                    <div key={index} className="rounded-2xl border bg-white p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <strong>{person.name}</strong>
+                        <strong className="text-blue-700">{brl(person.total)}</strong>
+                      </div>
+                      <p className="mt-1 text-xs opacity-70">Itens: {person.items.length} | Subtotal {brl(person.subtotal)}</p>
+                      {(person.serviceFee > 0 || person.discount > 0) && (
+                        <p className="text-xs opacity-70">Taxa {brl(person.serviceFee)} / Desconto {brl(person.discount)}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
                           </>
               )}
 </section>
