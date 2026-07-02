@@ -66,6 +66,20 @@ type TableOrder = {
   }>;
 };
 
+type ClosedTableSession = {
+  id: string;
+  shortCode: string;
+  customerName?: string | null;
+  customerPhone?: string | null;
+  openedAt: string;
+  closedAt?: string | null;
+  total: number | string;
+  orderCount: number;
+  itemCount: number;
+  openedByUser?: { name: string } | null;
+  closedByUser?: { name: string } | null;
+};
+
 type Product = {
   id: string;
   name: string;
@@ -275,6 +289,7 @@ export default function PdvPage() {
   const [tables, setTables] = useState<RestaurantTable[]>([]);
   const [selectedTable, setSelectedTable] = useState<RestaurantTable | null>(null);
   const [orders, setOrders] = useState<TableOrder[]>([]);
+  const [closedSessions, setClosedSessions] = useState<ClosedTableSession[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [draftItems, setDraftItems] = useState<DraftItem[]>([]);
   const [draftProductId, setDraftProductId] = useState("");
@@ -299,6 +314,7 @@ export default function PdvPage() {
   const [closingTable, setClosingTable] = useState(false);
   const [openingSession, setOpeningSession] = useState(false);
   const [loadingOrders, setLoadingOrders] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const [areaFilter, setAreaFilter] = useState("all");
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [alerts, setAlerts] = useState<PdvAlert[]>([]);
@@ -537,6 +553,7 @@ export default function PdvPage() {
     setSplitPayments([]);
     setBillPeople(["Pessoa 1", "Pessoa 2"]);
     setItemSplitAssignments({});
+    setClosedSessions([]);
     setTargetTableId("");
     setShowQrPanel(false);
     setShowClosePanel(false);
@@ -544,6 +561,7 @@ export default function PdvPage() {
     try {
       const loaded = await request(`/admin/tables/${table.id}/orders`);
       setOrders(loaded ?? []);
+      void loadTableHistory(table);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao carregar pedidos da mesa");
       setOrders([]);
@@ -863,6 +881,28 @@ export default function PdvPage() {
     }
   }
 
+  async function reprintClosedSession(session: ClosedTableSession, type: "PRE_BILL" | "RECEIPT") {
+    if (!selectedTable) return;
+    try {
+      const result = await request(`/admin/tables/${selectedTable.id}/history/${session.id}/reprint`, {
+        method: "POST",
+        body: JSON.stringify({
+          type,
+          serviceFeeEnabled,
+          serviceFeePercent,
+          discount: closeDiscount,
+          notes: `Reimpressao solicitada no PDV em ${new Date().toLocaleString("pt-BR")}`
+        })
+      });
+      toast.success(result?.message ?? "Reimpressao enviada");
+      if (result?.receipt && !result?.id) {
+        printWindowHtml(`<pre>${escapeHtml(result.receipt)}</pre>`, printSettings.paperWidth);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao reimprimir atendimento");
+    }
+  }
+
   async function updateStatus(table: RestaurantTable, status: TableStatus) {
     try {
       const updated = await request(`/admin/tables/${table.id}/status`, {
@@ -893,6 +933,19 @@ export default function PdvPage() {
 
   function removeSplitPayment(index: number) {
     setSplitPayments((current) => current.filter((_, currentIndex) => currentIndex !== index));
+  }
+
+  async function loadTableHistory(table: RestaurantTable) {
+    setLoadingHistory(true);
+    try {
+      const loaded = await request(`/admin/tables/${table.id}/history`);
+      setClosedSessions(loaded ?? []);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao carregar historico da mesa");
+      setClosedSessions([]);
+    } finally {
+      setLoadingHistory(false);
+    }
   }
 
   function addBillPerson() {
@@ -942,7 +995,7 @@ export default function PdvPage() {
     }
   }
 
-  function tableMenuWhatsappUrl(table: RestaurantTable) {
+  function tableMenuWhatsappUrl(table: RestaurantTable, phoneOverride?: string) {
     const session = table.activeSession;
     const menuUrl = session?.sessionUrl || table.qrCodeUrl || "";
     const code = session?.shortCode ? `\nCodigo de acesso: ${session.shortCode}` : "";
@@ -953,11 +1006,21 @@ export default function PdvPage() {
       "",
       "Abra o link, confirme o codigo com o garcom e faca seus pedidos pelo celular."
     ].filter(Boolean).join("\n");
-    const rawPhone = session?.customerPhone?.replace(/\D/g, "") ?? "";
+    const rawPhone = (phoneOverride || session?.customerPhone || "").replace(/\D/g, "");
     const phone = rawPhone
       ? rawPhone.startsWith("55") ? rawPhone : `55${rawPhone}`
       : "";
     return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+  }
+
+  function sendTableMenuWhatsapp(table: RestaurantTable) {
+    const suggested = table.activeSession?.customerPhone ?? "";
+    const phone = window.prompt("Informe o WhatsApp do cliente para enviar o cardapio:", suggested)?.trim();
+    if (!phone) {
+      toast.error("Informe o telefone do cliente");
+      return;
+    }
+    window.open(tableMenuWhatsappUrl(table, phone), "_blank", "noopener,noreferrer");
   }
 
   async function moveSelectedTable(mode: "TRANSFER" | "MERGE") {
@@ -1168,9 +1231,9 @@ export default function PdvPage() {
                     <p className="text-sm opacity-80">Mostre ou fale este codigo ao cliente para liberar o cardapio da mesa.</p>
                     <p className="mt-1 text-4xl font-black tracking-[0.18em]">{selectedTable.activeSession.shortCode}</p>
                   </div>
-                  <a className="rounded-2xl bg-emerald-700 px-4 py-3 text-center text-sm font-black text-white" href={tableMenuWhatsappUrl(selectedTable)} target="_blank" rel="noreferrer">
+                  <button className="rounded-2xl bg-emerald-700 px-4 py-3 text-center text-sm font-black text-white" onClick={() => sendTableMenuWhatsapp(selectedTable)}>
                     Enviar cardapio no WhatsApp
-                  </a>
+                  </button>
                 </div>
               </div>
             )}
@@ -1197,9 +1260,9 @@ export default function PdvPage() {
                 </a>
               )}
               {selectedTable.activeSession?.status !== "PENDING_CONFIRMATION" && (
-                <a className="rounded-xl bg-green-700 px-3 py-2 text-sm font-bold text-white" href={tableMenuWhatsappUrl(selectedTable)} target="_blank" rel="noreferrer">
+                <button className="rounded-xl bg-green-700 px-3 py-2 text-sm font-bold text-white" onClick={() => sendTableMenuWhatsapp(selectedTable)}>
                   Enviar cardapio
-                </a>
+                </button>
               )}
               <button className="rounded-xl bg-orange-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void updateStatus(selectedTable, "OCCUPIED")}>Marcar ocupada</button>
               {selectedTable.activeSession?.status !== "CLOSING_REQUESTED" && (
@@ -1238,6 +1301,46 @@ export default function PdvPage() {
                 </p>
               </section>
             )}
+
+            <section className="mt-4 rounded-3xl border bg-white p-4 text-slate-950">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Historico</p>
+                  <h3 className="text-lg font-black">Atendimentos fechados</h3>
+                  <p className="text-xs opacity-70">Reimprima recibos e pre-contas antigas desta mesa.</p>
+                </div>
+                <button className="rounded-xl border px-3 py-2 text-sm font-bold disabled:opacity-60" disabled={loadingHistory} onClick={() => void loadTableHistory(selectedTable)}>
+                  {loadingHistory ? "Carregando..." : "Atualizar historico"}
+                </button>
+              </div>
+              <div className="mt-3 space-y-2">
+                {closedSessions.length ? closedSessions.map((session) => (
+                  <div key={session.id} className="rounded-2xl border bg-slate-50 p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <p className="font-black">Atendimento #{session.shortCode} - {brl(session.total)}</p>
+                        <p className="text-xs opacity-70">
+                          Fechado em {session.closedAt ? formatDate(session.closedAt) : "-"} | {session.orderCount} pedido(s) | {session.itemCount} item(ns)
+                        </p>
+                        <p className="text-xs opacity-70">
+                          Cliente: {session.customerName || "-"} {session.customerPhone ? `- ${session.customerPhone}` : ""}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button className="rounded-xl border px-3 py-2 text-xs font-black" onClick={() => void reprintClosedSession(session, "PRE_BILL")}>
+                          Reimprimir pre-conta
+                        </button>
+                        <button className="rounded-xl bg-ink px-3 py-2 text-xs font-black text-white" onClick={() => void reprintClosedSession(session, "RECEIPT")}>
+                          Reimprimir recibo
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )) : (
+                  <p className="rounded-2xl bg-slate-50 p-3 text-sm opacity-70">Nenhum atendimento fechado encontrado para esta mesa.</p>
+                )}
+              </div>
+            </section>
 
             {selectedTable.activeSession && (selectedTable.activeSession.status === "PENDING_CONFIRMATION" || showQrPanel) && (
               <section className="mt-4 rounded-3xl border bg-white p-4 text-slate-950">

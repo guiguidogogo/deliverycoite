@@ -154,9 +154,11 @@ import {
   requestBillFromSession,
   requestBillFromTable,
   listTableOrders,
+  listClosedTableSessions,
   listDiningAreas,
   listTables,
   moveTableAccount,
+  reprintClosedTableSession,
   verifyPublicTableSessionCode,
   updateDiningArea,
   updateTable,
@@ -290,6 +292,7 @@ route.post("/admin/tables", requirePermission("SETTINGS"), createTable);
 route.patch("/admin/tables/:id", requirePermission("SETTINGS"), updateTable);
 route.patch("/admin/tables/:id/status", requirePermission("SETTINGS"), updateTableStatus);
 route.get("/admin/tables/:id/orders", requirePermission("ORDERS"), listTableOrders);
+route.get("/admin/tables/:id/history", requirePermission("ORDERS"), listClosedTableSessions);
 route.post("/admin/tables/:id/session", requirePermission("ORDERS"), openTableSession);
 route.post("/admin/tables/:id/session/:sessionId/approve", requirePermission("ORDERS"), approveTableSession);
 route.post("/admin/tables/:id/session/:sessionId/ack-waiter", requirePermission("ORDERS"), acknowledgeWaiterCall);
@@ -297,6 +300,7 @@ route.post("/admin/tables/:id/session/:sessionId/reopen", requirePermission("ORD
 route.get("/admin/tables/:id/session/:sessionId", requirePermission("ORDERS"), getTableSessionAccount);
 route.post("/admin/tables/:id/orders", requirePermission("ORDERS"), createTableOrder);
 route.post("/admin/tables/:id/print-job", requirePermission("ORDERS"), createTablePrintJob);
+route.post("/admin/tables/:id/history/:sessionId/reprint", requirePermission("ORDERS"), reprintClosedTableSession);
 route.post("/admin/tables/:id/move", requirePermission("ORDERS"), moveTableAccount);
 route.post("/admin/tables/:id/close", requirePermission("ORDERS"), closeTableAccount);
 route.delete("/admin/tables/:id", requirePermission("SETTINGS"), deleteTable);

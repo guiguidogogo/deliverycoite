@@ -501,6 +501,52 @@ export async function listTableOrders(req: Request, res: Response) {
   return res.json(orders);
 }
 
+export async function listClosedTableSessions(req: Request, res: Response) {
+  const companyId = getCompanyId(req);
+  const table = await prisma.restaurantTable.findFirst({
+    where: { id: req.params.id, companyId, active: true },
+    select: { id: true }
+  });
+  if (!table) return res.status(404).json({ message: "Mesa nao encontrada" });
+
+  const sessions = await prisma.tableSession.findMany({
+    where: {
+      companyId,
+      tableId: table.id,
+      status: TableSessionStatus.CLOSED
+    },
+    select: {
+      id: true,
+      shortCode: true,
+      customerName: true,
+      customerPhone: true,
+      openedAt: true,
+      closedAt: true,
+      total: true,
+      openedByUser: { select: { name: true } },
+      closedByUser: { select: { name: true } },
+      orders: {
+        where: { deletedAt: null, status: { notIn: ["CANCELED"] } },
+        select: {
+          id: true,
+          orderNumber: true,
+          total: true,
+          items: { select: { quantity: true } }
+        },
+        orderBy: { createdAt: "asc" }
+      }
+    },
+    orderBy: { closedAt: "desc" },
+    take: 15
+  });
+
+  return res.json(sessions.map((session) => ({
+    ...session,
+    orderCount: session.orders.length,
+    itemCount: session.orders.reduce((sum, order) => sum + order.items.reduce((acc, item) => acc + item.quantity, 0), 0)
+  })));
+}
+
 export async function openTableSession(req: Request, res: Response) {
   const companyId = getCompanyId(req);
   const table = await prisma.restaurantTable.findFirst({
@@ -886,6 +932,102 @@ export async function createTablePrintJob(req: Request, res: Response) {
   return res.status(201).json({
     ...job,
     message: `${body.type === "PRE_BILL" ? "Pre-conta" : "Recibo"} enviada para a fila do Printer Agent`
+  });
+}
+
+export async function reprintClosedTableSession(req: Request, res: Response) {
+  const body = tablePrintJobSchema.parse(req.body ?? {});
+  const companyId = getCompanyId(req);
+  const table = await prisma.restaurantTable.findFirst({
+    where: { id: req.params.id, companyId, active: true },
+    include: { area: true }
+  });
+  if (!table) return res.status(404).json({ message: "Mesa nao encontrada" });
+
+  const session = await prisma.tableSession.findFirst({
+    where: {
+      id: req.params.sessionId,
+      companyId,
+      tableId: table.id,
+      status: TableSessionStatus.CLOSED
+    }
+  });
+  if (!session) return res.status(404).json({ message: "Atendimento fechado nao encontrado" });
+
+  const [settings, company, orders] = await Promise.all([
+    prisma.setting.findUnique({ where: { companyId } }),
+    prisma.company.findUnique({ where: { id: companyId }, select: { tradeName: true, companyName: true, printerAgentEnabled: true } }),
+    prisma.order.findMany({
+      where: {
+        companyId,
+        tableId: table.id,
+        tableSessionId: session.id,
+        deletedAt: null,
+        status: { notIn: ["CANCELED"] }
+      },
+      include: {
+        waiter: { select: { name: true } },
+        items: { include: { product: { select: { name: true } }, complements: true } }
+      },
+      orderBy: { createdAt: "asc" }
+    })
+  ]);
+  if (!orders.length) return res.status(400).json({ message: "Nao ha pedidos neste atendimento" });
+
+  const subtotal = orders.reduce((sum, order) => sum + Number(order.total), 0);
+  const serviceFeeEnabled = body.serviceFeeEnabled ?? settings?.tableServiceFeeEnabled ?? false;
+  const serviceFeePercent = body.serviceFeePercent ?? Number(settings?.tableServiceFeePercent ?? 10);
+  const account = buildAccountTotals(subtotal, {
+    serviceFeeEnabled,
+    serviceFeePercent,
+    discount: body.discount
+  });
+  const paperWidth = settings?.printerPaperWidth === 80 ? 80 : 58;
+  const companyName = settings?.companyName || company?.tradeName || company?.companyName || "HubRegional";
+  const receipt = tableReceiptText({
+    companyName,
+    paperWidth,
+    type: body.type === "PRE_BILL" ? "PRE_BILL" : "RECEIPT",
+    tableNumber: table.number,
+    areaName: table.area?.name,
+    customerName: session.customerName,
+    customerPhone: session.customerPhone,
+    orders,
+    subtotal: account.subtotal,
+    serviceFee: account.serviceFee,
+    discount: account.discount,
+    total: account.total,
+    payments: body.payments,
+    billSplit: body.billSplit,
+    paymentDetail: body.paymentDetail,
+    notes: body.notes || `Reimpressao do atendimento fechado em ${session.closedAt?.toLocaleString("pt-BR") ?? "-"}`
+  });
+
+  if (!company?.printerAgentEnabled) {
+    return res.status(201).json({
+      type: body.type,
+      title: `${body.type === "PRE_BILL" ? "Pre-conta" : "Recibo"} Mesa ${table.number}`,
+      receipt,
+      message: "Printer Agent nao esta ativo. Use impressao manual."
+    });
+  }
+
+  const job = await prisma.printerJob.create({
+    data: {
+      companyId,
+      type: body.type === "PRE_BILL" ? "TABLE_PRE_BILL" : "TABLE_RECEIPT",
+      title: `${body.type === "PRE_BILL" ? "Reimpressao pre-conta" : "Reimpressao recibo"} Mesa ${table.number}`,
+      referenceId: session.id,
+      referenceLabel: `Mesa ${table.number}`,
+      receipt,
+      createdBy: req.user?.sub ?? null
+    },
+    select: { id: true, type: true, title: true, createdAt: true }
+  });
+
+  return res.status(201).json({
+    ...job,
+    message: `${job.title} enviada para a fila do Printer Agent`
   });
 }
 
