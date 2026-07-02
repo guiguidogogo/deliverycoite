@@ -1054,6 +1054,35 @@ export async function callWaiterFromSession(req: Request, res: Response) {
   return res.json({ ok: true, message: `Garcom chamado na mesa ${session.table.number}` });
 }
 
+export async function acknowledgeWaiterCall(req: Request, res: Response) {
+  const companyId = getCompanyId(req);
+  const table = await prisma.restaurantTable.findFirst({
+    where: { id: req.params.id, companyId, active: true },
+    select: { id: true, number: true }
+  });
+  if (!table) return res.status(404).json({ message: "Mesa nao encontrada" });
+
+  const session = await prisma.tableSession.findFirst({
+    where: {
+      id: req.params.sessionId,
+      companyId,
+      tableId: table.id,
+      status: { in: [TableSessionStatus.OPEN, TableSessionStatus.CLOSING_REQUESTED] }
+    }
+  });
+  if (!session) return res.status(404).json({ message: "Atendimento ativo nao encontrado" });
+
+  await prisma.tableSession.update({
+    where: { id: session.id },
+    data: {
+      waiterCalledAt: null,
+      lastActivityAt: new Date()
+    }
+  });
+
+  return res.json({ ok: true, message: `Chamado da mesa ${table.number} atendido` });
+}
+
 export async function requestBillFromSession(req: Request, res: Response) {
   const token = z.string().min(20).parse(req.params.token);
   const session = await prisma.tableSession.findUnique({

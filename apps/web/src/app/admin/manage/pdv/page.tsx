@@ -94,7 +94,14 @@ type DraftItem = {
 };
 
 type ClosePaymentMethod = "CASH" | "PIX" | "DEBIT" | "CREDIT" | "CARD";
-type PdvAlert = { id: string; message: string; tone: "bill" | "order" };
+type PdvAlert = {
+  id: string;
+  message: string;
+  tone: "bill" | "order";
+  kind?: "WAITER" | "BILL" | "ORDER";
+  tableId?: string;
+  sessionId?: string;
+};
 
 function qrImage(url: string) {
   return `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(url)}`;
@@ -161,7 +168,7 @@ export default function PdvPage() {
   const [areaFilter, setAreaFilter] = useState("all");
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [alerts, setAlerts] = useState<PdvAlert[]>([]);
-  const previousTablesRef = useRef<Map<string, { status: TableStatus; orders: number }>>(new Map());
+  const previousTablesRef = useRef<Map<string, { status: TableStatus; orders: number; waiterCalledAt: string | null }>>(new Map());
   const soundEnabledRef = useRef(false);
 
   const areas = useMemo(() => {
@@ -255,9 +262,9 @@ export default function PdvPage() {
     }
   }
 
-  function pushAlert(message: string, tone: PdvAlert["tone"]) {
+  function pushAlert(message: string, tone: PdvAlert["tone"], meta?: Omit<PdvAlert, "id" | "message" | "tone">) {
     const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    setAlerts((current) => [{ id, message, tone }, ...current].slice(0, 5));
+    setAlerts((current) => [{ id, message, tone, ...meta }, ...current].slice(0, 5));
     toast(tone === "bill" ? "Conta solicitada" : "Nova movimentacao", { description: message });
     playAlertSound();
   }
@@ -265,23 +272,38 @@ export default function PdvPage() {
   function detectTableChanges(nextTables: RestaurantTable[]) {
     const previous = previousTablesRef.current;
     if (!previous.size) {
-      previousTablesRef.current = new Map(nextTables.map((table) => [table.id, { status: table.status, orders: table._count?.orders ?? 0 }]));
+      previousTablesRef.current = new Map(nextTables.map((table) => [table.id, {
+        status: table.status,
+        orders: table.orderCount ?? table._count?.orders ?? 0,
+        waiterCalledAt: table.activeSession?.waiterCalledAt ?? null
+      }]));
       return;
     }
 
     nextTables.forEach((table) => {
       const old = previous.get(table.id);
-      const orderCount = table._count?.orders ?? 0;
+      const orderCount = table.orderCount ?? table._count?.orders ?? 0;
+      const waiterCalledAt = table.activeSession?.waiterCalledAt ?? null;
       if (!old) return;
-      if (old.status !== "WAITING_PAYMENT" && table.status === "WAITING_PAYMENT") {
-        pushAlert(`Mesa ${table.number} solicitou a conta`, "bill");
+      if (waiterCalledAt && waiterCalledAt !== old.waiterCalledAt) {
+        pushAlert(`Mesa ${table.number} chamou o garçom`, "order", {
+          kind: "WAITER",
+          tableId: table.id,
+          sessionId: table.activeSession?.id
+        });
+      } else if (old.status !== "WAITING_PAYMENT" && table.status === "WAITING_PAYMENT") {
+        pushAlert(`Mesa ${table.number} solicitou a conta`, "bill", { kind: "BILL", tableId: table.id, sessionId: table.activeSession?.id });
       } else if (orderCount > old.orders) {
-        pushAlert(`Mesa ${table.number} recebeu novo pedido`, "order");
+        pushAlert(`Mesa ${table.number} recebeu novo pedido`, "order", { kind: "ORDER", tableId: table.id, sessionId: table.activeSession?.id });
       } else if (old.status === "FREE" && table.status === "OCCUPIED" && orderCount === old.orders) {
-        pushAlert(`Mesa ${table.number} chamou o garçom`, "order");
+        pushAlert(`Mesa ${table.number} mudou para ocupada`, "order", { kind: "ORDER", tableId: table.id, sessionId: table.activeSession?.id });
       }
     });
-    previousTablesRef.current = new Map(nextTables.map((table) => [table.id, { status: table.status, orders: table._count?.orders ?? 0 }]));
+    previousTablesRef.current = new Map(nextTables.map((table) => [table.id, {
+      status: table.status,
+      orders: table.orderCount ?? table._count?.orders ?? 0,
+      waiterCalledAt: table.activeSession?.waiterCalledAt ?? null
+    }]));
   }
 
   async function loadTables() {
@@ -367,6 +389,36 @@ export default function PdvPage() {
       toast.success("Mesa liberada para o cliente");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao confirmar abertura da mesa");
+    }
+  }
+
+  async function acknowledgeAlert(alert: PdvAlert) {
+    setAlerts((current) => current.filter((item) => item.id !== alert.id));
+    if (alert.kind !== "WAITER" || !alert.tableId || !alert.sessionId) return;
+
+    try {
+      await request(`/admin/tables/${alert.tableId}/session/${alert.sessionId}/ack-waiter`, { method: "POST" });
+      setTables((current) => current.map((table) => table.id === alert.tableId
+        ? {
+            ...table,
+            activeSession: table.activeSession
+              ? { ...table.activeSession, waiterCalledAt: null }
+              : table.activeSession
+          }
+        : table
+      ));
+      setSelectedTable((current) => {
+        if (!current || current.id !== alert.tableId) return current;
+        return {
+          ...current,
+          activeSession: current.activeSession
+            ? { ...current.activeSession, waiterCalledAt: null }
+            : current.activeSession
+        };
+      });
+      await loadTables();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Nao foi possivel marcar chamado como atendido");
     }
   }
 
@@ -636,7 +688,7 @@ export default function PdvPage() {
           {alerts.map((alert) => (
             <div key={alert.id} className={`flex items-center justify-between gap-3 rounded-2xl border p-3 font-bold ${alert.tone === "bill" ? "border-red-200 bg-red-50 text-red-800" : "border-orange-200 bg-orange-50 text-orange-800"}`}>
               <span>{alert.message}</span>
-              <button className="rounded-lg bg-white/70 px-2 py-1 text-xs" onClick={() => setAlerts((current) => current.filter((item) => item.id !== alert.id))}>
+              <button className="rounded-lg bg-white/70 px-2 py-1 text-xs" onClick={() => void acknowledgeAlert(alert)}>
                 OK
               </button>
             </div>
@@ -671,7 +723,7 @@ export default function PdvPage() {
           {filteredTables.map((table) => (
             <button
               key={table.id}
-              className={`rounded-[2rem] border-2 p-5 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-xl ${statusStyles[table.status]}`}
+              className={`rounded-[2rem] border-2 p-5 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-xl ${table.activeSession?.waiterCalledAt ? "animate-pulse border-blue-600 bg-blue-100 text-blue-950 shadow-2xl shadow-blue-500/30 ring-4 ring-blue-300" : statusStyles[table.status]}`}
               onClick={() => void loadOrders(table)}
             >
               <div className="flex items-start justify-between gap-3">
@@ -680,7 +732,7 @@ export default function PdvPage() {
                   <h2 className="font-display text-5xl leading-none">Mesa {table.number}</h2>
                   <p className="mt-1 font-bold">{table.name || `${table.seats} lugares`}</p>
                 </div>
-                <span className="rounded-full bg-white/70 px-3 py-1 text-xs font-black">{statusLabels[table.status]}</span>
+                <span className="rounded-full bg-white/70 px-3 py-1 text-xs font-black">{table.activeSession?.waiterCalledAt ? "Chamou garçom" : statusLabels[table.status]}</span>
               </div>
               <div className="mt-5 grid grid-cols-2 gap-2 text-sm">
                 <div className="rounded-2xl bg-white/65 p-3">

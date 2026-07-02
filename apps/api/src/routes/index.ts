@@ -135,6 +135,7 @@ import { getSettings, updateSettings } from "../controllers/settings-controller.
 import { listMarketplaceCompanies, marketplaceSummary } from "../controllers/marketplace-controller.js";
 import {
   createDiningArea,
+  acknowledgeWaiterCall,
   approveTableSession,
   closeTableAccount,
   callWaiterFromSession,
@@ -289,6 +290,7 @@ route.patch("/admin/tables/:id/status", requirePermission("SETTINGS"), updateTab
 route.get("/admin/tables/:id/orders", requirePermission("ORDERS"), listTableOrders);
 route.post("/admin/tables/:id/session", requirePermission("ORDERS"), openTableSession);
 route.post("/admin/tables/:id/session/:sessionId/approve", requirePermission("ORDERS"), approveTableSession);
+route.post("/admin/tables/:id/session/:sessionId/ack-waiter", requirePermission("ORDERS"), acknowledgeWaiterCall);
 route.post("/admin/tables/:id/session/:sessionId/reopen", requirePermission("ORDERS"), reopenTableSession);
 route.get("/admin/tables/:id/session/:sessionId", requirePermission("ORDERS"), getTableSessionAccount);
 route.post("/admin/tables/:id/orders", requirePermission("ORDERS"), createTableOrder);
