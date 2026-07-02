@@ -141,6 +141,7 @@ import {
   callWaiterFromSession,
   callWaiterFromTable,
   createTableOrder,
+  createTablePrintJob,
   createTable,
   deleteDiningArea,
   deleteTable,
@@ -294,6 +295,7 @@ route.post("/admin/tables/:id/session/:sessionId/ack-waiter", requirePermission(
 route.post("/admin/tables/:id/session/:sessionId/reopen", requirePermission("ORDERS"), reopenTableSession);
 route.get("/admin/tables/:id/session/:sessionId", requirePermission("ORDERS"), getTableSessionAccount);
 route.post("/admin/tables/:id/orders", requirePermission("ORDERS"), createTableOrder);
+route.post("/admin/tables/:id/print-job", requirePermission("ORDERS"), createTablePrintJob);
 route.post("/admin/tables/:id/close", requirePermission("ORDERS"), closeTableAccount);
 route.delete("/admin/tables/:id", requirePermission("SETTINGS"), deleteTable);
 route.get("/admin/reports/orders.xlsx", requirePermission("REPORTS"), exportOrdersExcel);

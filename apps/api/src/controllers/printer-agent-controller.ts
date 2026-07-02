@@ -34,6 +34,8 @@ async function getAgentCompany(req: Request) {
 function orderToPayload(order: Awaited<ReturnType<typeof findPrintableOrders>>[number], receipt: string) {
   return {
     id: order.id,
+    type: "ORDER",
+    title: `Pedido #${formatOrderCode(order.orderNumber)}`,
     orderNumber: order.orderNumber,
     code: formatOrderCode(order.orderNumber),
     createdAt: order.createdAt,
@@ -47,6 +49,27 @@ function orderToPayload(order: Awaited<ReturnType<typeof findPrintableOrders>>[n
       complement: order.customer.complement
     },
     receipt
+  };
+}
+
+function jobToPayload(job: Awaited<ReturnType<typeof findPrintableJobs>>[number]) {
+  return {
+    id: job.id,
+    type: job.type,
+    title: job.title,
+    orderNumber: 0,
+    code: job.referenceLabel ?? job.title,
+    createdAt: job.createdAt,
+    total: 0,
+    customer: {
+      name: job.referenceLabel ?? job.title,
+      phone: "",
+      address: "",
+      number: "",
+      district: "",
+      complement: null
+    },
+    receipt: job.receipt
   };
 }
 
@@ -70,6 +93,22 @@ async function findPrintableOrders(companyId: string, since?: Date) {
     include: {
       customer: true,
       items: { include: { product: true, complements: true } }
+    },
+    orderBy: { createdAt: "asc" },
+    take: 20
+  });
+}
+
+async function findPrintableJobs(companyId: string, since?: Date) {
+  const createdSince = since && !Number.isNaN(since.getTime())
+    ? since
+    : new Date(Date.now() - 1000 * 60 * 60 * 24);
+  return prisma.printerJob.findMany({
+    where: {
+      companyId,
+      queuedAt: null,
+      printedAt: null,
+      createdAt: { gte: createdSince }
     },
     orderBy: { createdAt: "asc" },
     take: 20
@@ -135,9 +174,10 @@ export async function listPrinterAgentOrders(req: Request, res: Response) {
   const since = sinceParam ? new Date(sinceParam) : undefined;
   const paperWidth = req.query.paperWidth?.toString() === "80" ? 80 : 58;
 
-  const [settings, orders] = await Promise.all([
+  const [settings, orders, jobs] = await Promise.all([
     prisma.setting.findUnique({ where: { companyId: company.id } }),
-    findPrintableOrders(company.id, since)
+    findPrintableOrders(company.id, since),
+    findPrintableJobs(company.id, since)
   ]);
 
   const safeSettings = {
@@ -163,10 +203,23 @@ export async function listPrinterAgentOrders(req: Request, res: Response) {
       data: { printerQueuedAt: new Date() }
     });
   }
+  if (jobs.length) {
+    await prisma.printerJob.updateMany({
+      where: {
+        companyId: company.id,
+        id: { in: jobs.map((job) => job.id) },
+        queuedAt: null
+      },
+      data: { queuedAt: new Date() }
+    });
+  }
 
   return res.json({
     company: { id: company.id, tradeName: company.tradeName, subdomain: company.subdomain },
-    orders: orders.map((order) => orderToPayload(order, receiptText(order, safeSettings)))
+    orders: [
+      ...jobs.map(jobToPayload),
+      ...orders.map((order) => orderToPayload(order, receiptText(order, safeSettings)))
+    ].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
   });
 }
 
@@ -184,7 +237,28 @@ export async function markPrinterAgentOrderPrinted(req: Request, res: Response) 
     where: { id, companyId: company.id },
     select: { id: true, printerPrintedAt: true, printerPrintCount: true }
   });
-  if (!order) return res.status(404).json({ message: "Pedido nao encontrado" });
+  if (!order) {
+    const job = await prisma.printerJob.findFirst({
+      where: { id, companyId: company.id },
+      select: { id: true, printedAt: true, printCount: true }
+    });
+    if (!job) return res.status(404).json({ message: "Documento de impressao nao encontrado" });
+
+    const updatedJob = await prisma.printerJob.update({
+      where: { id },
+      data: body.ok
+        ? {
+            printedAt: job.printedAt ?? new Date(),
+            printCount: { increment: 1 },
+            lastError: null
+          }
+        : {
+            lastError: body.error ?? "Falha informada pelo agente de impressao"
+          },
+      select: { id: true, printedAt: true, printCount: true, lastError: true }
+    });
+    return res.json(updatedJob);
+  }
 
   const updated = await prisma.order.update({
     where: { id },

@@ -695,8 +695,6 @@ export default function PdvPage() {
     if (!confirmed) return;
     setClosingTable(true);
     try {
-      const receiptOrders = orders;
-      const receiptTotals = accountTotals;
       const receiptPayments = splitPayments.length
         ? splitPayments
         : [{ method: closePaymentMethod, amount: accountTotals.total }];
@@ -713,17 +711,21 @@ export default function PdvPage() {
         })
       });
       toast.success(`Mesa fechada: ${brl(result.total)} em ${result.paymentDetail}`);
-      const receiptHtml = tableReceiptHtml({
-        type: "RECEIPT",
-        table: selectedTable,
-        orders: receiptOrders,
-        totals: receiptTotals,
-        companyName: printSettings.companyName,
-        payments: receiptPayments,
-        paymentDetail: result.paymentDetail,
-        notes: closeNotes || undefined
-      });
-      await printPdvDocument(receiptHtml, "Recibo enviado para impressao");
+      if (result.printerJob?.id) {
+        toast.success("Recibo enviado para a fila do Printer Agent");
+      } else {
+        const receiptHtml = tableReceiptHtml({
+          type: "RECEIPT",
+          table: selectedTable,
+          orders,
+          totals: accountTotals,
+          companyName: printSettings.companyName,
+          payments: receiptPayments,
+          paymentDetail: result.paymentDetail,
+          notes: closeNotes || undefined
+        });
+        await printPdvDocument(receiptHtml, "Recibo enviado para impressao");
+      }
       setOrders([]);
       setSelectedTable((current) => current ? { ...current, status: "FREE", _count: { orders: 0 } } : current);
       await loadTables();
@@ -756,19 +758,32 @@ export default function PdvPage() {
     const serviceFee = serviceFeeEnabled ? subtotal * (serviceFeePercent / 100) : 0;
     const discount = Math.min(Math.max(closeDiscount || 0, 0), subtotal + serviceFee);
     const total = Math.max(0, subtotal + serviceFee - discount);
-    const content = tableReceiptHtml({
-      type: "PRE_BILL",
-      table: selectedTable,
-      orders: printableOrders,
-      totals: { subtotal, serviceFee, discount, total },
-      companyName: printSettings.companyName,
-      notes: closeNotes || undefined
-    });
-
     try {
-      await printPdvDocument(content, "Pre-conta enviada para impressao");
+      const job = await request(`/admin/tables/${selectedTable.id}/print-job`, {
+        method: "POST",
+        body: JSON.stringify({
+          type: "PRE_BILL",
+          discount,
+          serviceFeeEnabled,
+          serviceFeePercent,
+          notes: closeNotes || undefined
+        })
+      });
+      toast.success(job?.message ?? "Pre-conta enviada para a fila do Printer Agent");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Falha ao imprimir pre-conta");
+      const content = tableReceiptHtml({
+        type: "PRE_BILL",
+        table: selectedTable,
+        orders: printableOrders,
+        totals: { subtotal, serviceFee, discount, total },
+        companyName: printSettings.companyName,
+        notes: closeNotes || undefined
+      });
+      try {
+        await printPdvDocument(content, "Pre-conta enviada para impressao manual");
+      } catch {
+        toast.error(error instanceof Error ? error.message : "Falha ao imprimir pre-conta");
+      }
     }
   }
 

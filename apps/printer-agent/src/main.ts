@@ -33,6 +33,8 @@ type Config = {
 
 type AgentOrder = {
   id: string;
+  type?: string;
+  title?: string;
   code: string;
   createdAt: string;
   total: number;
@@ -280,12 +282,13 @@ async function handleOrder(order: AgentOrder) {
       await printText(config.printerName, order.receipt, config.printMode || "windows");
     }
     await markPrinted(order.id, true);
-    addLog(`Pedido #${order.code} impresso para ${order.customer.name} (${copies} via${copies > 1 ? "s" : ""})`);
+    const label = order.type && order.type !== "ORDER" ? (order.title ?? order.code) : `Pedido #${order.code}`;
+    addLog(`${label} impresso${order.type === "ORDER" ? ` para ${order.customer.name}` : ""} (${copies} via${copies > 1 ? "s" : ""})`);
   } catch (error) {
     inMemoryPrinted.delete(order.id);
     const message = error instanceof Error ? error.message : "Falha desconhecida";
     await markPrinted(order.id, false, message).catch(() => undefined);
-    addLog(`Erro ao imprimir pedido #${order.code}: ${message}`);
+    addLog(`Erro ao imprimir ${order.title ?? `pedido #${order.code}`}: ${message}`);
   }
 }
 

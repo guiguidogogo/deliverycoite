@@ -170,6 +170,7 @@ model Company {
   driverDeviceTokens     DriverDeviceToken[]
   diningAreas            DiningArea[]
   restaurantTables       RestaurantTable[]
+  printerJobs            PrinterJob[]
   auditLogs              AuditLog[]
   payables               AccountPayable[]
   receivables            AccountReceivable[]
@@ -649,6 +650,29 @@ model TableSession {
   @@index([companyId, status])
   @@index([companyId, tableId, openedAt])
   @@index([token])
+}
+
+model PrinterJob {
+  id             String    @id @default(cuid())
+  companyId      String
+  company        Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  type           String
+  title          String
+  referenceId    String?
+  referenceLabel String?
+  receipt        String
+  copies         Int       @default(1)
+  queuedAt       DateTime?
+  printedAt      DateTime?
+  printCount     Int       @default(0)
+  lastError      String?
+  createdBy      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([companyId, printedAt, queuedAt])
+  @@index([companyId, type, createdAt])
+  @@index([referenceId])
 }
 
 model Driver {

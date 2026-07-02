@@ -58,6 +58,19 @@ const closeTableSchema = z.object({
   })).optional()
 });
 
+const tablePrintJobSchema = z.object({
+  type: z.enum(["PRE_BILL", "RECEIPT"]).default("PRE_BILL"),
+  notes: z.string().max(500).optional(),
+  discount: z.coerce.number().min(0).default(0),
+  serviceFeeEnabled: z.boolean().optional(),
+  serviceFeePercent: z.coerce.number().min(0).max(30).optional(),
+  payments: z.array(z.object({
+    method: z.enum(["CASH", "PIX", "DEBIT", "CREDIT", "CARD"]),
+    amount: z.coerce.number().positive()
+  })).optional(),
+  paymentDetail: z.string().max(240).optional()
+});
+
 function publicTableUrl(req: Request, table: { number: number }, explicitSubdomain?: string | null) {
   const rootDomain = process.env.ROOT_DOMAIN ?? "hubregional.com.br";
   const subdomain = explicitSubdomain || req.tenant?.subdomain;
@@ -70,6 +83,83 @@ function publicTableSessionUrl(req: Request, token: string, explicitSubdomain?: 
   const subdomain = explicitSubdomain || req.tenant?.subdomain;
   if (subdomain) return `https://${subdomain}.${rootDomain}/mesa/sessao/${token}`;
   return `https://${rootDomain}/mesa/sessao/${token}?subdomain=${encodeURIComponent(req.tenant?.subdomain ?? "")}`;
+}
+
+function money(value: unknown) {
+  return `R$ ${Number(value ?? 0).toFixed(2).replace(".", ",")}`;
+}
+
+function separator(width: number) {
+  return "-".repeat(width);
+}
+
+type TableReceiptOrder = {
+  orderNumber: number;
+  total: unknown;
+  createdAt: Date;
+  waiter?: { name: string } | null;
+  items: Array<{
+    quantity: number;
+    total: unknown;
+    product: { name: string };
+    complements: Array<{ name: string; quantity: number; total: unknown }>;
+  }>;
+};
+
+function tableReceiptText(params: {
+  companyName: string;
+  paperWidth: 58 | 80;
+  type: "PRE_BILL" | "RECEIPT";
+  tableNumber: number;
+  areaName?: string | null;
+  customerName?: string | null;
+  customerPhone?: string | null;
+  orders: TableReceiptOrder[];
+  subtotal: number;
+  serviceFee: number;
+  discount: number;
+  total: number;
+  payments?: Array<{ method: "CASH" | "PIX" | "DEBIT" | "CREDIT" | "CARD"; amount: number }>;
+  paymentDetail?: string | null;
+  notes?: string | null;
+}) {
+  const width = params.paperWidth === 80 ? 48 : 32;
+  const title = params.type === "PRE_BILL" ? "PRE-CONTA" : "RECIBO DE PAGAMENTO";
+  const lines = [
+    params.companyName.toUpperCase(),
+    title,
+    `Mesa ${params.tableNumber}${params.areaName ? ` - ${params.areaName}` : ""}`,
+    new Date().toLocaleString("pt-BR"),
+    params.type === "PRE_BILL" ? "NAO E COMPROVANTE DE PAGAMENTO" : "PAGAMENTO REGISTRADO",
+    ...(params.customerName ? [`Cliente: ${params.customerName}`] : []),
+    ...(params.customerPhone ? [`Telefone: ${params.customerPhone}`] : []),
+    separator(width),
+    ...params.orders.flatMap((order) => [
+      `Pedido #${String(order.orderNumber).padStart(5, "0")} ${money(order.total)}`,
+      order.createdAt.toLocaleString("pt-BR"),
+      ...(order.waiter?.name ? [`Garcom: ${order.waiter.name}`] : []),
+      ...order.items.flatMap((item) => [
+        `${item.quantity}x ${item.product.name} ${money(item.total)}`,
+        ...item.complements.map((complement) =>
+          `  + ${complement.quantity}x ${complement.name}${Number(complement.total) > 0 ? ` ${money(complement.total)}` : ""}`
+        )
+      ]),
+      separator(width)
+    ]),
+    `Subtotal: ${money(params.subtotal)}`,
+    `Taxa servico: ${money(params.serviceFee)}`,
+    `Desconto: ${money(params.discount)}`,
+    `TOTAL: ${money(params.total)}`,
+    ...(params.payments?.length
+      ? [separator(width), ...params.payments.map((payment) => `${paymentDetailFromClose(payment.method)}: ${money(payment.amount)}`)]
+      : params.paymentDetail ? [separator(width), `Pagamento: ${params.paymentDetail}`] : []),
+    ...(params.notes ? [separator(width), `Obs: ${params.notes}`] : []),
+    "",
+    "",
+    ""
+  ];
+
+  return lines.join("\r\n");
 }
 
 async function currentCompanySubdomain(req: Request) {
@@ -527,7 +617,7 @@ export async function createTableOrder(req: Request, res: Response) {
   const companyId = getCompanyId(req);
   const table = await prisma.restaurantTable.findFirst({
     where: { id: req.params.id, companyId, active: true },
-    select: { id: true, number: true }
+    select: { id: true, number: true, area: { select: { name: true } } }
   });
   if (!table) return res.status(404).json({ message: "Mesa nao encontrada" });
 
@@ -674,12 +764,98 @@ export async function createTableOrder(req: Request, res: Response) {
   return res.status(201).json(order);
 }
 
+export async function createTablePrintJob(req: Request, res: Response) {
+  const body = tablePrintJobSchema.parse(req.body ?? {});
+  const companyId = getCompanyId(req);
+  const table = await prisma.restaurantTable.findFirst({
+    where: { id: req.params.id, companyId, active: true },
+    include: { area: true }
+  });
+  if (!table) return res.status(404).json({ message: "Mesa nao encontrada" });
+
+  const activeSession = await prisma.tableSession.findFirst({
+    where: {
+      companyId,
+      tableId: table.id,
+      status: { in: [TableSessionStatus.OPEN, TableSessionStatus.CLOSING_REQUESTED] }
+    },
+    orderBy: { openedAt: "desc" }
+  });
+  if (!activeSession) return res.status(400).json({ message: "Nao ha atendimento aberto nesta mesa" });
+
+  const [settings, company, orders] = await Promise.all([
+    prisma.setting.findUnique({ where: { companyId } }),
+    prisma.company.findUnique({ where: { id: companyId }, select: { tradeName: true, companyName: true } }),
+    prisma.order.findMany({
+      where: {
+        companyId,
+        tableId: table.id,
+        tableSessionId: activeSession.id,
+        deletedAt: null,
+        status: { notIn: ["CANCELED"] }
+      },
+      include: {
+        waiter: { select: { name: true } },
+        items: { include: { product: { select: { name: true } }, complements: true } }
+      },
+      orderBy: { createdAt: "asc" }
+    })
+  ]);
+  if (!orders.length) return res.status(400).json({ message: "Nao ha pedidos para imprimir nesta mesa" });
+
+  const subtotal = orders.reduce((sum, order) => sum + Number(order.total), 0);
+  const serviceFeeEnabled = body.serviceFeeEnabled ?? settings?.tableServiceFeeEnabled ?? false;
+  const serviceFeePercent = body.serviceFeePercent ?? Number(settings?.tableServiceFeePercent ?? 10);
+  const account = buildAccountTotals(subtotal, {
+    serviceFeeEnabled,
+    serviceFeePercent,
+    discount: body.discount
+  });
+  const paperWidth = settings?.printerPaperWidth === 80 ? 80 : 58;
+  const companyName = settings?.companyName || company?.tradeName || company?.companyName || "HubRegional";
+  const receipt = tableReceiptText({
+    companyName,
+    paperWidth,
+    type: body.type,
+    tableNumber: table.number,
+    areaName: table.area?.name,
+    customerName: activeSession.customerName,
+    customerPhone: activeSession.customerPhone,
+    orders,
+    subtotal: account.subtotal,
+    serviceFee: account.serviceFee,
+    discount: account.discount,
+    total: account.total,
+    payments: body.payments,
+    paymentDetail: body.paymentDetail,
+    notes: body.notes
+  });
+
+  const job = await prisma.printerJob.create({
+    data: {
+      companyId,
+      type: body.type === "PRE_BILL" ? "TABLE_PRE_BILL" : "TABLE_RECEIPT",
+      title: `${body.type === "PRE_BILL" ? "Pre-conta" : "Recibo"} Mesa ${table.number}`,
+      referenceId: activeSession.id,
+      referenceLabel: `Mesa ${table.number}`,
+      receipt,
+      createdBy: req.user?.sub ?? null
+    },
+    select: { id: true, type: true, title: true, createdAt: true }
+  });
+
+  return res.status(201).json({
+    ...job,
+    message: `${body.type === "PRE_BILL" ? "Pre-conta" : "Recibo"} enviada para a fila do Printer Agent`
+  });
+}
+
 export async function closeTableAccount(req: Request, res: Response) {
   const body = closeTableSchema.parse(req.body);
   const companyId = getCompanyId(req);
   const table = await prisma.restaurantTable.findFirst({
     where: { id: req.params.id, companyId, active: true },
-    select: { id: true, number: true }
+    select: { id: true, number: true, area: { select: { name: true } } }
   });
   if (!table) return res.status(404).json({ message: "Mesa nao encontrada" });
 
@@ -707,7 +883,10 @@ export async function closeTableAccount(req: Request, res: Response) {
       orderNumber: true,
       total: true,
       paidAt: true,
-      notes: true
+      notes: true,
+      createdAt: true,
+      waiter: { select: { name: true } },
+      items: { include: { product: { select: { name: true } }, complements: true } }
     },
     orderBy: { createdAt: "asc" }
   });
@@ -728,7 +907,13 @@ export async function closeTableAccount(req: Request, res: Response) {
     return res.status(400).json({ message: "Abra seu caixa antes de fechar a mesa" });
   }
 
-  const settings = await prisma.setting.findFirst({ where: { companyId } });
+  const [settings, company] = await Promise.all([
+    prisma.setting.findFirst({ where: { companyId } }),
+    prisma.company.findUnique({
+      where: { id: companyId },
+      select: { companyName: true, tradeName: true, printerAgentEnabled: true }
+    })
+  ]);
   const subtotal = orders.reduce((sum, order) => sum + Number(order.total), 0);
   const serviceFeeEnabled = body.serviceFeeEnabled ?? settings?.tableServiceFeeEnabled ?? false;
   const serviceFeePercent = body.serviceFeePercent ?? Number(settings?.tableServiceFeePercent ?? 10);
@@ -826,6 +1011,41 @@ export async function closeTableAccount(req: Request, res: Response) {
     })).filter((payment) => Number(payment.amount) > 0));
   }
 
+  let printerJob: { id: string; title: string } | null = null;
+  if (company?.printerAgentEnabled) {
+    const paperWidth = settings?.printerPaperWidth === 80 ? 80 : 58;
+    const companyName = settings?.companyName || company.tradeName || company.companyName || "HubRegional";
+    const receipt = tableReceiptText({
+      companyName,
+      paperWidth,
+      type: "RECEIPT",
+      tableNumber: table.number,
+      areaName: table.area?.name,
+      customerName: activeSession.customerName,
+      customerPhone: activeSession.customerPhone,
+      orders,
+      subtotal: account.subtotal,
+      serviceFee: account.serviceFee,
+      discount: account.discount,
+      total: account.total,
+      payments: splitPayments,
+      paymentDetail,
+      notes: body.notes
+    });
+    printerJob = await prisma.printerJob.create({
+      data: {
+        companyId,
+        type: "TABLE_RECEIPT",
+        title: `Recibo Mesa ${table.number}`,
+        referenceId: activeSession.id,
+        referenceLabel: `Mesa ${table.number}`,
+        receipt,
+        createdBy: req.user?.sub ?? null
+      },
+      select: { id: true, title: true }
+    });
+  }
+
   return res.json({
     ok: true,
     tableId: table.id,
@@ -836,7 +1056,8 @@ export async function closeTableAccount(req: Request, res: Response) {
     serviceFee: account.serviceFee,
     discount: account.discount,
     total: account.total,
-    payments: splitPayments
+    payments: splitPayments,
+    printerJob
   });
 }
 
