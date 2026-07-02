@@ -364,11 +364,53 @@ export async function listCashSessions(req: Request, res: Response) {
 export async function listAuditLogs(req: Request, res: Response) {
   const action = req.query.action?.toString();
   const userId = req.query.userId?.toString();
+  const entity = req.query.entity?.toString();
   return res.json(await prisma.auditLog.findMany({
-    where: { companyId: getCompanyId(req), ...dateRange(req), ...(action ? { action } : {}), ...(userId ? { userId } : {}) },
+    where: {
+      companyId: getCompanyId(req),
+      ...dateRange(req),
+      ...(action ? { action } : {}),
+      ...(userId ? { userId } : {}),
+      ...(entity ? { entity } : {})
+    },
     orderBy: { createdAt: "desc" },
     take: 500
   }));
+}
+
+export async function listPdvAuditLogs(req: Request, res: Response) {
+  const tableId = req.query.tableId?.toString();
+  const pdvActions = [
+    "TABLE_SESSION_OPENED",
+    "TABLE_SESSION_APPROVED",
+    "TABLE_SESSION_REOPENED",
+    "TABLE_ORDER_CREATED",
+    "TABLE_ACCOUNT_CLOSED",
+    "TABLE_TRANSFERRED",
+    "TABLES_MERGED",
+    "TABLE_DEACTIVATED",
+    "ORDER_CANCELED",
+    "ORDER_STATUS_CHANGED"
+  ];
+  const logs = await prisma.auditLog.findMany({
+    where: {
+      companyId: getCompanyId(req),
+      ...dateRange(req),
+      action: { in: pdvActions }
+    },
+    orderBy: { createdAt: "desc" },
+    take: 300
+  });
+
+  const filtered = tableId
+    ? logs.filter((log) => {
+        const oldValue = log.oldValue && typeof log.oldValue === "object" ? log.oldValue as Record<string, unknown> : {};
+        const newValue = log.newValue && typeof log.newValue === "object" ? log.newValue as Record<string, unknown> : {};
+        return oldValue.tableId === tableId || newValue.tableId === tableId || log.entityId === tableId;
+      })
+    : logs;
+
+  return res.json(filtered);
 }
 
 const payableSchema = z.object({

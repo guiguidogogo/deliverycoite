@@ -80,6 +80,19 @@ type ClosedTableSession = {
   closedByUser?: { name: string } | null;
 };
 
+type PdvAuditLog = {
+  id: string;
+  action: string;
+  entity: string;
+  entityId?: string | null;
+  userName?: string | null;
+  userId?: string | null;
+  oldValue?: Record<string, any> | null;
+  newValue?: Record<string, any> | null;
+  ipAddress?: string | null;
+  createdAt: string;
+};
+
 type Product = {
   id: string;
   name: string;
@@ -323,6 +336,10 @@ export default function PdvPage() {
   const [movingTable, setMovingTable] = useState(false);
   const [showQrPanel, setShowQrPanel] = useState(false);
   const [showClosePanel, setShowClosePanel] = useState(false);
+  const [showAuditPanel, setShowAuditPanel] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<PdvAuditLog[]>([]);
+  const [loadingAudit, setLoadingAudit] = useState(false);
+  const [auditOnlySelectedTable, setAuditOnlySelectedTable] = useState(true);
   const [printSettings, setPrintSettings] = useState<PdvPrintSettings>({
     companyName: "HubRegional",
     printerEnabled: false,
@@ -429,6 +446,7 @@ export default function PdvPage() {
   const canManagePdv = can("PDV_MANAGE") || can("CASH_MANAGE");
   const canClosePdv = can("PDV_CLOSE") || can("CASH_MANAGE");
   const canHistoryPdv = can("PDV_HISTORY") || can("CASH_MANAGE") || can("FINANCE");
+  const canAuditPdv = canHistoryPdv || can("AUDIT_VIEW");
 
   const configuringTotal = useMemo(() => {
     if (!configuringProduct) return 0;
@@ -483,6 +501,43 @@ export default function PdvPage() {
     setAlerts((current) => [{ id, message, tone, ...meta }, ...current].slice(0, 5));
     toast(tone === "bill" ? "Conta solicitada" : "Nova movimentacao", { description: message });
     playAlertSound();
+  }
+
+  function auditActionLabel(action: string) {
+    const labels: Record<string, string> = {
+      TABLE_SESSION_OPENED: "Atendimento aberto",
+      TABLE_SESSION_APPROVED: "Abertura confirmada",
+      TABLE_SESSION_REOPENED: "Conta reaberta",
+      TABLE_ORDER_CREATED: "Pedido adicionado",
+      TABLE_ACCOUNT_CLOSED: "Conta fechada",
+      TABLE_TRANSFERRED: "Comanda transferida",
+      TABLES_MERGED: "Mesas juntadas",
+      TABLE_DEACTIVATED: "Mesa desativada",
+      ORDER_CANCELED: "Pedido cancelado",
+      ORDER_STATUS_CHANGED: "Status do pedido alterado"
+    };
+    return labels[action] ?? action;
+  }
+
+  function auditDescription(log: PdvAuditLog) {
+    const data = log.newValue ?? {};
+    const old = log.oldValue ?? {};
+    if (log.action === "TABLE_ORDER_CREATED") {
+      return `Mesa ${data.tableNumber ?? "-"} recebeu pedido #${String(data.orderNumber ?? "").padStart(5, "0")} no valor de ${brl(data.total ?? 0)}.`;
+    }
+    if (log.action === "TABLE_ACCOUNT_CLOSED") {
+      return `Mesa ${old.tableNumber ?? data.tableNumber ?? "-"} fechada por ${brl(data.total ?? 0)} via ${data.paymentDetail ?? "pagamento registrado"}.`;
+    }
+    if (log.action === "ORDER_CANCELED") {
+      return `Pedido cancelado. Motivo: ${data.reason ?? "-"}. Estoque ${data.stockRestored ? "reposto" : "nao reposto"}.`;
+    }
+    if (log.action === "TABLE_TRANSFERRED" || log.action === "TABLES_MERGED") {
+      return `Mesa ${old.sourceTableNumber ?? "-"} -> Mesa ${data.targetTableNumber ?? "-"} | ${data.orders?.length ?? 0} pedido(s) | ${brl(data.total ?? 0)}.`;
+    }
+    if (log.action === "TABLE_SESSION_REOPENED") {
+      return `Mesa ${data.tableNumber ?? "-"} reaberta para novos pedidos.`;
+    }
+    return `Registro ${log.entity}${log.entityId ? ` #${log.entityId.slice(0, 8)}` : ""}.`;
   }
 
   function detectTableChanges(nextTables: RestaurantTable[]) {
@@ -545,6 +600,21 @@ export default function PdvPage() {
     }
   }
 
+  async function loadPdvAudit(tableOverride?: RestaurantTable | null) {
+    setLoadingAudit(true);
+    try {
+      const tableForFilter = tableOverride === undefined ? selectedTable : tableOverride;
+      const params = new URLSearchParams();
+      if (auditOnlySelectedTable && tableForFilter?.id) params.set("tableId", tableForFilter.id);
+      const loaded = await request(`/admin/tables/audit${params.toString() ? `?${params.toString()}` : ""}`);
+      setAuditLogs(loaded ?? []);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao carregar auditoria do PDV");
+    } finally {
+      setLoadingAudit(false);
+    }
+  }
+
   async function loadOrders(table: RestaurantTable) {
     setSelectedTable(table);
     setDraftItems([]);
@@ -564,6 +634,7 @@ export default function PdvPage() {
     setTargetTableId("");
     setShowQrPanel(false);
     setShowClosePanel(false);
+    setAuditLogs([]);
     setLoadingOrders(true);
     try {
       const loaded = await request(`/admin/tables/${table.id}/orders`);
@@ -1369,6 +1440,55 @@ export default function PdvPage() {
                   <p className="rounded-2xl bg-slate-50 p-3 text-sm opacity-70">Nenhum atendimento fechado encontrado para esta mesa.</p>
                 )}
               </div>
+            </section>}
+
+            {canAuditPdv && <section className="mt-4 rounded-3xl border bg-white p-4 text-slate-950">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Auditoria</p>
+                  <h3 className="text-lg font-black">Rastro operacional do PDV</h3>
+                  <p className="text-xs opacity-70">Veja quem abriu, cancelou, transferiu, juntou ou fechou comandas.</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold">
+                    <input
+                      type="checkbox"
+                      checked={auditOnlySelectedTable}
+                      onChange={(event) => setAuditOnlySelectedTable(event.target.checked)}
+                    />
+                    Apenas esta mesa
+                  </label>
+                  <button className="rounded-xl border px-3 py-2 text-sm font-bold" onClick={() => setShowAuditPanel((value) => !value)}>
+                    {showAuditPanel ? "Ocultar" : "Ver auditoria"}
+                  </button>
+                  {showAuditPanel && (
+                    <button className="rounded-xl bg-ink px-3 py-2 text-sm font-bold text-white disabled:opacity-60" disabled={loadingAudit} onClick={() => void loadPdvAudit()}>
+                      {loadingAudit ? "Carregando..." : "Atualizar"}
+                    </button>
+                  )}
+                </div>
+              </div>
+              {showAuditPanel && (
+                <div className="mt-3 space-y-2">
+                  {!auditLogs.length && !loadingAudit && (
+                    <p className="rounded-2xl bg-slate-50 p-3 text-sm opacity-70">Nenhum evento de auditoria encontrado.</p>
+                  )}
+                  {auditLogs.map((log) => (
+                    <article key={log.id} className="rounded-2xl border bg-slate-50 p-3">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="font-black">{auditActionLabel(log.action)}</p>
+                          <p className="text-sm opacity-80">{auditDescription(log)}</p>
+                          <p className="mt-1 text-xs opacity-60">
+                            {formatDate(log.createdAt)} | Usuário: {log.userName || log.userId || "Sistema"} {log.ipAddress ? `| IP ${log.ipAddress}` : ""}
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-600">{log.entity}</span>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
             </section>}
 
             {selectedTable.activeSession && (selectedTable.activeSession.status === "PENDING_CONFIRMATION" || showQrPanel) && (

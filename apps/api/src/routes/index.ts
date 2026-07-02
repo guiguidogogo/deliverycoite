@@ -92,6 +92,7 @@ import {
   getFinanceSummary,
   listAuditLogs,
   listCashSessions,
+  listPdvAuditLogs,
   listPayables,
   listReceivables,
   openCashSession,
@@ -295,6 +296,7 @@ route.patch("/admin/tables/:id", requirePermission("SETTINGS"), updateTable);
 route.patch("/admin/tables/:id/status", requireAnyPermission(["SETTINGS", "PDV_MANAGE", "PDV_CLOSE"]), updateTableStatus);
 route.get("/admin/tables/:id/orders", requireAnyPermission(["ORDERS", "PDV_OPEN", "PDV_MANAGE", "PDV_CLOSE"]), listTableOrders);
 route.get("/admin/tables/:id/history", requireAnyPermission(["PDV_HISTORY", "CASH_MANAGE", "FINANCE"]), listClosedTableSessions);
+route.get("/admin/tables/audit", requireAnyPermission(["PDV_HISTORY", "CASH_MANAGE", "FINANCE", "AUDIT_VIEW"]), listPdvAuditLogs);
 route.post("/admin/tables/:id/session", requireAnyPermission(["ORDERS", "PDV_OPEN"]), openTableSession);
 route.post("/admin/tables/:id/session/:sessionId/approve", requireAnyPermission(["ORDERS", "PDV_MANAGE"]), approveTableSession);
 route.post("/admin/tables/:id/session/:sessionId/ack-waiter", requireAnyPermission(["ORDERS", "PDV_OPEN", "PDV_MANAGE"]), acknowledgeWaiterCall);
