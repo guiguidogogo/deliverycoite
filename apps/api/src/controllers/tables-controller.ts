@@ -55,6 +55,14 @@ const closeTableSchema = z.object({
   payments: z.array(z.object({
     method: z.enum(["CASH", "PIX", "DEBIT", "CREDIT", "CARD"]),
     amount: z.coerce.number().positive()
+  })).optional(),
+  billSplit: z.array(z.object({
+    name: z.string().min(1).max(80),
+    subtotal: z.coerce.number().min(0),
+    serviceFee: z.coerce.number().min(0).default(0),
+    discount: z.coerce.number().min(0).default(0),
+    total: z.coerce.number().min(0),
+    items: z.array(z.string().max(180)).default([])
   })).optional()
 });
 
@@ -67,6 +75,14 @@ const tablePrintJobSchema = z.object({
   payments: z.array(z.object({
     method: z.enum(["CASH", "PIX", "DEBIT", "CREDIT", "CARD"]),
     amount: z.coerce.number().positive()
+  })).optional(),
+  billSplit: z.array(z.object({
+    name: z.string().min(1).max(80),
+    subtotal: z.coerce.number().min(0),
+    serviceFee: z.coerce.number().min(0).default(0),
+    discount: z.coerce.number().min(0).default(0),
+    total: z.coerce.number().min(0),
+    items: z.array(z.string().max(180)).default([])
   })).optional(),
   paymentDetail: z.string().max(240).optional()
 });
@@ -125,6 +141,7 @@ function tableReceiptText(params: {
   discount: number;
   total: number;
   payments?: Array<{ method: "CASH" | "PIX" | "DEBIT" | "CREDIT" | "CARD"; amount: number }>;
+  billSplit?: Array<{ name: string; subtotal: number; serviceFee?: number; discount?: number; total: number; items?: string[] }>;
   paymentDetail?: string | null;
   notes?: string | null;
 }) {
@@ -158,6 +175,19 @@ function tableReceiptText(params: {
     ...(params.payments?.length
       ? [separator(width), ...params.payments.map((payment) => `${paymentDetailFromClose(payment.method)}: ${money(payment.amount)}`)]
       : params.paymentDetail ? [separator(width), `Pagamento: ${params.paymentDetail}`] : []),
+    ...(params.billSplit?.length
+      ? [
+          separator(width),
+          "DIVISAO DA CONTA",
+          ...params.billSplit.flatMap((person) => [
+            `${person.name}: ${money(person.total)}`,
+            ...(Number(person.serviceFee ?? 0) > 0 || Number(person.discount ?? 0) > 0
+              ? [`  Subtotal ${money(person.subtotal)} | Taxa ${money(person.serviceFee ?? 0)} | Desc ${money(person.discount ?? 0)}`]
+              : []),
+            ...(person.items ?? []).map((item) => `  - ${item}`)
+          ])
+        ]
+      : []),
     ...(params.notes ? [separator(width), `Obs: ${params.notes}`] : []),
     "",
     "",
@@ -835,6 +865,7 @@ export async function createTablePrintJob(req: Request, res: Response) {
     discount: account.discount,
     total: account.total,
     payments: body.payments,
+    billSplit: body.billSplit,
     paymentDetail: body.paymentDetail,
     notes: body.notes
   });
@@ -1166,6 +1197,7 @@ export async function closeTableAccount(req: Request, res: Response) {
       discount: account.discount,
       total: account.total,
       payments: splitPayments,
+      billSplit: body.billSplit,
       paymentDetail,
       notes: body.notes
     });

@@ -182,6 +182,7 @@ function tableReceiptHtml(params: {
   totals: TableReceiptTotals;
   companyName: string;
   payments?: Array<{ method: ClosePaymentMethod; amount: number }>;
+  billSplit?: Array<{ name: string; subtotal: number; serviceFee: number; discount: number; total: number; items: string[] }>;
   paymentDetail?: string;
   notes?: string;
 }) {
@@ -202,6 +203,13 @@ function tableReceiptHtml(params: {
   const payments = params.payments?.length
     ? params.payments.map((payment) => `<div class="row"><span>${escapeHtml(paymentLabel(payment.method))}</span><span>${brl(payment.amount)}</span></div>`).join("")
     : params.paymentDetail ? `<p><strong>Pagamento:</strong> ${escapeHtml(params.paymentDetail)}</p>` : "";
+  const billSplit = params.billSplit?.length
+    ? params.billSplit.map((person) => `
+      <p><strong>${escapeHtml(person.name)}:</strong> <span class="right">${brl(person.total)}</span></p>
+      <p class="muted">Subtotal ${brl(person.subtotal)} | Taxa ${brl(person.serviceFee)} | Desc ${brl(person.discount)}</p>
+      ${(person.items ?? []).map((item) => `<div class="complement">- ${escapeHtml(item)}</div>`).join("")}
+    `).join("")
+    : "";
 
   return `
     <h1>${escapeHtml(params.companyName || "HubRegional")}</h1>
@@ -218,6 +226,7 @@ function tableReceiptHtml(params: {
     <div class="row"><span>Desconto</span><span>${brl(params.totals.discount)}</span></div>
     <div class="row total"><span>Total</span><span>${brl(params.totals.total)}</span></div>
     ${payments ? `<div class="line"></div>${payments}` : ""}
+    ${billSplit ? `<div class="line"></div><p><strong>DIVISAO DA CONTA</strong></p>${billSplit}` : ""}
     ${params.notes ? `<div class="line"></div><p><strong>Obs:</strong> ${escapeHtml(params.notes)}</p>` : ""}
     <br /><br />
   `;
@@ -770,6 +779,7 @@ export default function PdvPage() {
           serviceFeeEnabled,
           serviceFeePercent,
           payments: splitPayments.length ? splitPayments : undefined,
+          billSplit,
           notes: closeNotes || undefined
         })
       });
@@ -784,6 +794,7 @@ export default function PdvPage() {
           totals: accountTotals,
           companyName: printSettings.companyName,
           payments: receiptPayments,
+          billSplit,
           paymentDetail: result.paymentDetail,
           notes: closeNotes || undefined
         });
@@ -829,6 +840,7 @@ export default function PdvPage() {
           discount,
           serviceFeeEnabled,
           serviceFeePercent,
+          billSplit,
           notes: closeNotes || undefined
         })
       });
@@ -840,6 +852,7 @@ export default function PdvPage() {
         orders: printableOrders,
         totals: { subtotal, serviceFee, discount, total },
         companyName: printSettings.companyName,
+        billSplit,
         notes: closeNotes || undefined
       });
       try {
