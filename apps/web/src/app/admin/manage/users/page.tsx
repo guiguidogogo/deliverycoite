@@ -13,6 +13,10 @@ const permissionOptions = [
   ["REPORTS", "Relatorios"],
   ["FINANCE", "Visualizar financeiro"],
   ["CASH_MANAGE", "Abrir, movimentar e fechar caixa"],
+  ["PDV_OPEN", "PDV: abrir atendimento e lançar pedido"],
+  ["PDV_MANAGE", "PDV: transferir, juntar, reabrir e gerenciar mesa"],
+  ["PDV_CLOSE", "PDV: receber e fechar conta"],
+  ["PDV_HISTORY", "PDV: histórico e reimpressão"],
   ["SETTINGS", "Configuracoes"],
   ["USERS", "Usuarios e perfis"],
   ["STORE_PAUSE", "Pausar e reabrir loja"]

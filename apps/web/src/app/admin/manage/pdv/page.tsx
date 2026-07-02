@@ -318,6 +318,7 @@ export default function PdvPage() {
   const [areaFilter, setAreaFilter] = useState("all");
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [alerts, setAlerts] = useState<PdvAlert[]>([]);
+  const [permissions, setPermissions] = useState<string[]>([]);
   const [targetTableId, setTargetTableId] = useState("");
   const [movingTable, setMovingTable] = useState(false);
   const [showQrPanel, setShowQrPanel] = useState(false);
@@ -422,6 +423,12 @@ export default function PdvPage() {
       || product.complements?.some((link) => link.complement.name.toLowerCase().includes(term))
     );
   }, [draftProductSearch, products]);
+
+  const can = (permission: string) => permissions.includes("*") || permissions.includes(permission);
+  const canOpenPdv = can("PDV_OPEN") || can("ORDERS");
+  const canManagePdv = can("PDV_MANAGE") || can("CASH_MANAGE");
+  const canClosePdv = can("PDV_CLOSE") || can("CASH_MANAGE");
+  const canHistoryPdv = can("PDV_HISTORY") || can("CASH_MANAGE") || can("FINANCE");
 
   const configuringTotal = useMemo(() => {
     if (!configuringProduct) return 0;
@@ -723,6 +730,10 @@ export default function PdvPage() {
 
   async function createTableOrder() {
     if (!selectedTable || !draftItems.length || savingOrder) return;
+    if (!canOpenPdv) {
+      toast.error("Seu perfil nao permite lancar pedidos no PDV.");
+      return;
+    }
     if (!tableCanReceiveOrders) {
       toast.error("Abra o atendimento da mesa antes de enviar pedidos.");
       return;
@@ -773,6 +784,10 @@ export default function PdvPage() {
 
   async function closeTableAccount() {
     if (!selectedTable || closingTable) return;
+    if (!canClosePdv) {
+      toast.error("Seu perfil nao permite receber e fechar conta.");
+      return;
+    }
     if (!orders.length) {
       toast.error("Nao ha pedidos para fechar nesta mesa");
       return;
@@ -878,6 +893,15 @@ export default function PdvPage() {
       } catch {
         toast.error(error instanceof Error ? error.message : "Falha ao imprimir pre-conta");
       }
+    }
+  }
+
+  async function loadMe() {
+    try {
+      const me = await request("/admin/me");
+      setPermissions(me?.permissions ?? []);
+    } catch {
+      setPermissions([]);
     }
   }
 
@@ -1025,6 +1049,10 @@ export default function PdvPage() {
 
   async function moveSelectedTable(mode: "TRANSFER" | "MERGE") {
     if (!selectedTable || !targetTableId || movingTable) return;
+    if (!canManagePdv) {
+      toast.error("Seu perfil nao permite transferir ou juntar mesas.");
+      return;
+    }
     const target = tables.find((table) => table.id === targetTableId);
     const confirmed = window.confirm(
       mode === "TRANSFER"
@@ -1078,6 +1106,7 @@ export default function PdvPage() {
   }
 
   useEffect(() => {
+    void loadMe();
     void loadTables();
     void loadProducts();
     void loadPrintSettings();
@@ -1239,17 +1268,17 @@ export default function PdvPage() {
             )}
 
             <div className="mt-4 flex flex-wrap gap-2">
-              {selectedTable.activeSession?.status === "PENDING_CONFIRMATION" && (
+              {canManagePdv && selectedTable.activeSession?.status === "PENDING_CONFIRMATION" && (
                 <button className="rounded-xl bg-blue-700 px-3 py-2 text-sm font-bold text-white" onClick={() => void approveSession(selectedTable)}>
                   Confirmar abertura
                 </button>
               )}
-              {selectedTable.activeSession?.status === "CLOSING_REQUESTED" && (
+              {canManagePdv && selectedTable.activeSession?.status === "CLOSING_REQUESTED" && (
                 <button className="rounded-xl bg-blue-700 px-3 py-2 text-sm font-bold text-white" onClick={() => void reopenSession(selectedTable)}>
                   Reabrir conta
                 </button>
               )}
-              {!selectedTable.activeSession && (
+              {canOpenPdv && !selectedTable.activeSession && (
                 <button className="rounded-xl bg-emerald-700 px-3 py-2 text-sm font-bold text-white disabled:opacity-60" disabled={openingSession} onClick={() => void openSession(selectedTable)}>
                   {openingSession ? "Abrindo..." : "Abrir atendimento"}
                 </button>
@@ -1264,15 +1293,15 @@ export default function PdvPage() {
                   Enviar cardapio
                 </button>
               )}
-              <button className="rounded-xl bg-orange-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void updateStatus(selectedTable, "OCCUPIED")}>Marcar ocupada</button>
-              {selectedTable.activeSession?.status !== "CLOSING_REQUESTED" && (
+              {canManagePdv && <button className="rounded-xl bg-orange-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void updateStatus(selectedTable, "OCCUPIED")}>Marcar ocupada</button>}
+              {canManagePdv && selectedTable.activeSession?.status !== "CLOSING_REQUESTED" && (
                 <button className="rounded-xl bg-red-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void updateStatus(selectedTable, "WAITING_PAYMENT")}>Solicitou conta</button>
               )}
               <button className="rounded-xl border px-3 py-2 text-sm font-bold" onClick={() => void printTableAccount()}>Imprimir pré-conta</button>
               <button className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void updateStatus(selectedTable, "FREE")}>Liberar mesa</button>
             </div>
 
-            {selectedTable.activeSession && (
+            {canManagePdv && selectedTable.activeSession && (
               <section className="mt-4 rounded-3xl border bg-slate-50 p-4 text-slate-950">
                 <div className="flex flex-wrap items-end gap-2">
                   <label className="min-w-64 flex-1">
@@ -1302,7 +1331,7 @@ export default function PdvPage() {
               </section>
             )}
 
-            <section className="mt-4 rounded-3xl border bg-white p-4 text-slate-950">
+            {canHistoryPdv && <section className="mt-4 rounded-3xl border bg-white p-4 text-slate-950">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Historico</p>
@@ -1340,7 +1369,7 @@ export default function PdvPage() {
                   <p className="rounded-2xl bg-slate-50 p-3 text-sm opacity-70">Nenhum atendimento fechado encontrado para esta mesa.</p>
                 )}
               </div>
-            </section>
+            </section>}
 
             {selectedTable.activeSession && (selectedTable.activeSession.status === "PENDING_CONFIRMATION" || showQrPanel) && (
               <section className="mt-4 rounded-3xl border bg-white p-4 text-slate-950">
@@ -1377,7 +1406,7 @@ export default function PdvPage() {
               </section>
             )}
 
-            <section className="mt-5 rounded-3xl border bg-emerald-50 p-4 text-slate-950">
+            {canClosePdv && <section className="mt-5 rounded-3xl border bg-emerald-50 p-4 text-slate-950">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-700">Fechamento</p>
@@ -1549,9 +1578,9 @@ export default function PdvPage() {
               </div>
                           </>
               )}
-</section>
+</section>}
 
-            <section className="mt-5 rounded-3xl border bg-orange-50 p-4 text-slate-950">
+            {canOpenPdv && <section className="mt-5 rounded-3xl border bg-orange-50 p-4 text-slate-950">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.18em] text-ember">Garçom / PDV</p>
@@ -1621,7 +1650,7 @@ export default function PdvPage() {
                   </button>
                 </div>
               )}
-            </section>
+            </section>}
 
             <div className="mt-5 space-y-3">
               {loadingOrders ? (
