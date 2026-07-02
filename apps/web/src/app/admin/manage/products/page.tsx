@@ -19,6 +19,9 @@ type Product = {
   categoryId: string;
   active: boolean;
   available: boolean;
+  trackStock: boolean;
+  stockQuantity: number;
+  lowStockAlert?: number | null;
   complements: Array<LinkConfig & { complement: Complement }>;
 };
 
@@ -30,7 +33,10 @@ const emptyForm = {
   categoryId: "",
   imageUrl: "",
   active: true,
-  available: true
+  available: true,
+  trackStock: false,
+  stockQuantity: "",
+  lowStockAlert: ""
 };
 
 async function responseJson(res: Response) {
@@ -67,7 +73,9 @@ export default function ProductsManagePage() {
     setProducts(productData.map((item: any) => ({
       ...item,
       price: Number(item.price),
-      promoPrice: item.promoPrice ? Number(item.promoPrice) : null
+      promoPrice: item.promoPrice ? Number(item.promoPrice) : null,
+      stockQuantity: Number(item.stockQuantity ?? 0),
+      lowStockAlert: item.lowStockAlert !== null && item.lowStockAlert !== undefined ? Number(item.lowStockAlert) : null
     })));
     setCategories(categoryData);
     setComplements(complementData.map((item: any) => ({ ...item, price: Number(item.price) })));
@@ -94,7 +102,10 @@ export default function ProductsManagePage() {
       categoryId: product.categoryId,
       imageUrl: product.imageUrl ?? "",
       active: product.active,
-      available: product.available
+      available: product.available,
+      trackStock: product.trackStock,
+      stockQuantity: String(product.stockQuantity ?? 0),
+      lowStockAlert: product.lowStockAlert !== null && product.lowStockAlert !== undefined ? String(product.lowStockAlert) : ""
     });
     setLinks(product.complements.map((link, index) => ({
       complementId: link.complementId,
@@ -153,6 +164,8 @@ export default function ProductsManagePage() {
             ...form,
             price: Number(form.price),
             promoPrice: form.promoPrice ? Number(form.promoPrice) : null,
+            stockQuantity: Number(form.stockQuantity || 0),
+            lowStockAlert: form.lowStockAlert ? Number(form.lowStockAlert) : null,
             imageUrl,
             complementLinks: links
           })
@@ -243,6 +256,13 @@ export default function ProductsManagePage() {
           <input className="rounded-xl border px-3 py-2 md:col-span-2" type="file" accept="image/*" onChange={(e) => setImageFile(e.target.files?.[0] ?? null)} />
           <label className="flex items-center gap-2 rounded-xl border px-3 py-2"><input type="checkbox" checked={form.active} onChange={(e) => setForm((v) => ({ ...v, active: e.target.checked }))} /> Ativo</label>
           <label className="flex items-center gap-2 rounded-xl border px-3 py-2"><input type="checkbox" checked={form.available} onChange={(e) => setForm((v) => ({ ...v, available: e.target.checked }))} /> Disponível</label>
+          <label className="flex items-center gap-2 rounded-xl border px-3 py-2 md:col-span-2"><input type="checkbox" checked={form.trackStock} onChange={(e) => setForm((v) => ({ ...v, trackStock: e.target.checked }))} /> Controlar estoque deste produto</label>
+          {form.trackStock && (
+            <>
+              <input className="rounded-xl border px-3 py-2 dark:bg-slate-900" type="number" min="0" step="0.001" placeholder="Quantidade em estoque" value={form.stockQuantity} onChange={(e) => setForm((v) => ({ ...v, stockQuantity: e.target.value }))} />
+              <input className="rounded-xl border px-3 py-2 dark:bg-slate-900" type="number" min="0" step="0.001" placeholder="Alerta estoque baixo (opcional)" value={form.lowStockAlert} onChange={(e) => setForm((v) => ({ ...v, lowStockAlert: e.target.value }))} />
+            </>
+          )}
         </div>
 
         <div className="mt-4">
@@ -285,6 +305,17 @@ export default function ProductsManagePage() {
             <div className="min-w-0 flex-1">
               <p className="font-semibold">{product.name}</p>
               <p className="text-sm opacity-70">R$ {product.price.toFixed(2)}</p>
+              {product.trackStock && (
+                <p className={`text-xs font-bold ${
+                  product.lowStockAlert !== null &&
+                  product.lowStockAlert !== undefined &&
+                  product.stockQuantity <= product.lowStockAlert
+                    ? "text-red-600"
+                    : "text-emerald-700"
+                }`}>
+                  Estoque: {product.stockQuantity}
+                </p>
+              )}
               <p className="text-xs opacity-60">{product.complements.length} complemento(s)</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 <button className="rounded-lg border px-2 py-1 text-xs" onClick={() => edit(product)}>Editar</button>

@@ -13,7 +13,10 @@ const complementSchema = z.object({
     z.coerce.number({ invalid_type_error: "Informe um preco valido" }).min(0, "O preco nao pode ser negativo")
   ),
   imageUrl: optionalImageUrl("Informe uma URL de imagem valida"),
-  active: z.boolean().optional()
+  active: z.boolean().optional(),
+  trackStock: z.boolean().optional(),
+  stockQuantity: z.coerce.number().min(0).optional(),
+  lowStockAlert: z.coerce.number().min(0).optional().nullable()
 });
 
 export async function listComplements(req: Request, res: Response) {
@@ -32,7 +35,10 @@ export async function createComplement(req: Request, res: Response) {
       ...body,
       companyId: getCompanyId(req),
       imageUrl: body.imageUrl || null,
-      price: new Prisma.Decimal(body.price)
+      price: new Prisma.Decimal(body.price),
+      trackStock: body.trackStock ?? false,
+      stockQuantity: new Prisma.Decimal(body.stockQuantity ?? 0),
+      lowStockAlert: body.lowStockAlert !== undefined && body.lowStockAlert !== null ? new Prisma.Decimal(body.lowStockAlert) : null
     }
   });
 
@@ -48,7 +54,9 @@ export async function updateComplement(req: Request, res: Response) {
     data: {
       ...body,
       ...(body.price !== undefined ? { price: new Prisma.Decimal(body.price) } : {}),
-      ...(body.imageUrl !== undefined ? { imageUrl: body.imageUrl || null } : {})
+      ...(body.imageUrl !== undefined ? { imageUrl: body.imageUrl || null } : {}),
+      ...(body.stockQuantity !== undefined ? { stockQuantity: new Prisma.Decimal(body.stockQuantity) } : {}),
+      ...(body.lowStockAlert !== undefined ? { lowStockAlert: body.lowStockAlert !== null ? new Prisma.Decimal(body.lowStockAlert) : null } : {})
     }
   });
 

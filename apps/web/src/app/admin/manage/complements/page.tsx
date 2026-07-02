@@ -13,6 +13,9 @@ type Complement = {
   price: number;
   imageUrl?: string | null;
   active: boolean;
+  trackStock: boolean;
+  stockQuantity: number;
+  lowStockAlert?: number | null;
 };
 
 const emptyForm = {
@@ -20,7 +23,10 @@ const emptyForm = {
   description: "",
   price: "0",
   imageUrl: "",
-  active: true
+  active: true,
+  trackStock: false,
+  stockQuantity: "",
+  lowStockAlert: ""
 };
 
 async function responseJson(res: Response) {
@@ -51,7 +57,12 @@ export default function ComplementsManagePage() {
       cache: "no-store"
     });
     const data = await responseJson(res);
-    setItems(data.map((item: any) => ({ ...item, price: Number(item.price) })));
+    setItems(data.map((item: any) => ({
+      ...item,
+      price: Number(item.price),
+      stockQuantity: Number(item.stockQuantity ?? 0),
+      lowStockAlert: item.lowStockAlert !== null && item.lowStockAlert !== undefined ? Number(item.lowStockAlert) : null
+    })));
   }
 
   useEffect(() => {
@@ -65,7 +76,10 @@ export default function ComplementsManagePage() {
       description: item.description,
       price: String(item.price),
       imageUrl: item.imageUrl ?? "",
-      active: item.active
+      active: item.active,
+      trackStock: item.trackStock,
+      stockQuantity: String(item.stockQuantity ?? 0),
+      lowStockAlert: item.lowStockAlert !== null && item.lowStockAlert !== undefined ? String(item.lowStockAlert) : ""
     });
     setImageFile(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -118,6 +132,8 @@ export default function ComplementsManagePage() {
             name,
             description,
             price,
+            stockQuantity: Number(form.stockQuantity || 0),
+            lowStockAlert: form.lowStockAlert ? Number(form.lowStockAlert) : null,
             imageUrl
           })
         }
@@ -169,6 +185,16 @@ export default function ComplementsManagePage() {
             <input type="checkbox" checked={form.active} onChange={(e) => setForm((v) => ({ ...v, active: e.target.checked }))} />
             Ativo
           </label>
+          <label className="flex items-center gap-2 rounded-xl border px-3 py-2">
+            <input type="checkbox" checked={form.trackStock} onChange={(e) => setForm((v) => ({ ...v, trackStock: e.target.checked }))} />
+            Controlar estoque
+          </label>
+          {form.trackStock && (
+            <>
+              <input className="rounded-xl border px-3 py-2 dark:bg-slate-900" type="number" min="0" step="0.001" placeholder="Quantidade em estoque" value={form.stockQuantity} onChange={(e) => setForm((v) => ({ ...v, stockQuantity: e.target.value }))} />
+              <input className="rounded-xl border px-3 py-2 dark:bg-slate-900" type="number" min="0" step="0.001" placeholder="Alerta estoque baixo (opcional)" value={form.lowStockAlert} onChange={(e) => setForm((v) => ({ ...v, lowStockAlert: e.target.value }))} />
+            </>
+          )}
           <div className="flex gap-2">
             <button className="flex-1 rounded-xl bg-ember px-3 py-2 text-white disabled:opacity-60" disabled={saving} onClick={() => void save()}>
               {saving ? "Salvando..." : editingId ? "Atualizar" : "Criar"}
@@ -191,6 +217,17 @@ export default function ComplementsManagePage() {
               </div>
               <p className="text-sm opacity-70">{item.description}</p>
               <p className="font-semibold text-ember">+ R$ {item.price.toFixed(2)}</p>
+              {item.trackStock && (
+                <p className={`text-xs font-bold ${
+                  item.lowStockAlert !== null &&
+                  item.lowStockAlert !== undefined &&
+                  item.stockQuantity <= item.lowStockAlert
+                    ? "text-red-600"
+                    : "text-emerald-700"
+                }`}>
+                  Estoque: {item.stockQuantity}
+                </p>
+              )}
               <div className="mt-2 flex gap-2">
                 <button className="rounded-lg border px-2 py-1 text-xs" onClick={() => edit(item)}>Editar</button>
                 <button className="rounded-lg bg-red-600 px-2 py-1 text-xs text-white" onClick={() => void remove(item)}>Apagar</button>

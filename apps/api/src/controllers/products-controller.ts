@@ -15,6 +15,9 @@ const schema = z.object({
   categoryId: z.string().min(1),
   active: z.boolean().optional(),
   available: z.boolean().optional(),
+  trackStock: z.boolean().optional(),
+  stockQuantity: z.coerce.number().min(0).optional(),
+  lowStockAlert: z.coerce.number().min(0).optional().nullable(),
   complementLinks: z.array(z.object({
     complementId: z.string().min(1),
     required: z.boolean().default(false),
@@ -79,6 +82,9 @@ export async function createProduct(req: Request, res: Response) {
       imageUrl: productData.imageUrl || null,
       price: new Prisma.Decimal(body.price),
       promoPrice: body.promoPrice ? new Prisma.Decimal(body.promoPrice) : undefined,
+      trackStock: body.trackStock ?? false,
+      stockQuantity: new Prisma.Decimal(body.stockQuantity ?? 0),
+      lowStockAlert: body.lowStockAlert !== undefined && body.lowStockAlert !== null ? new Prisma.Decimal(body.lowStockAlert) : null,
       complements: complementLinks?.length ? {
         create: complementLinks.map((link) => ({ ...link, companyId: getCompanyId(req) }))
       } : undefined
@@ -128,6 +134,9 @@ export async function updateProduct(req: Request, res: Response) {
         ...(body.promoPrice !== undefined
           ? { promoPrice: body.promoPrice ? new Prisma.Decimal(body.promoPrice) : null }
           : {}),
+        ...(body.trackStock !== undefined ? { trackStock: body.trackStock } : {}),
+        ...(body.stockQuantity !== undefined ? { stockQuantity: new Prisma.Decimal(body.stockQuantity) } : {}),
+        ...(body.lowStockAlert !== undefined ? { lowStockAlert: body.lowStockAlert !== null ? new Prisma.Decimal(body.lowStockAlert) : null } : {}),
         ...(complementLinks?.length
           ? {
               complements: {

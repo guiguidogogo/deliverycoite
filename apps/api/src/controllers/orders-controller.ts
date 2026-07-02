@@ -12,6 +12,7 @@ import { calculateDeliveryFee } from "../utils/delivery-fee.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
 import { audit } from "../utils/audit.js";
 import { linkCustomerToCompany, normalizeEmail, normalizePhone, recordCompanyCustomerPurchase } from "../utils/customer-linking.js";
+import { validateAndDecrementStock } from "../utils/stock.js";
 
 function shouldSendStatusWhatsapp(
   settings: Awaited<ReturnType<typeof prisma.setting.findFirstOrThrow>>,
@@ -438,50 +439,58 @@ export async function createOrder(req: Request, res: Response) {
   const totalNumber = subtotalNumber + Number(deliveryFee) - Number(discount);
   const total = toDecimal(totalNumber);
 
-  const order = await prisma.order.create({
-    data: {
-      companyId,
-      customerId: customer.id,
-      source: body.source,
-      tableId: table?.id ?? null,
-      tableSessionId: tableSession?.id ?? null,
-      waiterId: body.source === OrderSource.WAITER ? req.user?.sub ?? null : null,
-      paymentMethod: body.paymentMethod,
-      fulfillmentType: tableOrder ? FulfillmentType.PICKUP : body.fulfillmentType,
-      changeFor: body.changeFor ? toDecimal(body.changeFor) : null,
-      subtotal,
-      deliveryFee,
-      deliveryLatitude: pickup || tableOrder ? null : body.customer.latitude,
-      deliveryLongitude: pickup || tableOrder ? null : body.customer.longitude,
-      deliveryDistanceKm: pickup || tableOrder ? null : deliveryQuote.distanceKm,
-      discount,
-      total,
-      couponCode: normalizedCouponCode,
-      customerNotes: body.notes,
-      items: {
-        create: preparedItems.map((item) => ({
-          companyId,
-          productId: item.productId,
-          quantity: item.quantity,
-          price: toDecimal(item.basePrice),
-          total: toDecimal(item.total),
-          complements: {
-            create: item.selectedComplements.map((complement) => ({
-              companyId,
-              complementId: complement.id,
-              name: complement.name,
-              quantity: complement.quantity,
-              price: toDecimal(complement.price),
-              total: toDecimal(complement.total)
-            }))
-          }
-        }))
+  const order = await prisma.$transaction(async (tx) => {
+    await validateAndDecrementStock(tx, companyId, preparedItems.map((item) => ({
+      productId: item.productId,
+      quantity: item.quantity,
+      complements: item.selectedComplements.map((complement) => ({ complementId: complement.id, quantity: complement.quantity }))
+    })));
+
+    return tx.order.create({
+      data: {
+        companyId,
+        customerId: customer.id,
+        source: body.source,
+        tableId: table?.id ?? null,
+        tableSessionId: tableSession?.id ?? null,
+        waiterId: body.source === OrderSource.WAITER ? req.user?.sub ?? null : null,
+        paymentMethod: body.paymentMethod,
+        fulfillmentType: tableOrder ? FulfillmentType.PICKUP : body.fulfillmentType,
+        changeFor: body.changeFor ? toDecimal(body.changeFor) : null,
+        subtotal,
+        deliveryFee,
+        deliveryLatitude: pickup || tableOrder ? null : body.customer.latitude,
+        deliveryLongitude: pickup || tableOrder ? null : body.customer.longitude,
+        deliveryDistanceKm: pickup || tableOrder ? null : deliveryQuote.distanceKm,
+        discount,
+        total,
+        couponCode: normalizedCouponCode,
+        customerNotes: body.notes,
+        items: {
+          create: preparedItems.map((item) => ({
+            companyId,
+            productId: item.productId,
+            quantity: item.quantity,
+            price: toDecimal(item.basePrice),
+            total: toDecimal(item.total),
+            complements: {
+              create: item.selectedComplements.map((complement) => ({
+                companyId,
+                complementId: complement.id,
+                name: complement.name,
+                quantity: complement.quantity,
+                price: toDecimal(complement.price),
+                total: toDecimal(complement.total)
+              }))
+            }
+          }))
+        }
+      },
+      include: {
+        customer: true,
+        items: { include: { product: true, complements: true } }
       }
-    },
-    include: {
-      customer: true,
-      items: { include: { product: true, complements: true } }
-    }
+    });
   });
 
   if (table) {

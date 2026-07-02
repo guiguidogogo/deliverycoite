@@ -5,6 +5,7 @@ import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
 import { recordCashPayments } from "../utils/cash-register.js";
+import { validateAndDecrementStock } from "../utils/stock.js";
 import { audit } from "../utils/audit.js";
 
 const areaSchema = z.object({
@@ -834,46 +835,54 @@ export async function createTableOrder(req: Request, res: Response) {
     }
   });
 
-  const order = await prisma.order.create({
-    data: {
-      companyId,
-      customerId: customer.id,
-      source: OrderSource.WAITER,
-      tableId: table.id,
-      tableSessionId: activeSession?.id ?? null,
-      waiterId: req.user?.sub ?? null,
-      paymentMethod: body.paymentMethod,
-      fulfillmentType: FulfillmentType.PICKUP,
-      subtotal: toDecimal(subtotalNumber),
-      deliveryFee: toDecimal(0),
-      discount: toDecimal(0),
-      total: toDecimal(subtotalNumber),
-      customerNotes: body.notes,
-      items: {
-        create: preparedItems.map((item) => ({
-          companyId,
-          productId: item.productId,
-          quantity: item.quantity,
-          price: toDecimal(item.basePrice),
-          total: toDecimal(item.total),
-          complements: {
-            create: item.selectedComplements.map((complement) => ({
-              companyId,
-              complementId: complement.id,
-              name: complement.name,
-              quantity: complement.quantity,
-              price: toDecimal(complement.price),
-              total: toDecimal(complement.total)
-            }))
-          }
-        }))
+  const order = await prisma.$transaction(async (tx) => {
+    await validateAndDecrementStock(tx, companyId, preparedItems.map((item) => ({
+      productId: item.productId,
+      quantity: item.quantity,
+      complements: item.selectedComplements.map((complement) => ({ complementId: complement.id, quantity: complement.quantity }))
+    })));
+
+    return tx.order.create({
+      data: {
+        companyId,
+        customerId: customer.id,
+        source: OrderSource.WAITER,
+        tableId: table.id,
+        tableSessionId: activeSession?.id ?? null,
+        waiterId: req.user?.sub ?? null,
+        paymentMethod: body.paymentMethod,
+        fulfillmentType: FulfillmentType.PICKUP,
+        subtotal: toDecimal(subtotalNumber),
+        deliveryFee: toDecimal(0),
+        discount: toDecimal(0),
+        total: toDecimal(subtotalNumber),
+        customerNotes: body.notes,
+        items: {
+          create: preparedItems.map((item) => ({
+            companyId,
+            productId: item.productId,
+            quantity: item.quantity,
+            price: toDecimal(item.basePrice),
+            total: toDecimal(item.total),
+            complements: {
+              create: item.selectedComplements.map((complement) => ({
+                companyId,
+                complementId: complement.id,
+                name: complement.name,
+                quantity: complement.quantity,
+                price: toDecimal(complement.price),
+                total: toDecimal(complement.total)
+              }))
+            }
+          }))
+        }
+      },
+      include: {
+        customer: true,
+        waiter: { select: { id: true, name: true } },
+        items: { include: { product: { select: { id: true, name: true } }, complements: true } }
       }
-    },
-    include: {
-      customer: true,
-      waiter: { select: { id: true, name: true } },
-      items: { include: { product: { select: { id: true, name: true } }, complements: true } }
-    }
+    });
   });
 
   await prisma.restaurantTable.update({
