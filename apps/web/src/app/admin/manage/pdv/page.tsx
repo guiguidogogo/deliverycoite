@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { apiFetch } from "../../../../lib/api";
+import { printHtmlWithAgent } from "../../../../lib/qz-print";
 
 type TableStatus = "FREE" | "OCCUPIED" | "WAITING_PAYMENT" | "RESERVED" | "CLEANING";
 
@@ -103,6 +104,20 @@ type PdvAlert = {
   sessionId?: string;
 };
 
+type PdvPrintSettings = {
+  companyName: string;
+  printerEnabled: boolean;
+  printerName: string;
+  paperWidth: 58 | 80;
+};
+
+type TableReceiptTotals = {
+  subtotal: number;
+  serviceFee: number;
+  discount: number;
+  total: number;
+};
+
 function qrImage(url: string) {
   return `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(url)}`;
 }
@@ -140,6 +155,113 @@ function formatDate(value: string) {
   return new Date(value).toLocaleString("pt-BR");
 }
 
+function escapeHtml(value: unknown) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function paymentLabel(method: ClosePaymentMethod) {
+  const labels: Record<ClosePaymentMethod, string> = {
+    CASH: "Dinheiro",
+    PIX: "Pix",
+    DEBIT: "Cartao debito",
+    CREDIT: "Cartao credito",
+    CARD: "Cartao"
+  };
+  return labels[method];
+}
+
+function tableReceiptHtml(params: {
+  type: "PRE_BILL" | "RECEIPT";
+  table: RestaurantTable;
+  orders: TableOrder[];
+  totals: TableReceiptTotals;
+  companyName: string;
+  payments?: Array<{ method: ClosePaymentMethod; amount: number }>;
+  paymentDetail?: string;
+  notes?: string;
+}) {
+  const title = params.type === "PRE_BILL" ? "PRE-CONTA" : "RECIBO DE PAGAMENTO";
+  const items = params.orders.map((order) => `
+    <div class="line"></div>
+    <p><strong>Pedido #${String(order.orderNumber).padStart(5, "0")}</strong> <span class="right">${brl(order.total)}</span></p>
+    <p class="muted">${escapeHtml(formatDate(order.createdAt))}${order.waiter?.name ? ` - Garcom: ${escapeHtml(order.waiter.name)}` : ""}</p>
+    ${order.items.map((item) => `
+      <div class="item">
+        <div class="row"><strong>${item.quantity}x ${escapeHtml(item.product.name)}</strong><span>${brl(item.total)}</span></div>
+        ${item.complements.map((complement) => `
+          <div class="complement">+ ${complement.quantity}x ${escapeHtml(complement.name)} ${Number(complement.total) > 0 ? brl(complement.total) : ""}</div>
+        `).join("")}
+      </div>
+    `).join("")}
+  `).join("");
+  const payments = params.payments?.length
+    ? params.payments.map((payment) => `<div class="row"><span>${escapeHtml(paymentLabel(payment.method))}</span><span>${brl(payment.amount)}</span></div>`).join("")
+    : params.paymentDetail ? `<p><strong>Pagamento:</strong> ${escapeHtml(params.paymentDetail)}</p>` : "";
+
+  return `
+    <h1>${escapeHtml(params.companyName || "HubRegional")}</h1>
+    <h2>${title}</h2>
+    <p class="center">Mesa ${params.table.number}${params.table.area?.name ? ` - ${escapeHtml(params.table.area.name)}` : ""}</p>
+    <p class="center muted">${escapeHtml(new Date().toLocaleString("pt-BR"))}</p>
+    ${params.type === "PRE_BILL" ? `<p class="center warn">NAO E COMPROVANTE DE PAGAMENTO</p>` : `<p class="center paid">PAGAMENTO REGISTRADO</p>`}
+    ${params.table.activeSession?.customerName ? `<p><strong>Cliente:</strong> ${escapeHtml(params.table.activeSession.customerName)}</p>` : ""}
+    ${params.table.activeSession?.customerPhone ? `<p><strong>Telefone:</strong> ${escapeHtml(params.table.activeSession.customerPhone)}</p>` : ""}
+    ${items}
+    <div class="line"></div>
+    <div class="row"><span>Subtotal</span><span>${brl(params.totals.subtotal)}</span></div>
+    <div class="row"><span>Taxa de servico</span><span>${brl(params.totals.serviceFee)}</span></div>
+    <div class="row"><span>Desconto</span><span>${brl(params.totals.discount)}</span></div>
+    <div class="row total"><span>Total</span><span>${brl(params.totals.total)}</span></div>
+    ${payments ? `<div class="line"></div>${payments}` : ""}
+    ${params.notes ? `<div class="line"></div><p><strong>Obs:</strong> ${escapeHtml(params.notes)}</p>` : ""}
+    <br /><br />
+  `;
+}
+
+function printWindowHtml(content: string, paperWidth: 58 | 80) {
+  const popup = window.open("", "_blank", "width=480,height=720");
+  if (!popup) throw new Error("O navegador bloqueou a janela de impressao. Permita pop-ups para este site.");
+  popup.document.open();
+  popup.document.write(`<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Impressao PDV</title>
+  <style>
+    @page { size: ${paperWidth}mm auto; margin: 3mm; }
+    * { box-sizing: border-box; }
+    body { width: ${paperWidth - 6}mm; margin: 0; color: #000; background: #fff; font: 12px/1.35 "Courier New", monospace; }
+    h1, h2, p { margin: 0 0 5px; }
+    h1 { font-size: 16px; text-align: center; }
+    h2 { font-size: 14px; text-align: center; }
+    .center { text-align: center; }
+    .muted { color: #555; font-size: 11px; }
+    .warn { border: 1px solid #000; padding: 3px; font-weight: 700; }
+    .paid { font-weight: 700; }
+    .line { border-top: 1px dashed #000; margin: 7px 0; }
+    .row { display: flex; justify-content: space-between; gap: 8px; }
+    .right { float: right; }
+    .item { margin: 5px 0; }
+    .complement { padding-left: 8px; font-size: 11px; }
+    .total { font-size: 15px; font-weight: 700; }
+    .no-print { margin: 14px 0; text-align: center; }
+    button { padding: 8px 14px; }
+    @media print { .no-print { display: none; } }
+  </style>
+</head>
+<body>${content}
+  <div class="no-print"><button onclick="window.print()">Escolher impressora</button></div>
+  <script>window.addEventListener("load", function () { setTimeout(function () { window.print(); }, 250); });</script>
+</body>
+</html>`);
+  popup.document.close();
+}
+
 export default function PdvPage() {
   const [tables, setTables] = useState<RestaurantTable[]>([]);
   const [selectedTable, setSelectedTable] = useState<RestaurantTable | null>(null);
@@ -168,6 +290,12 @@ export default function PdvPage() {
   const [areaFilter, setAreaFilter] = useState("all");
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [alerts, setAlerts] = useState<PdvAlert[]>([]);
+  const [printSettings, setPrintSettings] = useState<PdvPrintSettings>({
+    companyName: "HubRegional",
+    printerEnabled: false,
+    printerName: "",
+    paperWidth: 58
+  });
   const previousTablesRef = useRef<Map<string, { status: TableStatus; orders: number; waiterCalledAt: string | null }>>(new Map());
   const soundEnabledRef = useRef(false);
 
@@ -381,6 +509,22 @@ export default function PdvPage() {
     }
   }
 
+  async function loadPrintSettings() {
+    try {
+      const settings = await request("/admin/settings");
+      setPrintSettings({
+        companyName: settings?.companyName || "HubRegional",
+        printerEnabled: Boolean(settings?.printerEnabled),
+        printerName: settings?.printerName ?? "",
+        paperWidth: settings?.printerPaperWidth === 80 ? 80 : 58
+      });
+      setServiceFeeEnabled(Boolean(settings?.tableServiceFeeEnabled));
+      setServiceFeePercent(Number(settings?.tableServiceFeePercent ?? 10));
+    } catch {
+      // As configuracoes de impressao nao podem bloquear o uso do PDV.
+    }
+  }
+
   async function approveSession(table: RestaurantTable) {
     if (!table.activeSession) return;
     try {
@@ -400,7 +544,10 @@ export default function PdvPage() {
   }
 
   async function acknowledgeAlert(alert: PdvAlert) {
-    setAlerts((current) => current.filter((item) => item.id !== alert.id));
+    setAlerts((current) => current.filter((item) => {
+      if (alert.kind === "WAITER" && item.kind === "WAITER" && item.tableId === alert.tableId) return false;
+      return item.id !== alert.id;
+    }));
     if (alert.kind !== "WAITER" || !alert.tableId || !alert.sessionId) return;
 
     try {
@@ -521,6 +668,19 @@ export default function PdvPage() {
     }
   }
 
+  async function printPdvDocument(content: string, successMessage: string) {
+    if (printSettings.printerEnabled && printSettings.printerName) {
+      try {
+        await printHtmlWithAgent(printSettings.printerName, content, printSettings.paperWidth);
+        toast.success(successMessage);
+        return;
+      } catch {
+        toast.warning("Agente de impressao indisponivel. Abrindo impressao manual.");
+      }
+    }
+    printWindowHtml(content, printSettings.paperWidth);
+  }
+
   async function closeTableAccount() {
     if (!selectedTable || closingTable) return;
     if (!orders.length) {
@@ -535,6 +695,11 @@ export default function PdvPage() {
     if (!confirmed) return;
     setClosingTable(true);
     try {
+      const receiptOrders = orders;
+      const receiptTotals = accountTotals;
+      const receiptPayments = splitPayments.length
+        ? splitPayments
+        : [{ method: closePaymentMethod, amount: accountTotals.total }];
       const result = await request(`/admin/tables/${selectedTable.id}/close`, {
         method: "POST",
         body: JSON.stringify({
@@ -548,6 +713,17 @@ export default function PdvPage() {
         })
       });
       toast.success(`Mesa fechada: ${brl(result.total)} em ${result.paymentDetail}`);
+      const receiptHtml = tableReceiptHtml({
+        type: "RECEIPT",
+        table: selectedTable,
+        orders: receiptOrders,
+        totals: receiptTotals,
+        companyName: printSettings.companyName,
+        payments: receiptPayments,
+        paymentDetail: result.paymentDetail,
+        notes: closeNotes || undefined
+      });
+      await printPdvDocument(receiptHtml, "Recibo enviado para impressao");
       setOrders([]);
       setSelectedTable((current) => current ? { ...current, status: "FREE", _count: { orders: 0 } } : current);
       await loadTables();
@@ -580,50 +756,20 @@ export default function PdvPage() {
     const serviceFee = serviceFeeEnabled ? subtotal * (serviceFeePercent / 100) : 0;
     const discount = Math.min(Math.max(closeDiscount || 0, 0), subtotal + serviceFee);
     const total = Math.max(0, subtotal + serviceFee - discount);
-    const rows = printableOrders.map((order) => `
-      <div style="border-top:1px dashed #999;padding:8px 0">
-        <strong>Pedido #${String(order.orderNumber).padStart(5, "0")}</strong> - ${brl(order.total)}
-        ${order.items.map((item) => `<div>${item.quantity}x ${item.product.name} - ${brl(item.total)}${item.complements.map((c) => `<br/><small>+ ${c.quantity}x ${c.name}</small>`).join("")}</div>`).join("")}
-      </div>
-    `).join("");
-    const win = window.open("", "_blank", "width=380,height=640");
-    if (!win) {
-      toast.error("O navegador bloqueou a janela de impressao. Permita pop-ups para imprimir a pre-conta.");
-      return;
+    const content = tableReceiptHtml({
+      type: "PRE_BILL",
+      table: selectedTable,
+      orders: printableOrders,
+      totals: { subtotal, serviceFee, discount, total },
+      companyName: printSettings.companyName,
+      notes: closeNotes || undefined
+    });
+
+    try {
+      await printPdvDocument(content, "Pre-conta enviada para impressao");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao imprimir pre-conta");
     }
-    win.document.write(`
-      <html>
-      <head>
-        <title>Pre-conta Mesa ${selectedTable.number}</title>
-        <style>
-          @media print { body { margin: 0; } }
-          body { font-family: Arial, sans-serif; max-width: 320px; padding: 10px; color: #111; }
-          h1, h2, p { margin: 0 0 8px; }
-          .muted { color: #555; font-size: 12px; }
-          .total { border-top: 2px solid #111; margin-top: 10px; padding-top: 8px; font-size: 20px; }
-        </style>
-      </head>
-      <body>
-        <h2>Pre-conta Mesa ${selectedTable.number}</h2>
-        <p class="muted">${new Date().toLocaleString("pt-BR")}</p>
-        ${rows}
-        <hr/>
-        <p>Subtotal: <strong>${brl(subtotal)}</strong></p>
-        <p>Taxa de servico: <strong>${brl(serviceFee)}</strong></p>
-        <p>Desconto: <strong>${brl(discount)}</strong></p>
-        <h2 class="total">Total: ${brl(total)}</h2>
-        <script>
-          window.onload = function () {
-            setTimeout(function () {
-              window.focus();
-              window.print();
-            }, 250);
-          };
-        </script>
-      </body>
-      </html>
-    `);
-    win.document.close();
   }
 
   async function updateStatus(table: RestaurantTable, status: TableStatus) {
@@ -676,6 +822,7 @@ export default function PdvPage() {
   useEffect(() => {
     void loadTables();
     void loadProducts();
+    void loadPrintSettings();
     const timer = window.setInterval(() => void loadTables(), 15000);
     return () => window.clearInterval(timer);
   }, []);
