@@ -12,7 +12,7 @@ import { calculateDeliveryFee } from "../utils/delivery-fee.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
 import { audit } from "../utils/audit.js";
 import { linkCustomerToCompany, normalizeEmail, normalizePhone, recordCompanyCustomerPurchase } from "../utils/customer-linking.js";
-import { validateAndDecrementStock } from "../utils/stock.js";
+import { restoreStockFromOrderItems, validateAndDecrementStock } from "../utils/stock.js";
 
 function shouldSendStatusWhatsapp(
   settings: Awaited<ReturnType<typeof prisma.setting.findFirstOrThrow>>,
@@ -642,13 +642,16 @@ export async function listOrders(req: Request, res: Response) {
 export async function updateOrderStatus(req: Request, res: Response) {
   const schema = z.object({
     status: z.nativeEnum(OrderStatus),
-    reason: z.string().max(240).optional()
+    reason: z.string().trim().max(240).optional()
   });
   const body = schema.parse(req.body);
 
   const current = await prisma.order.findFirst({
     where: { id: req.params.id, ...companyWhere(req) },
-    include: { customer: true }
+    include: {
+      customer: true,
+      items: { include: { complements: true } }
+    }
   });
 
   if (!current) {
@@ -659,21 +662,49 @@ export async function updateOrderStatus(req: Request, res: Response) {
     return res.status(400).json({ message: "Pedido finalizado nao pode ser alterado" });
   }
 
-  const order = await prisma.order.update({
-    where: { id: req.params.id },
-    data: {
-      status: body.status,
-      ...(body.status === "CANCELED" && body.reason
-        ? { notes: [current.notes, `[CANCELADO: ${body.reason}]`].filter(Boolean).join(" ") }
-        : {})
+  if (current.status === "CANCELED") {
+    return res.status(400).json({ message: "Pedido cancelado nao pode ser alterado" });
+  }
+
+  if (body.status === "CANCELED" && !body.reason) {
+    return res.status(400).json({ message: "Informe o motivo do cancelamento" });
+  }
+
+  const order = await prisma.$transaction(async (tx) => {
+    const updated = await tx.order.update({
+      where: { id: req.params.id },
+      data: {
+        status: body.status,
+        ...(body.status === "CANCELED" && body.reason
+          ? { notes: [current.notes, `[CANCELADO: ${body.reason}]`].filter(Boolean).join(" ") }
+          : {})
+      }
+    });
+
+    if (body.status === "CANCELED") {
+      await restoreStockFromOrderItems(tx, getCompanyId(req), current.items.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        complements: item.complements.map((complement) => ({
+          complementId: complement.complementId,
+          quantity: complement.quantity
+        }))
+      })));
     }
-  });
-  await audit(req, {
-    action: body.status === "CANCELED" ? "ORDER_CANCELED" : "ORDER_STATUS_CHANGED",
-    entity: "Order",
-    entityId: current.id,
-    oldValue: { status: current.status },
-    newValue: { status: body.status, reason: body.reason ?? null }
+
+    await audit(req, {
+      action: body.status === "CANCELED" ? "ORDER_CANCELED" : "ORDER_STATUS_CHANGED",
+      entity: "Order",
+      entityId: current.id,
+      oldValue: { status: current.status },
+      newValue: {
+        status: body.status,
+        reason: body.reason ?? null,
+        stockRestored: body.status === "CANCELED"
+      }
+    }, tx);
+
+    return updated;
   });
 
   if (body.status === "CANCELED" && current.paidAt) {

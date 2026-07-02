@@ -842,7 +842,7 @@ export async function createTableOrder(req: Request, res: Response) {
       complements: item.selectedComplements.map((complement) => ({ complementId: complement.id, quantity: complement.quantity }))
     })));
 
-    return tx.order.create({
+    const created = await tx.order.create({
       data: {
         companyId,
         customerId: customer.id,
@@ -883,21 +883,35 @@ export async function createTableOrder(req: Request, res: Response) {
         items: { include: { product: { select: { id: true, name: true } }, complements: true } }
       }
     });
-  });
 
-  await prisma.restaurantTable.update({
-    where: { id: table.id },
-    data: { status: "OCCUPIED", openedAt: new Date(), closedAt: null }
-  });
-  if (activeSession) {
-    await prisma.tableSession.update({
+    await tx.restaurantTable.update({
+      where: { id: table.id },
+      data: { status: "OCCUPIED", openedAt: new Date(), closedAt: null }
+    });
+    await tx.tableSession.update({
       where: { id: activeSession.id },
       data: {
         total: { increment: toDecimal(subtotalNumber) },
         lastActivityAt: new Date()
       }
     });
-  }
+
+    await audit(req, {
+      action: "TABLE_ORDER_CREATED",
+      entity: "Order",
+      entityId: created.id,
+      newValue: {
+        tableId: table.id,
+        tableNumber: table.number,
+        tableSessionId: activeSession.id,
+        orderNumber: created.orderNumber,
+        total: subtotalNumber,
+        items: preparedItems.map((item) => ({ productId: item.productId, quantity: item.quantity }))
+      }
+    }, tx);
+
+    return created;
+  });
 
   return res.status(201).json(order);
 }
@@ -1389,6 +1403,29 @@ export async function closeTableAccount(req: Request, res: Response) {
     })).filter((payment) => Number(payment.amount) > 0));
   }
 
+  await audit(req, {
+    action: "TABLE_ACCOUNT_CLOSED",
+    entity: "TableSession",
+    entityId: activeSession.id,
+    oldValue: {
+      status: activeSession.status,
+      tableId: table.id,
+      tableNumber: table.number,
+      orders: orders.map((order) => order.orderNumber)
+    },
+    newValue: {
+      status: TableSessionStatus.CLOSED,
+      subtotal,
+      serviceFee: account.serviceFee,
+      discount: account.discount,
+      total: account.total,
+      payments: splitPayments,
+      paymentDetail,
+      discountReason: body.discountReason ?? null,
+      notes: body.notes ?? null
+    }
+  });
+
   let printerJob: { id: string; title: string } | null = null;
   if (company?.printerAgentEnabled) {
     const paperWidth = settings?.printerPaperWidth === 80 ? 80 : 58;
@@ -1441,9 +1478,37 @@ export async function closeTableAccount(req: Request, res: Response) {
 }
 
 export async function deleteTable(req: Request, res: Response) {
-  await prisma.restaurantTable.update({
-    where: { id: req.params.id, companyId: getCompanyId(req) },
-    data: { active: false, status: "FREE" }
+  const companyId = getCompanyId(req);
+  const table = await prisma.restaurantTable.findFirst({
+    where: { id: req.params.id, companyId },
+    select: { id: true, number: true, active: true, status: true }
+  });
+  if (!table) return res.status(404).json({ message: "Mesa nao encontrada" });
+
+  const openSession = await prisma.tableSession.findFirst({
+    where: {
+      companyId,
+      tableId: table.id,
+      status: { in: [TableSessionStatus.PENDING_CONFIRMATION, TableSessionStatus.OPEN, TableSessionStatus.CLOSING_REQUESTED] }
+    },
+    select: { id: true, status: true }
+  });
+  if (openSession) {
+    return res.status(409).json({ message: "Nao e possivel desativar mesa com atendimento aberto ou aguardando confirmacao" });
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.restaurantTable.update({
+      where: { id: table.id },
+      data: { active: false, status: "FREE" }
+    });
+    await audit(req, {
+      action: "TABLE_DEACTIVATED",
+      entity: "RestaurantTable",
+      entityId: table.id,
+      oldValue: { active: table.active, status: table.status, number: table.number },
+      newValue: { active: false, status: "FREE" }
+    }, tx);
   });
   return res.status(204).send();
 }
