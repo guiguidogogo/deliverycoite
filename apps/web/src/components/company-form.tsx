@@ -22,6 +22,7 @@ export type CompanyFormValue = {
   active: boolean;
   marketplaceVisible: boolean;
   featured: boolean;
+  businessType: "FOOD" | "EVENTS" | "BARBERSHOP" | "BEAUTY_SALON" | "PHARMACY" | "MARKET" | "CLINIC" | "SERVICES";
   category: string;
   city: string;
   isOpen: boolean;
@@ -59,6 +60,7 @@ const emptyCompany: CompanyFormValue = {
   active: true,
   marketplaceVisible: true,
   featured: false,
+  businessType: "FOOD",
   category: "Lanches",
   city: "Conceição do Coité",
   isOpen: true,
@@ -278,13 +280,30 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
         <p className="text-sm opacity-70">Informações exibidas no catálogo público do HubRegional.</p>
         <div className="mt-4 grid gap-3 md:grid-cols-2">
           <label className="grid gap-1 text-sm">
+            <span className="font-semibold">Tipo de negocio</span>
+            <select
+              className="rounded-xl border border-black/15 bg-transparent px-3 py-2 dark:border-white/20"
+              value={form.businessType}
+              onChange={(event) => setForm((value) => ({ ...value, businessType: event.target.value as CompanyFormValue["businessType"] }))}
+            >
+              <option value="FOOD">Lanchonete / Restaurante / Delivery</option>
+              <option value="EVENTS">Shows e Eventos</option>
+              <option value="BARBERSHOP">Barbearia</option>
+              <option value="BEAUTY_SALON">Salao / Beleza</option>
+              <option value="PHARMACY">Farmacia</option>
+              <option value="MARKET">Mercado</option>
+              <option value="CLINIC">Clinica / Consultorio</option>
+              <option value="SERVICES">Servicos</option>
+            </select>
+          </label>
+          <label className="grid gap-1 text-sm">
             <span className="font-semibold">Categoria</span>
             <select
               className="rounded-xl border border-black/15 bg-transparent px-3 py-2 dark:border-white/20"
               value={form.category}
               onChange={(event) => setForm((value) => ({ ...value, category: event.target.value }))}
             >
-              {["Lanches", "Pizzaria", "Açaí", "Marmitas", "Sushi", "Conveniência", "Farmácia", "Mercado"].map((category) => (
+              {["Lanches", "Restaurante", "Pizzaria", "Açaí", "Marmitas", "Sushi", "Conveniência", "Farmácia", "Mercado", "Shows", "Eventos", "Barbearia", "Salao", "Clinica", "Servicos"].map((category) => (
                 <option key={category} value={category}>{category}</option>
               ))}
             </select>

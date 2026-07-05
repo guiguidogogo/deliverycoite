@@ -100,6 +100,19 @@ import {
   receiveReceivable,
   reopenCashSession
 } from "../controllers/finance-controller.js";
+import {
+  createAdminEvent,
+  createAdminTicketType,
+  createPublicTicketOrder,
+  getAdminEvent,
+  getPublicEvent,
+  listAdminEvents,
+  listAdminTicketOrders,
+  listPublicEvents,
+  updateAdminEvent,
+  updateAdminTicketType,
+  validateTicket
+} from "../controllers/events-controller.js";
 import { getFutureIntegrations, testMenuiaIntegration } from "../controllers/integrations-controller.js";
 import { createOrderMercadoPagoPix, createOrderMercadoPagoPreference, getMercadoPagoPublicConfig, getOrderMercadoPagoStatus, mercadoPagoWebhook, refundOrderMercadoPago } from "../controllers/mercadopago-controller.js";
 import { listNewOrders } from "../controllers/notifications-controller.js";
@@ -229,6 +242,9 @@ route.get("/customers/lookup", lookupCustomer);
 route.get("/categories", listCategories);
 route.get("/products", listProducts);
 route.get("/complements", listComplements);
+route.get("/events", listPublicEvents);
+route.get("/events/:id", getPublicEvent);
+route.post("/events/:id/orders", createPublicTicketOrder);
 route.get("/tables/:number", getPublicTable);
 route.post("/tables/:number/session-request", requestTableSession);
 route.post("/tables/:number/call-waiter", callWaiterFromTable);
@@ -286,6 +302,14 @@ route.get("/admin/deliveries/routes", requirePermission("ORDERS"), listDeliveryR
 route.post("/admin/deliveries/routes", requirePermission("ORDERS"), createDeliveryRoute);
 route.get("/admin/deliveries/routes/:id", requirePermission("ORDERS"), getDeliveryRoute);
 route.patch("/admin/deliveries/routes/:id/status", requirePermission("ORDERS"), updateDeliveryRouteStatus);
+route.get("/admin/events", requireAnyPermission(["CATALOG", "ORDERS", "SETTINGS"]), listAdminEvents);
+route.post("/admin/events", requireAnyPermission(["CATALOG", "ORDERS", "SETTINGS"]), createAdminEvent);
+route.get("/admin/events/:id", requireAnyPermission(["CATALOG", "ORDERS", "SETTINGS"]), getAdminEvent);
+route.patch("/admin/events/:id", requireAnyPermission(["CATALOG", "ORDERS", "SETTINGS"]), updateAdminEvent);
+route.post("/admin/events/:id/ticket-types", requireAnyPermission(["CATALOG", "ORDERS", "SETTINGS"]), createAdminTicketType);
+route.patch("/admin/events/:id/ticket-types/:ticketTypeId", requireAnyPermission(["CATALOG", "ORDERS", "SETTINGS"]), updateAdminTicketType);
+route.get("/admin/ticket-orders", requireAnyPermission(["ORDERS", "CATALOG"]), listAdminTicketOrders);
+route.post("/admin/tickets/validate", requireAnyPermission(["ORDERS", "CATALOG"]), validateTicket);
 route.get("/admin/dining-areas", requirePermission("SETTINGS"), listDiningAreas);
 route.post("/admin/dining-areas", requirePermission("SETTINGS"), createDiningArea);
 route.patch("/admin/dining-areas/:id", requirePermission("SETTINGS"), updateDiningArea);

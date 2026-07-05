@@ -74,6 +74,44 @@ enum DeliveryRouteStatus {
   CANCELED
 }
 
+enum BusinessType {
+  FOOD
+  EVENTS
+  BARBERSHOP
+  BEAUTY_SALON
+  PHARMACY
+  MARKET
+  CLINIC
+  SERVICES
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+  FINISHED
+}
+
+enum TicketOrderStatus {
+  RESERVED
+  PAID
+  CANCELLED
+}
+
+enum TicketPaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum TicketStatus {
+  RESERVED
+  PAID
+  CANCELLED
+  USED
+}
+
 model User {
   id             String          @id @default(cuid())
   name           String
@@ -123,6 +161,7 @@ model Company {
   active                 Boolean               @default(true)
   marketplaceVisible     Boolean               @default(true)
   featured               Boolean               @default(false)
+  businessType           BusinessType          @default(FOOD)
   category               String                @default("Lanches")
   city                   String                @default("Conceição do Coité")
   isOpen                 Boolean               @default(true)
@@ -174,6 +213,87 @@ model Company {
   auditLogs              AuditLog[]
   payables               AccountPayable[]
   receivables            AccountReceivable[]
+  events                 Event[]
+  ticketOrders           TicketOrder[]
+}
+
+model Event {
+  id          String       @id @default(cuid())
+  companyId   String
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  bannerUrl   String?
+  location    String
+  eventDate   DateTime
+  startTime   String
+  endTime     String?
+  status      EventStatus  @default(DRAFT)
+  ticketTypes TicketType[]
+  ticketOrders TicketOrder[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([companyId, status, eventDate])
+}
+
+model TicketType {
+  id            String   @id @default(cuid())
+  eventId       String
+  event         Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name          String
+  description   String?
+  price         Decimal  @db.Decimal(10, 2)
+  quantityTotal Int
+  quantitySold  Int      @default(0)
+  lotName       String?
+  saleStart     DateTime?
+  saleEnd       DateTime?
+  active        Boolean  @default(true)
+  tickets       Ticket[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([eventId, active])
+}
+
+model TicketOrder {
+  id            String              @id @default(cuid())
+  companyId     String
+  company       Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  eventId       String
+  event         Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  customerName  String
+  customerPhone String
+  customerEmail String?
+  total         Decimal             @db.Decimal(10, 2)
+  status        TicketOrderStatus   @default(RESERVED)
+  paymentMethod PaymentMethod?
+  paymentStatus TicketPaymentStatus @default(PENDING)
+  tickets       Ticket[]
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([companyId, eventId, createdAt])
+  @@index([companyId, status, paymentStatus])
+}
+
+model Ticket {
+  id            String       @id @default(cuid())
+  ticketOrderId String
+  ticketOrder   TicketOrder  @relation(fields: [ticketOrderId], references: [id], onDelete: Cascade)
+  ticketTypeId  String
+  ticketType    TicketType   @relation(fields: [ticketTypeId], references: [id], onDelete: Restrict)
+  qrCode        String       @unique
+  code          String       @unique
+  status        TicketStatus @default(RESERVED)
+  usedAt        DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([ticketOrderId])
+  @@index([ticketTypeId])
+  @@index([status])
 }
 
 model StaffRole {

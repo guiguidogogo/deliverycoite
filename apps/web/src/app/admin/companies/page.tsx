@@ -14,6 +14,7 @@ type Company = {
   subdomain: string;
   publicUrl: string;
   plan: string;
+  businessType: string;
   active: boolean;
   createdAt: string;
   _count: { users: number; products: number; orders: number };
@@ -102,6 +103,7 @@ export default function CompaniesPage() {
                     {company.active ? "Ativa" : "Inativa"}
                   </span>
                   <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">{company.plan}</span>
+                  <span className="rounded-full bg-violet-100 px-2 py-1 text-xs text-violet-700">{company.businessType}</span>
                 </div>
                 <p className="text-sm opacity-70">{company.companyName}</p>
                 <a className="mt-1 block font-mono text-sm underline" href={company.publicUrl} target="_blank" rel="noreferrer">

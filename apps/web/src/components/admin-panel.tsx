@@ -161,6 +161,7 @@ export function AdminPanel() {
   const [connected, setConnected] = useState(false);
   const [permissions, setPermissions] = useState<string[]>([]);
   const [userRole, setUserRole] = useState<string>("");
+  const [businessType, setBusinessType] = useState<string>("FOOD");
   const [ordersPaused, setOrdersPaused] = useState(false);
   const [printSettings, setPrintSettings] = useState({
     companyName: "Delivery",
@@ -215,7 +216,7 @@ export function AdminPanel() {
       return;
     }
     setToken(storedToken);
-    void authApi<{ permissions: string[]; role: string }>("/admin/me", storedToken)
+    void authApi<{ permissions: string[]; role: string; company?: { businessType?: string } | null }>("/admin/me", storedToken)
       .then((me) => {
         if (me.role === "SUPER_ADMIN") {
           router.replace("/admin/companies");
@@ -223,6 +224,7 @@ export function AdminPanel() {
         }
         setPermissions(me.permissions);
         setUserRole(me.role);
+        setBusinessType(me.company?.businessType ?? "FOOD");
         return apiFetch(`/admin/settings`, {
           headers: { Authorization: `Bearer ${storedToken}` },
           cache: "no-store"
@@ -469,6 +471,9 @@ export function AdminPanel() {
         </a>
         {userRole === "SUPER_ADMIN" && <a className="rounded-lg bg-violet-700 px-3 py-2 text-sm text-white" href="/admin/companies">
           Empresas
+        </a>}
+        {businessType === "EVENTS" && can("CATALOG") && <a className="rounded-lg bg-purple-700 px-3 py-2 text-sm text-white" href="/admin/manage/events">
+          Eventos / Ingressos
         </a>}
         {can("CATALOG") && <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/products">
           Produtos

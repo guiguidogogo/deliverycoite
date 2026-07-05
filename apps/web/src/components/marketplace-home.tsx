@@ -33,6 +33,7 @@ type MarketplaceCompany = {
   logo?: string | null;
   primaryColor: string;
   secondaryColor: string;
+  businessType: string;
   category: string;
   city: string;
   isOpen: boolean;
@@ -56,6 +57,16 @@ const categories = [
   { name: "Conveniência", icon: Store, color: "bg-blue-100 text-blue-700" },
   { name: "Farmácia", icon: HeartHandshake, color: "bg-emerald-100 text-emerald-700" },
   { name: "Mercado", icon: ShoppingBasket, color: "bg-lime-100 text-lime-700" }
+];
+
+const segments = [
+  { label: "Restaurantes", value: "FOOD" },
+  { label: "Eventos", value: "EVENTS" },
+  { label: "Farmacias", value: "PHARMACY" },
+  { label: "Mercados", value: "MARKET" },
+  { label: "Barbearias", value: "BARBERSHOP" },
+  { label: "Saloes", value: "BEAUTY_SALON" },
+  { label: "Clinicas", value: "CLINIC" }
 ];
 
 function storeUrl(company: MarketplaceCompany) {
@@ -136,12 +147,14 @@ export function MarketplaceHome() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("");
+  const [activeSegment, setActiveSegment] = useState("");
   const [mobileMenu, setMobileMenu] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams();
     if (search.trim()) params.set("search", search.trim());
     if (activeCategory) params.set("category", activeCategory);
+    if (activeSegment) params.set("businessType", activeSegment);
     const timer = window.setTimeout(() => {
       setLoading(true);
       void apiFetch(`/marketplace/companies?${params}`, { cache: "no-store" })
@@ -151,7 +164,7 @@ export function MarketplaceHome() {
         .finally(() => setLoading(false));
     }, 180);
     return () => window.clearTimeout(timer);
-  }, [activeCategory, search]);
+  }, [activeCategory, activeSegment, search]);
 
   const featured = useMemo(() => {
     const selected = companies.filter((company) => company.featured);
@@ -269,6 +282,23 @@ export function MarketplaceHome() {
       <section className="border-y border-orange-100 bg-white py-10">
         <div className="mx-auto max-w-7xl px-4 md:px-8">
           <p className="mb-5 text-sm font-bold text-slate-500">O que você procura hoje?</p>
+          <div className="mb-7 flex gap-2 overflow-x-auto pb-2">
+            <button
+              onClick={() => setActiveSegment("")}
+              className={`shrink-0 rounded-full px-4 py-2 text-sm font-black ${!activeSegment ? "bg-slate-950 text-white" : "bg-orange-50 text-slate-700"}`}
+            >
+              Todos segmentos
+            </button>
+            {segments.map((segment) => (
+              <button
+                key={segment.value}
+                onClick={() => setActiveSegment((value) => value === segment.value ? "" : segment.value)}
+                className={`shrink-0 rounded-full px-4 py-2 text-sm font-black ${activeSegment === segment.value ? "bg-[#ff5a36] text-white" : "bg-orange-50 text-slate-700"}`}
+              >
+                {segment.label}
+              </button>
+            ))}
+          </div>
           <div className="grid grid-cols-4 gap-3 md:grid-cols-8">
             {categories.map(({ name, icon: Icon, color }) => (
               <button

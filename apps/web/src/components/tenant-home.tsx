@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { MarketplaceHome } from "./marketplace-home";
-import { Storefront } from "./storefront";
+import { SegmentStorefront } from "./storefront/segment-storefront";
 
 const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? "hubregional.com.br";
 
@@ -27,5 +27,5 @@ export function TenantHome() {
     return <main className="min-h-screen bg-[#fffaf5]" aria-busy="true" />;
   }
 
-  return mode === "store" ? <Storefront /> : <MarketplaceHome />;
+  return mode === "store" ? <SegmentStorefront /> : <MarketplaceHome />;
 }
