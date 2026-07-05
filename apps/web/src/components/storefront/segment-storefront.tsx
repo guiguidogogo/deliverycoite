@@ -5,6 +5,7 @@ import { apiFetch } from "../../lib/api";
 import type { PublicCompany } from "../../lib/types";
 import { Storefront } from "../storefront";
 import { EventsStorefront } from "./events/events-storefront";
+import { ServicesStorefront } from "./services/services-storefront";
 
 export function SegmentStorefront() {
   const [company, setCompany] = useState<PublicCompany | null>(null);
@@ -40,6 +41,10 @@ export function SegmentStorefront() {
 
   if (company.businessType === "EVENTS") {
     return <EventsStorefront company={company} />;
+  }
+
+  if (company.businessType === "BARBERSHOP" || company.businessType === "BEAUTY_SALON") {
+    return <ServicesStorefront company={company} />;
   }
 
   return <Storefront />;

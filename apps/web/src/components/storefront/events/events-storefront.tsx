@@ -61,6 +61,7 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
   const [selectedEvent, setSelectedEvent] = useState<EventItem | null>(null);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [customer, setCustomer] = useState({ name: "", phone: "", email: "" });
+  const [paymentMethod, setPaymentMethod] = useState<"PIX" | "CARD" | "MERCADO_PAGO">("PIX");
   const [lastOrder, setLastOrder] = useState<TicketOrder | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -110,6 +111,7 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
       setLastOrder(payload);
       setSelectedEvent(null);
       setQuantities({});
+      setPaymentMethod("PIX");
       toast.success("Reserva criada. Pagamento online sera conectado na proxima fase.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao reservar ingresso");
@@ -251,13 +253,39 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
               <input className="rounded-xl border px-3 py-3" placeholder="Email opcional" type="email" value={customer.email} onChange={(event) => setCustomer((value) => ({ ...value, email: event.target.value }))} />
             </div>
 
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-black uppercase tracking-[0.25em] text-orange-600">Pagamento</p>
+              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                {[
+                  ["PIX", "Pix", "Chave copia e cola e QR Code"],
+                  ["CARD", "Cartao", "Cartao de credito ou debito"],
+                  ["MERCADO_PAGO", "Mercado Pago", "Checkout digital da plataforma"]
+                ].map(([value, label, description]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={`rounded-2xl border p-4 text-left transition ${paymentMethod === value ? "border-orange-500 bg-orange-100" : "border-slate-200 bg-white"}`}
+                    onClick={() => setPaymentMethod(value as typeof paymentMethod)}
+                  >
+                    <strong className="block">{label}</strong>
+                    <span className="mt-1 block text-sm text-slate-600">{description}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="mt-4 rounded-2xl bg-white p-4 text-sm text-slate-600">
+                {paymentMethod === "PIX" && "Ao confirmar, mostramos QR Code e copia e cola para pagamento imediato."}
+                {paymentMethod === "CARD" && "Ao confirmar, liberamos o fluxo de cartao para fechamento online."}
+                {paymentMethod === "MERCADO_PAGO" && "Checkout Mercado Pago entra aqui com integracao completa na proxima etapa."}
+              </div>
+            </div>
+
             <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-slate-100 p-4">
               <div>
                 <p className="text-sm text-slate-500">Total da reserva</p>
                 <strong className="text-3xl">{money.format(total)}</strong>
               </div>
               <button className="rounded-2xl bg-orange-500 px-6 py-4 font-black text-white disabled:opacity-50" disabled={submitting}>
-                {submitting ? "Reservando..." : "Reservar ingressos"}
+                {submitting ? "Reservando..." : paymentMethod === "MERCADO_PAGO" ? "Continuar no Mercado Pago" : "Reservar ingressos"}
               </button>
             </div>
           </form>
