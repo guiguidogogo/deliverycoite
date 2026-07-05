@@ -291,12 +291,19 @@ model TicketOrder {
   status        TicketOrderStatus   @default(RESERVED)
   paymentMethod PaymentMethod?
   paymentStatus TicketPaymentStatus @default(PENDING)
+  mercadoPagoPreferenceId String?
+  mercadoPagoPaymentId    String?
+  mercadoPagoStatus       String?
+  mercadoPagoStatusDetail String?
+  paidAt        DateTime?
   tickets       Ticket[]
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
 
   @@index([companyId, eventId, createdAt])
   @@index([companyId, status, paymentStatus])
+  @@index([mercadoPagoPreferenceId])
+  @@index([mercadoPagoPaymentId])
 }
 
 model Ticket {

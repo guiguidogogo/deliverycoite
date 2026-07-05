@@ -37,6 +37,18 @@ type TicketOrder = {
   id: string;
   total: number;
   customerName: string;
+  mercadoPago?: {
+    type: "PIX" | "CHECKOUT";
+    paymentId?: string | null;
+    status?: string | null;
+    statusDetail?: string | null;
+    qrCode?: string | null;
+    qrCodeBase64?: string | null;
+    ticketUrl?: string | null;
+    preferenceId?: string | null;
+    initPoint?: string | null;
+    sandboxInitPoint?: string | null;
+  };
   tickets: Array<{
     id: string;
     code: string;
@@ -120,10 +132,19 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.message ?? "Falha ao reservar ingresso");
       setLastOrder(payload);
-      setSelectedEvent(null);
       setQuantities({});
+      if (payload?.mercadoPago?.type === "CHECKOUT" && payload?.mercadoPago?.initPoint) {
+        toast.success("Abrindo checkout do Mercado Pago...");
+        window.location.href = payload.mercadoPago.initPoint;
+        return;
+      }
+      if (payload?.mercadoPago?.type === "PIX") {
+        toast.success("Pagamento Pix gerado. Finalize para confirmar o ingresso.");
+      } else {
+        toast.success("Reserva criada.");
+      }
+      setSelectedEvent(null);
       setPaymentMethod("PIX");
-      toast.success("Reserva criada. Pagamento online sera conectado na proxima fase.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao reservar ingresso");
     } finally {

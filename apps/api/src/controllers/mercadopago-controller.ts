@@ -207,6 +207,40 @@ async function applyApprovedMercadoPagoPayment(orderId: string, payment: Mercado
   return updated;
 }
 
+async function applyApprovedMercadoPagoTicketPayment(ticketOrderId: string, payment: MercadoPagoPaymentResponse) {
+  const ticketOrder = await prisma.ticketOrder.findUnique({ where: { id: ticketOrderId }, include: { company: true } });
+  if (!ticketOrder) return null;
+
+  const approved = payment.status === "approved";
+  const updated = await prisma.ticketOrder.update({
+    where: { id: ticketOrder.id },
+    data: {
+      mercadoPagoPaymentId: String(payment.id),
+      mercadoPagoStatus: payment.status ?? ticketOrder.mercadoPagoStatus,
+      mercadoPagoStatusDetail: payment.status_detail ?? ticketOrder.mercadoPagoStatusDetail,
+      ...(approved && !ticketOrder.paidAt
+        ? {
+            paidAt: new Date(),
+            paymentMethod: payment.payment_type_id === "bank_transfer" ? PaymentMethod.PIX : PaymentMethod.MERCADO_PAGO,
+            paymentStatus: "PAID",
+            status: "PAID"
+          }
+        : {})
+    }
+  });
+
+  if (approved && !ticketOrder.paidAt) {
+    publishNewOrder({
+      companyId: ticketOrder.companyId,
+      orderId: ticketOrder.id,
+      customer: ticketOrder.customerName,
+      total: Number(ticketOrder.total)
+    });
+  }
+
+  return updated;
+}
+
 function chooseBestPayment(payments: MercadoPagoPaymentResponse[]) {
   return payments.find((payment) => payment.status === "approved") ?? payments[0] ?? null;
 }
@@ -233,6 +267,23 @@ async function refreshMercadoPagoOrderStatus(orderId: string) {
 
   if (!payment) return order;
   return applyApprovedMercadoPagoPayment(order.id, payment);
+}
+
+async function refreshMercadoPagoTicketStatus(ticketOrderId: string) {
+  const ticketOrder = await prisma.ticketOrder.findUnique({ where: { id: ticketOrderId }, include: { company: true } });
+  if (!ticketOrder?.company.mercadoPagoAccessToken) return ticketOrder;
+  if (ticketOrder.paidAt || ticketOrder.mercadoPagoStatus === "refunded") return ticketOrder;
+
+  let payment: MercadoPagoPaymentResponse | null = null;
+  if (ticketOrder.mercadoPagoPaymentId) {
+    payment = await getMercadoPagoPayment(ticketOrder.company.mercadoPagoAccessToken, ticketOrder.mercadoPagoPaymentId);
+  } else if (ticketOrder.mercadoPagoPreferenceId) {
+    const byPreference = await searchMercadoPagoPayments(ticketOrder.company.mercadoPagoAccessToken, { externalReference: ticketOrder.id });
+    payment = chooseBestPayment(byPreference.results ?? []);
+  }
+
+  if (!payment) return ticketOrder;
+  return applyApprovedMercadoPagoTicketPayment(ticketOrder.id, payment);
 }
 
 export async function getOrderMercadoPagoStatus(req: Request, res: Response) {
@@ -278,6 +329,52 @@ export async function getOrderMercadoPagoStatus(req: Request, res: Response) {
   });
 }
 
+export async function getTicketOrderMercadoPagoStatus(req: Request, res: Response) {
+  const { ticketOrderId } = z.object({ ticketOrderId: z.string().min(1) }).parse(req.params);
+  const ticketOrder = await prisma.ticketOrder.findFirst({
+    where: { id: ticketOrderId, companyId: getCompanyId(req) },
+    select: {
+      id: true,
+      status: true,
+      paidAt: true,
+      paymentStatus: true,
+      mercadoPagoStatus: true,
+      mercadoPagoStatusDetail: true,
+      mercadoPagoPaymentId: true,
+      mercadoPagoPreferenceId: true
+    }
+  });
+
+  if (!ticketOrder) return res.status(404).json({ message: "Ingresso nao encontrado" });
+
+  let current = ticketOrder;
+  if ((ticketOrder.mercadoPagoPaymentId || ticketOrder.mercadoPagoPreferenceId) && !ticketOrder.paidAt && ticketOrder.mercadoPagoStatus !== "refunded") {
+    const refreshed = await refreshMercadoPagoTicketStatus(ticketOrder.id);
+    if (refreshed) {
+      current = {
+        id: refreshed.id,
+        status: refreshed.status,
+        paidAt: refreshed.paidAt,
+        paymentStatus: refreshed.paymentStatus,
+        mercadoPagoStatus: refreshed.mercadoPagoStatus,
+        mercadoPagoStatusDetail: refreshed.mercadoPagoStatusDetail,
+        mercadoPagoPaymentId: refreshed.mercadoPagoPaymentId,
+        mercadoPagoPreferenceId: refreshed.mercadoPagoPreferenceId
+      };
+    }
+  }
+
+  return res.json({
+    ticketOrderId: current.id,
+    orderStatus: current.status,
+    paid: Boolean(current.paidAt),
+    paidAt: current.paidAt,
+    paymentStatus: current.paymentStatus,
+    mercadoPagoStatus: current.mercadoPagoStatus,
+    mercadoPagoStatusDetail: current.mercadoPagoStatusDetail
+  });
+}
+
 export async function mercadoPagoWebhook(req: Request, res: Response) {
   const paymentId =
     req.query["data.id"]?.toString() ||
@@ -304,15 +401,21 @@ export async function mercadoPagoWebhook(req: Request, res: Response) {
   }
 
   const order = await prisma.order.findUnique({ where: { id: orderId }, include: { company: true } });
-  if (!order?.company.mercadoPagoAccessToken) {
+  const ticketOrder = order ? null : await prisma.ticketOrder.findUnique({ where: { id: orderId }, include: { company: true } });
+  const companyToken = order?.company.mercadoPagoAccessToken || ticketOrder?.company.mercadoPagoAccessToken;
+  if (!companyToken) {
     return res.status(200).json({ ok: true, ignored: true, reason: "company_without_token" });
   }
 
   if (!payment) {
-    payment = await getMercadoPagoPayment(order.company.mercadoPagoAccessToken, paymentId);
+    payment = await getMercadoPagoPayment(companyToken, paymentId);
   }
 
-  await applyApprovedMercadoPagoPayment(order.id, payment);
+  if (order) {
+    await applyApprovedMercadoPagoPayment(order.id, payment);
+  } else if (ticketOrder) {
+    await applyApprovedMercadoPagoTicketPayment(ticketOrder.id, payment);
+  }
 
   return res.status(200).json({ ok: true });
 }

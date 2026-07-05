@@ -1,9 +1,10 @@
 import crypto from "node:crypto";
-import { EventStatus, Prisma, TicketStatus } from "@prisma/client";
+import { EventStatus, PaymentMethod, Prisma, TicketStatus } from "@prisma/client";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
+import { createMercadoPagoPixPayment, createMercadoPagoPreference } from "../services/mercadopago.js";
 
 const optionalText = z.preprocess(
   (value) => typeof value === "string" && !value.trim() ? null : value,
@@ -40,6 +41,7 @@ const ticketOrderSchema = z.object({
     (value) => typeof value === "string" && !value.trim() ? null : value,
     z.string().trim().email("Email invalido").nullable().optional()
   ),
+  paymentMethod: z.enum(["PIX", "CARD", "MERCADO_PAGO"]).default("PIX"),
   items: z.array(z.object({
     ticketTypeId: z.string().min(1),
     quantity: z.coerce.number().int().min(1).max(20)
@@ -66,6 +68,38 @@ function ticketCode() {
 
 function qrCode() {
   return `hub_ticket_${crypto.randomBytes(18).toString("hex")}`;
+}
+
+function requestBaseUrl(req: Request) {
+  const proto = req.get("x-forwarded-proto")?.split(",")[0] || req.protocol || "https";
+  const host = req.get("x-forwarded-host") || req.get("host");
+  return `${proto}://${host}`;
+}
+
+function storeBaseUrl(req: Request, subdomain: string) {
+  const rootDomain = process.env.ROOT_DOMAIN || "hubregional.com.br";
+  const proto = req.get("x-forwarded-proto")?.split(",")[0] || req.protocol || "https";
+  const host = req.get("host") || "";
+  if (host.includes("localhost") || host.includes("127.0.0.1") || host.includes("sslip.io")) {
+    return `${proto}://${host}/?subdomain=${encodeURIComponent(subdomain)}`;
+  }
+  return `https://${subdomain}.${rootDomain}`;
+}
+
+function appendQuery(url: string, params: Record<string, string>) {
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}${new URLSearchParams(params).toString()}`;
+}
+
+function serializeTicketOrder<T extends { total: Prisma.Decimal; tickets?: Array<{ ticketType: { price: Prisma.Decimal } }> }>(order: T) {
+  return {
+    ...order,
+    total: Number(order.total),
+    tickets: order.tickets?.map((ticket) => ({
+      ...ticket,
+      ticketType: { ...ticket.ticketType, price: Number(ticket.ticketType.price) }
+    }))
+  };
 }
 
 export async function listPublicEvents(req: Request, res: Response) {
@@ -107,7 +141,7 @@ export async function createPublicTicketOrder(req: Request, res: Response) {
   const result = await prisma.$transaction(async (tx) => {
     const event = await tx.event.findFirst({
       where: { id: req.params.id, companyId, status: "PUBLISHED" },
-      select: { id: true, title: true }
+      select: { id: true, title: true, companyId: true, company: true }
     });
     if (!event) throw new Error("Evento nao encontrado");
 
@@ -155,6 +189,7 @@ export async function createPublicTicketOrder(req: Request, res: Response) {
         total,
         status: "RESERVED",
         paymentStatus: "PENDING",
+        paymentMethod: body.paymentMethod === "PIX" ? PaymentMethod.PIX : body.paymentMethod === "CARD" ? PaymentMethod.CARD : PaymentMethod.MERCADO_PAGO,
         tickets: { create: ticketsToCreate }
       },
       include: {
@@ -163,17 +198,93 @@ export async function createPublicTicketOrder(req: Request, res: Response) {
       }
     });
 
-    return order;
+    const settings = await tx.company.findUnique({
+      where: { id: companyId },
+      select: { mercadoPagoEnabled: true, mercadoPagoPublicKey: true, mercadoPagoAccessToken: true, subdomain: true, tradeName: true }
+    });
+    return { order, settings };
   });
 
-  return res.status(201).json({
-    ...result,
-    total: Number(result.total),
-    tickets: result.tickets.map((ticket) => ({
-      ...ticket,
-      ticketType: { ...ticket.ticketType, price: Number(ticket.ticketType.price) }
-    }))
-  });
+  const order = serializeTicketOrder(result.order);
+  if (!result.settings?.mercadoPagoEnabled || !result.settings?.mercadoPagoAccessToken) {
+    return res.status(201).json(order);
+  }
+
+  try {
+    const displayNumber = Number(String(Date.now()).slice(-6));
+    if (body.paymentMethod === "PIX") {
+      const payment = await createMercadoPagoPixPayment({
+        accessToken: result.settings.mercadoPagoAccessToken,
+        orderId: order.id,
+        companyId,
+        orderNumber: displayNumber,
+        description: `${result.settings.tradeName} - Ingresso ${order.event.title}`,
+        amount: Number(order.total),
+        payer: {
+          name: order.customerName,
+          email: order.customerEmail,
+          phone: order.customerPhone
+        },
+        notificationUrl: `${requestBaseUrl(req)}/api/mercadopago/webhook`
+      });
+      await prisma.ticketOrder.update({
+        where: { id: order.id },
+        data: {
+          mercadoPagoPaymentId: String(payment.id),
+          mercadoPagoStatus: payment.status ?? "pending",
+          mercadoPagoStatusDetail: payment.status_detail ?? null
+        }
+      });
+      return res.status(201).json({
+        ...order,
+        mercadoPago: {
+          type: "PIX",
+          paymentId: String(payment.id),
+          status: payment.status ?? null,
+          statusDetail: payment.status_detail ?? null,
+          qrCode: payment.point_of_interaction?.transaction_data?.qr_code ?? null,
+          qrCodeBase64: payment.point_of_interaction?.transaction_data?.qr_code_base64 ?? null,
+          ticketUrl: payment.point_of_interaction?.transaction_data?.ticket_url ?? null
+        }
+      });
+    }
+
+    const preference = await createMercadoPagoPreference({
+      accessToken: result.settings.mercadoPagoAccessToken,
+      orderId: order.id,
+      companyId,
+      orderNumber: displayNumber,
+      description: `${result.settings.tradeName} - Ingresso ${order.event.title}`,
+      amount: Number(order.total),
+      payer: {
+        name: order.customerName,
+        email: order.customerEmail,
+        phone: order.customerPhone
+      },
+      notificationUrl: `${requestBaseUrl(req)}/api/mercadopago/webhook`,
+      successUrl: appendQuery(storeBaseUrl(req, result.settings.subdomain), { mp_status: "success", order: order.id }),
+      failureUrl: appendQuery(storeBaseUrl(req, result.settings.subdomain), { mp_status: "failure", order: order.id }),
+      pendingUrl: appendQuery(storeBaseUrl(req, result.settings.subdomain), { mp_status: "pending", order: order.id })
+    });
+    await prisma.ticketOrder.update({
+      where: { id: order.id },
+      data: {
+        mercadoPagoPreferenceId: preference.id,
+        mercadoPagoStatus: "preference_created"
+      }
+    });
+    return res.status(201).json({
+      ...order,
+      mercadoPago: {
+        type: "CHECKOUT",
+        preferenceId: preference.id,
+        initPoint: preference.init_point ?? null,
+        sandboxInitPoint: preference.sandbox_init_point ?? null
+      }
+    });
+  } catch {
+    return res.status(201).json(order);
+  }
 }
 
 export async function listAdminEvents(req: Request, res: Response) {
