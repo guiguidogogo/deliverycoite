@@ -475,6 +475,9 @@ export function AdminPanel() {
         {businessType === "EVENTS" && can("CATALOG") && <a className="rounded-lg bg-purple-700 px-3 py-2 text-sm text-white" href="/admin/manage/events">
           Eventos / Ingressos
         </a>}
+        {(businessType === "BARBERSHOP" || businessType === "BEAUTY_SALON") && can("CATALOG") && <a className="rounded-lg bg-amber-700 px-3 py-2 text-sm text-white" href="/admin/manage/services">
+          Servicos / Agenda
+        </a>}
         {can("CATALOG") && <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/products">
           Produtos
         </a>}

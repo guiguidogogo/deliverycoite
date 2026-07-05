@@ -113,6 +113,13 @@ import {
   updateAdminTicketType,
   validateTicket
 } from "../controllers/events-controller.js";
+import {
+  createAdminProfessional,
+  createAdminService,
+  createPublicAppointment,
+  listAdminServices,
+  listPublicServices
+} from "../controllers/services-controller.js";
 import { getFutureIntegrations, testMenuiaIntegration } from "../controllers/integrations-controller.js";
 import { createOrderMercadoPagoPix, createOrderMercadoPagoPreference, getMercadoPagoPublicConfig, getOrderMercadoPagoStatus, mercadoPagoWebhook, refundOrderMercadoPago } from "../controllers/mercadopago-controller.js";
 import { listNewOrders } from "../controllers/notifications-controller.js";
@@ -245,6 +252,8 @@ route.get("/complements", listComplements);
 route.get("/events", listPublicEvents);
 route.get("/events/:id", getPublicEvent);
 route.post("/events/:id/orders", createPublicTicketOrder);
+route.get("/services", listPublicServices);
+route.post("/services/appointments", createPublicAppointment);
 route.get("/tables/:number", getPublicTable);
 route.post("/tables/:number/session-request", requestTableSession);
 route.post("/tables/:number/call-waiter", callWaiterFromTable);
@@ -310,6 +319,9 @@ route.post("/admin/events/:id/ticket-types", requireAnyPermission(["CATALOG", "O
 route.patch("/admin/events/:id/ticket-types/:ticketTypeId", requireAnyPermission(["CATALOG", "ORDERS", "SETTINGS"]), updateAdminTicketType);
 route.get("/admin/ticket-orders", requireAnyPermission(["ORDERS", "CATALOG"]), listAdminTicketOrders);
 route.post("/admin/tickets/validate", requireAnyPermission(["ORDERS", "CATALOG"]), validateTicket);
+route.get("/admin/services", requireAnyPermission(["CATALOG", "SETTINGS"]), listAdminServices);
+route.post("/admin/services", requireAnyPermission(["CATALOG", "SETTINGS"]), createAdminService);
+route.post("/admin/professionals", requireAnyPermission(["CATALOG", "SETTINGS"]), createAdminProfessional);
 route.get("/admin/dining-areas", requirePermission("SETTINGS"), listDiningAreas);
 route.post("/admin/dining-areas", requirePermission("SETTINGS"), createDiningArea);
 route.patch("/admin/dining-areas/:id", requirePermission("SETTINGS"), updateDiningArea);

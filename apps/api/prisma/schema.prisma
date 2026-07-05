@@ -112,6 +112,13 @@ enum TicketStatus {
   USED
 }
 
+enum AppointmentStatus {
+  REQUESTED
+  CONFIRMED
+  DONE
+  CANCELED
+}
+
 model User {
   id             String          @id @default(cuid())
   name           String
@@ -215,6 +222,9 @@ model Company {
   receivables            AccountReceivable[]
   events                 Event[]
   ticketOrders           TicketOrder[]
+  services               Service[]
+  professionals          Professional[]
+  appointments           Appointment[]
 }
 
 model Event {
@@ -294,6 +304,63 @@ model Ticket {
   @@index([ticketOrderId])
   @@index([ticketTypeId])
   @@index([status])
+}
+
+model Service {
+  id             String          @id @default(cuid())
+  companyId      String
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?
+  durationMin    Int
+  price          Decimal         @db.Decimal(10, 2)
+  active         Boolean         @default(true)
+  popular        Boolean         @default(false)
+  appointments   Appointment[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([companyId, active])
+}
+
+model Professional {
+  id             String          @id @default(cuid())
+  companyId      String
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name           String
+  specialty      String
+  avatarUrl      String?
+  bio            String?
+  rating         Decimal         @default(5) @db.Decimal(2, 1)
+  active         Boolean         @default(true)
+  appointments   Appointment[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([companyId, active])
+}
+
+model Appointment {
+  id              String            @id @default(cuid())
+  companyId       String
+  company         Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  serviceId       String
+  service         Service           @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  professionalId  String?
+  professional    Professional?     @relation(fields: [professionalId], references: [id], onDelete: SetNull)
+  customerName    String
+  customerPhone   String
+  customerEmail   String?
+  appointmentDate DateTime
+  appointmentTime String
+  notes           String?
+  status          AppointmentStatus @default(REQUESTED)
+  total           Decimal           @db.Decimal(10, 2)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([companyId, status, appointmentDate])
+  @@index([companyId, serviceId])
 }
 
 model StaffRole {
