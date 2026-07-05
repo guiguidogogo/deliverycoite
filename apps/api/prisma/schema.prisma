@@ -112,6 +112,16 @@ enum TicketStatus {
   USED
 }
 
+enum TicketAudience {
+  GENERAL
+  MEN
+  WOMEN
+  COUPLE
+  STUDENT
+  VIP
+  OTHER
+}
+
 enum AppointmentStatus {
   REQUESTED
   CONFIRMED
@@ -252,6 +262,7 @@ model TicketType {
   eventId       String
   event         Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   name          String
+  audience      TicketAudience @default(GENERAL)
   description   String?
   price         Decimal  @db.Decimal(10, 2)
   quantityTotal Int

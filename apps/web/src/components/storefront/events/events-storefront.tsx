@@ -9,6 +9,7 @@ import type { PublicCompany } from "../../../lib/types";
 type TicketType = {
   id: string;
   name: string;
+  audience?: "GENERAL" | "MEN" | "WOMEN" | "COUPLE" | "STUDENT" | "VIP" | "OTHER";
   description?: string | null;
   price: number;
   quantityTotal: number;
@@ -45,6 +46,16 @@ type TicketOrder = {
 };
 
 const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+
+const audienceLabel: Record<NonNullable<TicketType["audience"]>, string> = {
+  GENERAL: "Geral",
+  MEN: "Masculino",
+  WOMEN: "Feminino",
+  COUPLE: "Casadinha",
+  STUDENT: "Estudante / meia",
+  VIP: "VIP",
+  OTHER: "Outro"
+};
 
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("pt-BR", {
@@ -231,7 +242,7 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
                   <label key={ticketType.id} className="flex items-center justify-between gap-3 rounded-2xl border p-4">
                     <div>
                       <strong>{ticketType.name}</strong>
-                      <p className="text-sm text-slate-500">{ticketType.lotName || "Lote unico"} • {remaining} disponiveis</p>
+                      <p className="text-sm text-slate-500">{ticketType.lotName || "Lote unico"} • {audienceLabel[ticketType.audience ?? "GENERAL"]} • {remaining} disponiveis</p>
                       <p className="mt-1 font-black text-orange-600">{money.format(ticketType.price)}</p>
                     </div>
                     <input

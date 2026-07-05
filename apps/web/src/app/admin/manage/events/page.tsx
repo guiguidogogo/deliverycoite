@@ -7,6 +7,7 @@ import { apiFetch } from "../../../../lib/api";
 type TicketType = {
   id: string;
   name: string;
+  audience?: "GENERAL" | "MEN" | "WOMEN" | "COUPLE" | "STUDENT" | "VIP" | "OTHER";
   price: number;
   quantityTotal: number;
   quantitySold: number;
@@ -77,6 +78,7 @@ export default function AdminEventsPage() {
   });
   const [ticketForm, setTicketForm] = useState({
     name: "Pista",
+    audience: "GENERAL",
     lotName: "1º lote",
     price: "0",
     quantityTotal: "100",
@@ -150,7 +152,7 @@ export default function AdminEventsPage() {
           quantityTotal: Number(ticketForm.quantityTotal)
         })
       });
-      setTicketForm({ name: "Pista", lotName: "1º lote", price: "0", quantityTotal: "100", description: "", active: true });
+      setTicketForm({ name: "Pista", audience: "GENERAL", lotName: "1º lote", price: "0", quantityTotal: "100", description: "", active: true });
       toast.success("Lote criado");
       await load();
     } catch (error) {
@@ -239,6 +241,15 @@ export default function AdminEventsPage() {
             <p className="text-sm text-slate-500">{selected.title}</p>
             <div className="mt-4 grid gap-3">
               <input className="input" placeholder="Tipo: Pista, VIP, Camarote..." required value={ticketForm.name} onChange={(event) => setTicketForm((value) => ({ ...value, name: event.target.value }))} />
+              <select className="input" value={ticketForm.audience} onChange={(event) => setTicketForm((value) => ({ ...value, audience: event.target.value }))}>
+                <option value="GENERAL">Público geral</option>
+                <option value="MEN">Masculino</option>
+                <option value="WOMEN">Feminino</option>
+                <option value="COUPLE">Casadinha</option>
+                <option value="STUDENT">Estudante / meia</option>
+                <option value="VIP">VIP</option>
+                <option value="OTHER">Outro</option>
+              </select>
               <input className="input" placeholder="Lote: 1º lote, promocional..." value={ticketForm.lotName} onChange={(event) => setTicketForm((value) => ({ ...value, lotName: event.target.value }))} />
               <textarea className="input" placeholder="Descricao opcional" value={ticketForm.description} onChange={(event) => setTicketForm((value) => ({ ...value, description: event.target.value }))} />
               <div className="grid gap-3 md:grid-cols-2">
@@ -255,10 +266,10 @@ export default function AdminEventsPage() {
               {selected.ticketTypes.map((ticket) => (
                 <article key={ticket.id} className="rounded-2xl border p-4">
                   <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <strong>{ticket.name}</strong>
-                      <p className="text-xs text-slate-500">{ticket.lotName || "Lote unico"}</p>
-                    </div>
+                  <div>
+                    <strong>{ticket.name}</strong>
+                    <p className="text-xs text-slate-500">{ticket.lotName || "Lote unico"} • {ticket.audience}</p>
+                  </div>
                     <strong>{money.format(ticket.price)}</strong>
                   </div>
                   <p className="mt-3 text-sm">Vendidos/reservados: {ticket.quantitySold} de {ticket.quantityTotal}</p>

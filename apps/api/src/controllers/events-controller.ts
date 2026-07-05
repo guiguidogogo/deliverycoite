@@ -23,6 +23,7 @@ const eventSchema = z.object({
 
 const ticketTypeSchema = z.object({
   name: z.string().trim().min(2, "Informe o tipo de ingresso"),
+  audience: z.enum(["GENERAL", "MEN", "WOMEN", "COUPLE", "STUDENT", "VIP", "OTHER"]).default("GENERAL"),
   description: optionalText,
   price: z.coerce.number().min(0, "Preco invalido"),
   quantityTotal: z.coerce.number().int().min(1, "Quantidade invalida"),
@@ -234,6 +235,7 @@ export async function createAdminTicketType(req: Request, res: Response) {
     data: {
       ...body,
       eventId: event.id,
+      audience: body.audience,
       price: new Prisma.Decimal(body.price)
     }
   });
@@ -250,6 +252,7 @@ export async function updateAdminTicketType(req: Request, res: Response) {
     where: { id: existing.id },
     data: {
       ...body,
+      ...(body.audience ? { audience: body.audience } : {}),
       ...(body.price !== undefined ? { price: new Prisma.Decimal(body.price) } : {})
     }
   });
