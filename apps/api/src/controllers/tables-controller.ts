@@ -52,7 +52,9 @@ const closeTableSchema = z.object({
   discount: z.coerce.number().min(0).default(0),
   discountReason: z.string().max(180).optional(),
   serviceFeeEnabled: z.boolean().optional(),
+  serviceFeeType: z.enum(["PERCENT", "FIXED"]).default("PERCENT"),
   serviceFeePercent: z.coerce.number().min(0).max(30).optional(),
+  serviceFeeAmount: z.coerce.number().min(0).optional(),
   payments: z.array(z.object({
     method: z.enum(["CASH", "PIX", "DEBIT", "CREDIT", "CARD"]),
     amount: z.coerce.number().positive()
@@ -72,7 +74,9 @@ const tablePrintJobSchema = z.object({
   notes: z.string().max(500).optional(),
   discount: z.coerce.number().min(0).default(0),
   serviceFeeEnabled: z.boolean().optional(),
+  serviceFeeType: z.enum(["PERCENT", "FIXED"]).default("PERCENT"),
   serviceFeePercent: z.coerce.number().min(0).max(30).optional(),
+  serviceFeeAmount: z.coerce.number().min(0).optional(),
   payments: z.array(z.object({
     method: z.enum(["CASH", "PIX", "DEBIT", "CREDIT", "CARD"]),
     amount: z.coerce.number().positive()
@@ -241,9 +245,13 @@ function paymentDetailFromClose(value: "CASH" | "PIX" | "DEBIT" | "CREDIT" | "CA
 
 function buildAccountTotals(
   subtotal: number,
-  options: { serviceFeeEnabled?: boolean; serviceFeePercent?: number; discount?: number }
+  options: { serviceFeeEnabled?: boolean; serviceFeeType?: "PERCENT" | "FIXED"; serviceFeePercent?: number; serviceFeeAmount?: number; discount?: number }
 ) {
-  const serviceFee = options.serviceFeeEnabled ? subtotal * ((options.serviceFeePercent ?? 10) / 100) : 0;
+  const serviceFee = options.serviceFeeEnabled
+    ? options.serviceFeeType === "FIXED"
+      ? Math.max(0, options.serviceFeeAmount ?? 0)
+      : subtotal * ((options.serviceFeePercent ?? 10) / 100)
+    : 0;
   const discount = Math.min(Math.max(options.discount ?? 0, 0), subtotal + serviceFee);
   return {
     subtotal,
@@ -964,7 +972,9 @@ export async function createTablePrintJob(req: Request, res: Response) {
   const serviceFeePercent = body.serviceFeePercent ?? Number(settings?.tableServiceFeePercent ?? 10);
   const account = buildAccountTotals(subtotal, {
     serviceFeeEnabled,
+    serviceFeeType: body.serviceFeeType,
     serviceFeePercent,
+    serviceFeeAmount: body.serviceFeeAmount,
     discount: body.discount
   });
   const paperWidth = settings?.printerPaperWidth === 80 ? 80 : 58;
@@ -1051,7 +1061,9 @@ export async function reprintClosedTableSession(req: Request, res: Response) {
   const serviceFeePercent = body.serviceFeePercent ?? Number(settings?.tableServiceFeePercent ?? 10);
   const account = buildAccountTotals(subtotal, {
     serviceFeeEnabled,
+    serviceFeeType: body.serviceFeeType,
     serviceFeePercent,
+    serviceFeeAmount: body.serviceFeeAmount,
     discount: body.discount
   });
   const paperWidth = settings?.printerPaperWidth === 80 ? 80 : 58;
@@ -1315,7 +1327,9 @@ export async function closeTableAccount(req: Request, res: Response) {
   const serviceFeePercent = body.serviceFeePercent ?? Number(settings?.tableServiceFeePercent ?? 10);
   const account = buildAccountTotals(subtotal, {
     serviceFeeEnabled,
+    serviceFeeType: body.serviceFeeType,
     serviceFeePercent,
+    serviceFeeAmount: body.serviceFeeAmount,
     discount: body.discount
   });
   const splitPayments = body.payments?.length
@@ -1355,8 +1369,10 @@ export async function closeTableAccount(req: Request, res: Response) {
           category: "OTHER_INCOME",
           direction: "IN",
           amount: toDecimal(account.serviceFee),
+          paymentMethod,
+          paymentDetail,
           operatorId: req.user!.sub,
-          description: `Taxa de servico mesa ${table.number}`
+          description: `Taxa de servico mesa ${table.number} via ${paymentDetail}`
         }
       });
     }

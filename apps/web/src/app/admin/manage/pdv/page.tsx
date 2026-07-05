@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -123,6 +123,7 @@ type DraftItem = {
 
 type ClosePaymentMethod = "CASH" | "PIX" | "DEBIT" | "CREDIT" | "CARD";
 type BillSplitMode = "ITEMS" | "VALUE";
+type ServiceFeeType = "PERCENT" | "FIXED";
 type PdvAlert = {
   id: string;
   message: string;
@@ -319,12 +320,15 @@ export default function PdvPage() {
   const [closeDiscount, setCloseDiscount] = useState(0);
   const [closeDiscountReason, setCloseDiscountReason] = useState("");
   const [serviceFeeEnabled, setServiceFeeEnabled] = useState(false);
+  const [serviceFeeType, setServiceFeeType] = useState<ServiceFeeType>("PERCENT");
   const [serviceFeePercent, setServiceFeePercent] = useState(10);
+  const [serviceFeeAmount, setServiceFeeAmount] = useState(0);
   const [splitPayments, setSplitPayments] = useState<Array<{ method: ClosePaymentMethod; amount: number }>>([]);
   const [billPeople, setBillPeople] = useState(["Pessoa 1", "Pessoa 2"]);
   const [itemSplitAssignments, setItemSplitAssignments] = useState<Record<string, number>>({});
-  const [billSplitMode, setBillSplitMode] = useState<BillSplitMode>("ITEMS");
+  const [billSplitMode, setBillSplitMode] = useState<BillSplitMode>("VALUE");
   const [valueSplitAmounts, setValueSplitAmounts] = useState<number[]>([]);
+  const [valueSplitMethods, setValueSplitMethods] = useState<ClosePaymentMethod[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingOrder, setSavingOrder] = useState(false);
   const [closingTable, setClosingTable] = useState(false);
@@ -339,6 +343,10 @@ export default function PdvPage() {
   const [movingTable, setMovingTable] = useState(false);
   const [showQrPanel, setShowQrPanel] = useState(false);
   const [showClosePanel, setShowClosePanel] = useState(false);
+  const [showMovePanel, setShowMovePanel] = useState(false);
+  const [showPaymentSplitPanel, setShowPaymentSplitPanel] = useState(false);
+  const [showBillSplitPanel, setShowBillSplitPanel] = useState(false);
+  const [showHistoryPanel, setShowHistoryPanel] = useState(false);
   const [showAuditPanel, setShowAuditPanel] = useState(false);
   const [auditLogs, setAuditLogs] = useState<PdvAuditLog[]>([]);
   const [loadingAudit, setLoadingAudit] = useState(false);
@@ -385,7 +393,11 @@ export default function PdvPage() {
   }, 0), [draftItems, products]);
 
   const accountTotals = useMemo(() => {
-    const serviceFee = serviceFeeEnabled ? totals.total * (serviceFeePercent / 100) : 0;
+    const serviceFee = serviceFeeEnabled
+      ? serviceFeeType === "FIXED"
+        ? Math.max(0, serviceFeeAmount || 0)
+        : totals.total * ((serviceFeePercent || 0) / 100)
+      : 0;
     const discount = Math.min(Math.max(closeDiscount || 0, 0), totals.total + serviceFee);
     return {
       subtotal: totals.total,
@@ -393,7 +405,7 @@ export default function PdvPage() {
       discount,
       total: Math.max(0, totals.total + serviceFee - discount)
     };
-  }, [closeDiscount, serviceFeeEnabled, serviceFeePercent, totals.total]);
+  }, [closeDiscount, serviceFeeAmount, serviceFeeEnabled, serviceFeePercent, serviceFeeType, totals.total]);
   const splitPaidTotal = useMemo(
     () => splitPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0),
     [splitPayments]
@@ -464,6 +476,16 @@ export default function PdvPage() {
   const canClosePdv = can("PDV_CLOSE") || can("CASH_MANAGE");
   const canHistoryPdv = can("PDV_HISTORY") || can("CASH_MANAGE") || can("FINANCE");
   const canAuditPdv = canHistoryPdv || can("AUDIT_VIEW");
+
+  useEffect(() => {
+    if (billSplitMode !== "VALUE") return;
+    if (valueSplitAmounts.length !== billPeople.length) {
+      setValueSplitAmounts(distributeAccountByPeople(billPeople.length));
+    }
+    if (valueSplitMethods.length !== billPeople.length) {
+      setValueSplitMethods(billPeople.map((_, index) => valueSplitMethods[index] ?? closePaymentMethod));
+    }
+  }, [billPeople, billSplitMode, closePaymentMethod, valueSplitAmounts.length, valueSplitMethods, accountTotals.total]);
 
   const configuringTotal = useMemo(() => {
     if (!configuringProduct) return 0;
@@ -574,7 +596,7 @@ export default function PdvPage() {
       const waiterCalledAt = table.activeSession?.waiterCalledAt ?? null;
       if (!old) return;
       if (waiterCalledAt && waiterCalledAt !== old.waiterCalledAt) {
-        pushAlert(`Mesa ${table.number} chamou o garçom`, "order", {
+        pushAlert(`Mesa ${table.number} chamou o garÃ§om`, "order", {
           kind: "WAITER",
           tableId: table.id,
           sessionId: table.activeSession?.id
@@ -644,15 +666,22 @@ export default function PdvPage() {
     setCloseNotes("");
     setCloseDiscount(0);
     setCloseDiscountReason("");
+    setServiceFeeType("PERCENT");
+    setServiceFeeAmount(0);
     setSplitPayments([]);
     setBillPeople(["Pessoa 1", "Pessoa 2"]);
     setItemSplitAssignments({});
-    setBillSplitMode("ITEMS");
+    setBillSplitMode("VALUE");
     setValueSplitAmounts([]);
+    setValueSplitMethods([]);
     setClosedSessions([]);
     setTargetTableId("");
     setShowQrPanel(false);
     setShowClosePanel(false);
+    setShowMovePanel(false);
+    setShowPaymentSplitPanel(false);
+    setShowBillSplitPanel(false);
+    setShowHistoryPanel(false);
     setAuditLogs([]);
     setLoadingOrders(true);
     try {
@@ -882,8 +911,15 @@ export default function PdvPage() {
       toast.error("Nao ha pedidos para fechar nesta mesa");
       return;
     }
+    const valueModePayments = billSplitMode === "VALUE"
+      ? billPeople.map((_, index) => ({
+          method: valueSplitMethods[index] ?? closePaymentMethod,
+          amount: Number(valueSplitAmounts[index] ?? 0)
+        })).filter((payment) => payment.amount > 0)
+      : [];
+    const effectiveSplitPayments = valueModePayments.length ? valueModePayments : splitPayments;
     if (splitPayments.length && !splitIsBalanced) {
-      toast.error(`Pagamento dividido nao bate com o total. Diferença: ${brl(Math.abs(splitDifference))}`);
+      toast.error(`Pagamento dividido nao bate com o total. DiferenÃ§a: ${brl(Math.abs(splitDifference))}`);
       return;
     }
     if (billSplitMode === "VALUE" && !billSplitValueBalanced) {
@@ -896,6 +932,8 @@ export default function PdvPage() {
     try {
       const receiptPayments = splitPayments.length
         ? splitPayments
+        : valueModePayments.length
+          ? valueModePayments
         : [{ method: closePaymentMethod, amount: accountTotals.total }];
       const result = await request(`/admin/tables/${selectedTable.id}/close`, {
         method: "POST",
@@ -904,8 +942,10 @@ export default function PdvPage() {
           discount: closeDiscount,
           discountReason: closeDiscountReason || undefined,
           serviceFeeEnabled,
+          serviceFeeType,
           serviceFeePercent,
-          payments: splitPayments.length ? splitPayments : undefined,
+          serviceFeeAmount,
+          payments: effectiveSplitPayments.length ? effectiveSplitPayments : undefined,
           billSplit,
           notes: closeNotes || undefined
         })
@@ -966,7 +1006,9 @@ export default function PdvPage() {
           type: "PRE_BILL",
           discount,
           serviceFeeEnabled,
+          serviceFeeType,
           serviceFeePercent,
+          serviceFeeAmount,
           billSplit,
           notes: closeNotes || undefined
         })
@@ -1007,7 +1049,9 @@ export default function PdvPage() {
         body: JSON.stringify({
           type,
           serviceFeeEnabled,
+          serviceFeeType,
           serviceFeePercent,
+          serviceFeeAmount,
           discount: closeDiscount,
           notes: `Reimpressao solicitada no PDV em ${new Date().toLocaleString("pt-BR")}`
         })
@@ -1070,6 +1114,7 @@ export default function PdvPage() {
     setBillPeople((current) => {
       const next = [...current, `Pessoa ${current.length + 1}`];
       setValueSplitAmounts(distributeAccountByPeople(next.length));
+      setValueSplitMethods((methods) => [...methods, closePaymentMethod]);
       return next;
     });
   }
@@ -1086,6 +1131,7 @@ export default function PdvPage() {
     setBillPeople((current) => {
       const next = current.filter((_, currentIndex) => currentIndex !== index);
       setValueSplitAmounts(distributeAccountByPeople(next.length));
+      setValueSplitMethods((methods) => methods.filter((_, currentIndex) => currentIndex !== index));
       return next;
     });
     setItemSplitAssignments((current) => {
@@ -1115,13 +1161,35 @@ export default function PdvPage() {
     setBillSplitMode(mode);
     if (mode === "VALUE") {
       setValueSplitAmounts(distributeAccountByPeople());
+      setValueSplitMethods(billPeople.map((_, index) => valueSplitMethods[index] ?? closePaymentMethod));
     }
   }
 
   function updateValueSplitAmount(index: number, amount: number) {
+    const safeAmount = Math.max(0, Number(amount || 0));
     setValueSplitAmounts((current) => {
-      const next = [...current];
-      next[index] = Math.max(0, Number(amount || 0));
+      const peopleCount = Math.max(1, billPeople.length);
+      const next = Array.from({ length: peopleCount }, (_, personIndex) => Number(current[personIndex] ?? 0));
+      next[index] = safeAmount;
+      const remainingPeople = peopleCount - index - 1;
+      if (remainingPeople > 0) {
+        const usedCents = Math.round(next.slice(0, index + 1).reduce((sum, value) => sum + value, 0) * 100);
+        const totalCents = Math.round(accountTotals.total * 100);
+        const remainingCents = Math.max(0, totalCents - usedCents);
+        const base = Math.floor(remainingCents / remainingPeople);
+        const remainder = remainingCents - base * remainingPeople;
+        for (let personIndex = index + 1; personIndex < peopleCount; personIndex += 1) {
+          next[personIndex] = (base + (personIndex - index - 1 < remainder ? 1 : 0)) / 100;
+        }
+      }
+      return next;
+    });
+  }
+
+  function updateValueSplitMethod(index: number, method: ClosePaymentMethod) {
+    setValueSplitMethods((current) => {
+      const next = Array.from({ length: billPeople.length }, (_, personIndex) => current[personIndex] ?? closePaymentMethod);
+      next[index] = method;
       return next;
     });
   }
@@ -1317,7 +1385,7 @@ export default function PdvPage() {
                   <h2 className="font-display text-5xl leading-none">Mesa {table.number}</h2>
                   <p className="mt-1 font-bold">{table.name || `${table.seats} lugares`}</p>
                 </div>
-                <span className="rounded-full bg-white/70 px-3 py-1 text-xs font-black">{table.activeSession?.waiterCalledAt ? "Chamou garçom" : statusLabels[table.status]}</span>
+                <span className="rounded-full bg-white/70 px-3 py-1 text-xs font-black">{table.activeSession?.waiterCalledAt ? "Chamou garÃ§om" : statusLabels[table.status]}</span>
               </div>
               <div className="mt-5 grid grid-cols-2 gap-2 text-sm">
                 <div className="rounded-2xl bg-white/65 p-3">
@@ -1327,7 +1395,7 @@ export default function PdvPage() {
                 <div className="rounded-2xl bg-white/65 p-3">
                   <p className="text-xs opacity-70">QR Code</p>
                   <p className="truncate text-xs font-bold">
-                    {table.activeSession?.status === "PENDING_CONFIRMATION" ? "Aguardando confirmação" : table.activeSession ? "Sessão ativa" : "Fechado"}
+                    {table.activeSession?.status === "PENDING_CONFIRMATION" ? "Aguardando confirmaÃ§Ã£o" : table.activeSession ? "SessÃ£o ativa" : "Fechado"}
                   </p>
                 </div>
                 <div className="rounded-2xl bg-white/65 p-3">
@@ -1335,7 +1403,7 @@ export default function PdvPage() {
                   <p className="truncate text-xs font-black">{brl(table.accountTotal ?? 0)}</p>
                 </div>
                 <div className={`rounded-2xl p-3 ${table.activeSession?.waiterCalledAt ? "bg-blue-100 text-blue-900" : "bg-white/65"}`}>
-                  <p className="text-xs opacity-70">Garçom</p>
+                  <p className="text-xs opacity-70">GarÃ§om</p>
                   <p className="truncate text-xs font-black">{table.activeSession?.waiterCalledAt ? "Chamado" : "-"}</p>
                 </div>
               </div>
@@ -1344,7 +1412,7 @@ export default function PdvPage() {
           {!filteredTables.length && (
             <div className="rounded-3xl border bg-white/80 p-8 text-center sm:col-span-2 lg:col-span-4">
               <p className="font-black">Nenhuma mesa encontrada.</p>
-              <p className="mt-1 text-sm opacity-70">Cadastre mesas em “Mesas / QR Code”.</p>
+              <p className="mt-1 text-sm opacity-70">Cadastre mesas em â€œMesas / QR Codeâ€.</p>
             </div>
           )}
         </section>
@@ -1357,7 +1425,7 @@ export default function PdvPage() {
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.2em] text-ember">Comanda aberta</p>
                 <h2 className="font-display text-5xl leading-none">Mesa {selectedTable.number}</h2>
-                <p className="text-sm opacity-70">{selectedTable.area?.name || "Sem setor"} • {statusLabels[selectedTable.status]}</p>
+                <p className="text-sm opacity-70">{selectedTable.area?.name || "Sem setor"} â€¢ {statusLabels[selectedTable.status]}</p>
               </div>
               <button className="rounded-full bg-black/5 px-4 py-2 font-bold dark:bg-white/10" onClick={() => setSelectedTable(null)}>Fechar</button>
             </div>
@@ -1410,7 +1478,7 @@ export default function PdvPage() {
               )}
               {selectedTable.activeSession?.status !== "PENDING_CONFIRMATION" && (
                 <a className="rounded-xl bg-ink px-3 py-2 text-sm font-bold text-white" href={selectedTable.qrCodeUrl} target="_blank" rel="noreferrer">
-                  Abrir QR/cardápio
+                  Abrir QR/cardÃ¡pio
                 </a>
               )}
               {selectedTable.activeSession?.status !== "PENDING_CONFIRMATION" && (
@@ -1422,11 +1490,17 @@ export default function PdvPage() {
               {canManagePdv && selectedTable.activeSession?.status !== "CLOSING_REQUESTED" && (
                 <button className="rounded-xl bg-red-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void updateStatus(selectedTable, "WAITING_PAYMENT")}>Solicitou conta</button>
               )}
-              <button className="rounded-xl border px-3 py-2 text-sm font-bold" onClick={() => void printTableAccount()}>Imprimir pré-conta</button>
+              <button className="rounded-xl border px-3 py-2 text-sm font-bold" onClick={() => void printTableAccount()}>Imprimir prÃ©-conta</button>
               <button className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void updateStatus(selectedTable, "FREE")}>Liberar mesa</button>
+              {canManagePdv && selectedTable.activeSession && (
+                <button className="rounded-xl border px-3 py-2 text-sm font-bold" onClick={() => setShowMovePanel((value) => !value)}>Transferir/juntar</button>
+              )}
+              {canHistoryPdv && (
+                <button className="rounded-xl border px-3 py-2 text-sm font-bold" onClick={() => setShowHistoryPanel((value) => !value)}>Historico</button>
+              )}
             </div>
 
-            {canManagePdv && selectedTable.activeSession && (
+            {canManagePdv && selectedTable.activeSession && showMovePanel && (
               <section className="mt-4 rounded-3xl border bg-slate-50 p-4 text-slate-950">
                 <div className="flex flex-wrap items-end gap-2">
                   <label className="min-w-64 flex-1">
@@ -1456,7 +1530,7 @@ export default function PdvPage() {
               </section>
             )}
 
-            {canHistoryPdv && <section className="mt-4 rounded-3xl border bg-white p-4 text-slate-950">
+            {canHistoryPdv && showHistoryPanel && <section className="mt-4 rounded-3xl border bg-white p-4 text-slate-950">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Historico</p>
@@ -1534,7 +1608,7 @@ export default function PdvPage() {
                           <p className="font-black">{auditActionLabel(log.action)}</p>
                           <p className="text-sm opacity-80">{auditDescription(log)}</p>
                           <p className="mt-1 text-xs opacity-60">
-                            {formatDate(log.createdAt)} | Usuário: {log.userName || log.userId || "Sistema"} {log.ipAddress ? `| IP ${log.ipAddress}` : ""}
+                            {formatDate(log.createdAt)} | UsuÃ¡rio: {log.userName || log.userId || "Sistema"} {log.ipAddress ? `| IP ${log.ipAddress}` : ""}
                           </p>
                         </div>
                         <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-600">{log.entity}</span>
@@ -1549,7 +1623,7 @@ export default function PdvPage() {
               <section className="mt-4 rounded-3xl border bg-white p-4 text-slate-950">
                 {selectedTable.activeSession.status === "PENDING_CONFIRMATION" && (
                   <div className="mb-4 rounded-2xl border border-blue-200 bg-blue-50 p-3 text-blue-950">
-                    <p className="text-xs font-black uppercase tracking-[0.18em]">Solicitação do cliente</p>
+                    <p className="text-xs font-black uppercase tracking-[0.18em]">SolicitaÃ§Ã£o do cliente</p>
                     <p className="mt-1 font-black">{selectedTable.activeSession.customerName || "Cliente"}</p>
                     <p className="text-sm opacity-80">{selectedTable.activeSession.customerPhone || "-"} - {selectedTable.activeSession.customerEmail || "-"}</p>
                     <p className="mt-2 text-sm">Confirme apenas se o cliente estiver presente na mesa. O QR Code e o codigo aparecem depois da confirmacao.</p>
@@ -1560,8 +1634,8 @@ export default function PdvPage() {
                   <img className="h-44 w-44 rounded-2xl bg-white p-2 shadow" src={qrImage(selectedTable.activeSession.sessionUrl)} alt={`QR Code mesa ${selectedTable.number}`} />
                   <div>
                     <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-700">Atendimento seguro</p>
-                    <h3 className="text-2xl font-black">Código: {selectedTable.activeSession.shortCode}</h3>
-                    <p className="mt-1 text-sm opacity-70">Mostre este código ao cliente. O QR Code só funciona enquanto este atendimento estiver aberto.</p>
+                    <h3 className="text-2xl font-black">CÃ³digo: {selectedTable.activeSession.shortCode}</h3>
+                    <p className="mt-1 text-sm opacity-70">Mostre este cÃ³digo ao cliente. O QR Code sÃ³ funciona enquanto este atendimento estiver aberto.</p>
                     <p className="mt-2 break-all rounded-xl bg-slate-100 p-2 text-xs">{selectedTable.activeSession.sessionUrl}</p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button className="rounded-xl border px-3 py-2 text-sm font-bold" onClick={() => {
@@ -1601,9 +1675,26 @@ export default function PdvPage() {
                 <label className="rounded-2xl bg-white p-3">
                   <span className="flex items-center gap-2 text-xs font-bold">
                     <input type="checkbox" checked={serviceFeeEnabled} onChange={(event) => setServiceFeeEnabled(event.target.checked)} />
-                    Taxa de serviço
+                    Taxa de serviÃ§o
                   </span>
-                  <input className="mt-1 w-full rounded-lg border px-2 py-1 text-sm" type="number" min={0} max={30} value={serviceFeePercent} onChange={(event) => setServiceFeePercent(Number(event.target.value || 0))} />
+                  <div className="mt-1 grid grid-cols-[1fr_64px] gap-1">
+                    <input
+                      className="w-full rounded-lg border px-2 py-1 text-sm"
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={serviceFeeType === "PERCENT" ? serviceFeePercent : serviceFeeAmount}
+                      onChange={(event) => {
+                        const value = Number(event.target.value || 0);
+                        if (serviceFeeType === "PERCENT") setServiceFeePercent(value);
+                        else setServiceFeeAmount(value);
+                      }}
+                    />
+                    <select className="rounded-lg border px-1 py-1 text-sm" value={serviceFeeType} onChange={(event) => setServiceFeeType(event.target.value as ServiceFeeType)}>
+                      <option value="PERCENT">%</option>
+                      <option value="FIXED">R$</option>
+                    </select>
+                  </div>
                   <p className="text-xs font-bold">{brl(accountTotals.serviceFee)}</p>
                 </label>
                 <label className="rounded-2xl bg-white p-3">
@@ -1619,11 +1710,11 @@ export default function PdvPage() {
                 <select className="rounded-xl border px-3 py-2" value={closePaymentMethod} onChange={(event) => setClosePaymentMethod(event.target.value as ClosePaymentMethod)}>
                   <option value="PIX">Pix</option>
                   <option value="CASH">Dinheiro</option>
-                  <option value="DEBIT">Cartão Débito</option>
-                  <option value="CREDIT">Cartão Crédito</option>
-                  <option value="CARD">Cartão</option>
+                  <option value="DEBIT">CartÃ£o DÃ©bito</option>
+                  <option value="CREDIT">CartÃ£o CrÃ©dito</option>
+                  <option value="CARD">CartÃ£o</option>
                 </select>
-                <input className="rounded-xl border px-3 py-2" placeholder="Observação do fechamento opcional" value={closeNotes} onChange={(event) => setCloseNotes(event.target.value)} />
+                <input className="rounded-xl border px-3 py-2" placeholder="ObservaÃ§Ã£o do fechamento opcional" value={closeNotes} onChange={(event) => setCloseNotes(event.target.value)} />
                 <button
                   className="rounded-xl bg-emerald-700 px-4 py-2 font-black text-white disabled:opacity-60"
                   disabled={closingTable || totals.count === 0}
@@ -1632,7 +1723,15 @@ export default function PdvPage() {
                   {closingTable ? "Fechando..." : "Receber e liberar"}
                 </button>
               </div>
-              <div className="mt-3 rounded-2xl border border-emerald-200 bg-white/80 p-3">
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button type="button" className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm font-black text-emerald-800" onClick={() => setShowPaymentSplitPanel((value) => !value)}>
+                  Pagamento dividido
+                </button>
+                <button type="button" className="rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm font-black text-blue-800" onClick={() => setShowBillSplitPanel((value) => !value)}>
+                  Dividir por pessoas
+                </button>
+              </div>
+              {showPaymentSplitPanel && <div className="mt-3 rounded-2xl border border-emerald-200 bg-white/80 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-700">Pagamento dividido</p>
@@ -1658,9 +1757,9 @@ export default function PdvPage() {
                         >
                           <option value="PIX">Pix</option>
                           <option value="CASH">Dinheiro</option>
-                          <option value="DEBIT">Cartão Débito</option>
-                          <option value="CREDIT">Cartão Crédito</option>
-                          <option value="CARD">Cartão</option>
+                          <option value="DEBIT">CartÃ£o DÃ©bito</option>
+                          <option value="CREDIT">CartÃ£o CrÃ©dito</option>
+                          <option value="CARD">CartÃ£o</option>
                         </select>
                         <input
                           className="rounded-xl border px-3 py-2"
@@ -1692,11 +1791,11 @@ export default function PdvPage() {
                     </div>
                   </div>
                 ) : (
-                  <p className="mt-2 text-xs opacity-70">Sem divisão: será usado apenas o método selecionado acima.</p>
+                  <p className="mt-2 text-xs opacity-70">Sem divisÃ£o: serÃ¡ usado apenas o mÃ©todo selecionado acima.</p>
                 )}
               </div>
-              <p className="mt-2 text-xs opacity-70">Importante: é necessário ter caixa aberto para o operador logado.</p>
-              <div className="mt-3 rounded-2xl border border-blue-200 bg-white/80 p-3">
+              }<p className="mt-2 text-xs opacity-70">Importante: Ã© necessÃ¡rio ter caixa aberto para o operador logado.</p>
+              {showBillSplitPanel && <div className="mt-3 rounded-2xl border border-blue-200 bg-white/80 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-700">Divisao da conta</p>
@@ -1707,21 +1806,8 @@ export default function PdvPage() {
                     <button type="button" className="rounded-xl border border-blue-200 px-3 py-2 text-xs font-black text-blue-800" onClick={() => void copyBillSplit()}>Copiar divisao</button>
                   </div>
                 </div>
-                <div className="mt-3 grid grid-cols-2 gap-2 rounded-2xl bg-blue-50 p-1">
-                  <button
-                    type="button"
-                    className={`rounded-xl px-3 py-2 text-sm font-black ${billSplitMode === "ITEMS" ? "bg-blue-700 text-white" : "text-blue-900"}`}
-                    onClick={() => switchBillSplitMode("ITEMS")}
-                  >
-                    Por item
-                  </button>
-                  <button
-                    type="button"
-                    className={`rounded-xl px-3 py-2 text-sm font-black ${billSplitMode === "VALUE" ? "bg-blue-700 text-white" : "text-blue-900"}`}
-                    onClick={() => switchBillSplitMode("VALUE")}
-                  >
-                    Por valor
-                  </button>
+                <div className="mt-3 rounded-2xl bg-blue-50 p-3 text-sm font-bold text-blue-900">
+                  Informe as pessoas e quanto cada uma vai pagar. O restante e redistribuido automaticamente.
                 </div>
                 <div className="mt-3 grid gap-2 md:grid-cols-2">
                   {billPeople.map((person, index) => (
@@ -1746,14 +1832,27 @@ export default function PdvPage() {
                       {billPeople.map((person, index) => (
                         <label key={index} className="rounded-2xl bg-slate-50 p-3">
                           <span className="text-xs font-bold opacity-70">{person || `Pessoa ${index + 1}`}</span>
-                          <input
-                            className="mt-1 w-full rounded-xl border px-3 py-2 font-black"
-                            type="number"
-                            min={0}
-                            step="0.01"
-                            value={valueSplitAmounts[index] ?? 0}
-                            onChange={(event) => updateValueSplitAmount(index, Number(event.target.value || 0))}
-                          />
+                          <div className="mt-1 grid gap-2 sm:grid-cols-[1fr_140px]">
+                            <input
+                              className="w-full rounded-xl border px-3 py-2 font-black"
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              value={valueSplitAmounts[index] ?? 0}
+                              onChange={(event) => updateValueSplitAmount(index, Number(event.target.value || 0))}
+                            />
+                            <select
+                              className="rounded-xl border px-3 py-2 text-sm"
+                              value={valueSplitMethods[index] ?? closePaymentMethod}
+                              onChange={(event) => updateValueSplitMethod(index, event.target.value as ClosePaymentMethod)}
+                            >
+                              <option value="PIX">Pix</option>
+                              <option value="CASH">Dinheiro</option>
+                              <option value="DEBIT">Debito</option>
+                              <option value="CREDIT">Credito</option>
+                              <option value="CARD">Cartao</option>
+                            </select>
+                          </div>
                         </label>
                       ))}
                     </div>
@@ -1803,15 +1902,15 @@ export default function PdvPage() {
                     </div>
                   ))}
                 </div>
-              </div>
-                          </>
+              </div>}
+                           </>
               )}
 </section>}
 
-            {canOpenPdv && <section className="mt-5 rounded-3xl border bg-orange-50 p-4 text-slate-950">
+            {canOpenPdv && <section className="mt-5 rounded-3xl border-2 border-orange-200 bg-orange-50 p-4 text-slate-950 shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <p className="text-xs font-black uppercase tracking-[0.18em] text-ember">Garçom / PDV</p>
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-ember">GarÃ§om / PDV</p>
                   <h3 className="text-xl font-black">Adicionar itens na mesa</h3>
                 </div>
                 <strong className="rounded-full bg-white px-3 py-1 text-ember">{brl(draftTotal)}</strong>
@@ -1840,11 +1939,11 @@ export default function PdvPage() {
                   ))}
                 </select>
                 <input className="rounded-xl border px-3 py-2 disabled:opacity-60" type="number" min={1} value={draftQuantity} disabled={!tableCanReceiveOrders} onChange={(event) => setDraftQuantity(Math.max(1, Number(event.target.value || 1)))} />
-                <button className="w-full rounded-xl bg-ink px-4 py-3 font-bold text-white disabled:opacity-60" disabled={!tableCanReceiveOrders} onClick={addDraftItem}>Adicionar</button>
+                <button className="w-full rounded-2xl bg-emerald-700 px-5 py-4 text-lg font-black text-white shadow-lg shadow-emerald-900/20 disabled:opacity-60" disabled={!tableCanReceiveOrders} onClick={addDraftItem}>Adicionar item</button>
               </div>
 
               <input className="mt-2 w-full rounded-xl border px-3 py-2" placeholder="Nome do cliente opcional" value={draftCustomerName} onChange={(event) => setDraftCustomerName(event.target.value)} />
-              <textarea className="mt-2 w-full rounded-xl border px-3 py-2" placeholder="Observação da cozinha: sem cebola, ponto da carne, etc." value={draftNotes} onChange={(event) => setDraftNotes(event.target.value)} />
+              <textarea className="mt-2 w-full rounded-xl border px-3 py-2" placeholder="ObservaÃ§Ã£o da cozinha: sem cebola, ponto da carne, etc." value={draftNotes} onChange={(event) => setDraftNotes(event.target.value)} />
 
               {draftItems.length > 0 && (
                 <div className="mt-3 space-y-2">
@@ -1889,7 +1988,7 @@ export default function PdvPage() {
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <p className="font-black">Pedido #{String(order.orderNumber).padStart(5, "0")}</p>
-                        <p className="text-xs opacity-65">{formatDate(order.createdAt)} • {orderStatusLabels[order.status]}</p>
+                        <p className="text-xs opacity-65">{formatDate(order.createdAt)} â€¢ {orderStatusLabels[order.status]}</p>
                       </div>
                       <p className="text-lg font-black text-ember">{brl(order.total)}</p>
                     </div>
@@ -1918,7 +2017,7 @@ export default function PdvPage() {
               ) : (
                 <div className="rounded-2xl border border-dashed p-6 text-center">
                   <p className="font-black">Nenhum pedido aberto nesta mesa.</p>
-                  <p className="mt-1 text-sm opacity-70">Abra o cardápio da mesa ou leia o QR Code para criar o primeiro pedido.</p>
+                  <p className="mt-1 text-sm opacity-70">Abra o cardÃ¡pio da mesa ou leia o QR Code para criar o primeiro pedido.</p>
                 </div>
               )}
             </div>
@@ -1993,7 +2092,7 @@ export default function PdvPage() {
                 <p className="text-2xl font-black text-ember">{brl(configuringTotal)}</p>
               </div>
               <button className="rounded-2xl bg-emerald-600 px-4 py-3 font-black text-white" onClick={confirmConfiguredItem}>
-                Adicionar à comanda
+                Adicionar Ã  comanda
               </button>
             </div>
           </div>
