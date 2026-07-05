@@ -122,6 +122,7 @@ type DraftItem = {
 };
 
 type ClosePaymentMethod = "CASH" | "PIX" | "DEBIT" | "CREDIT" | "CARD";
+type BillSplitMode = "ITEMS" | "VALUE";
 type PdvAlert = {
   id: string;
   message: string;
@@ -322,6 +323,8 @@ export default function PdvPage() {
   const [splitPayments, setSplitPayments] = useState<Array<{ method: ClosePaymentMethod; amount: number }>>([]);
   const [billPeople, setBillPeople] = useState(["Pessoa 1", "Pessoa 2"]);
   const [itemSplitAssignments, setItemSplitAssignments] = useState<Record<string, number>>({});
+  const [billSplitMode, setBillSplitMode] = useState<BillSplitMode>("ITEMS");
+  const [valueSplitAmounts, setValueSplitAmounts] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingOrder, setSavingOrder] = useState(false);
   const [closingTable, setClosingTable] = useState(false);
@@ -408,6 +411,14 @@ export default function PdvPage() {
       total: 0,
       items: [] as string[]
     }));
+    if (billSplitMode === "VALUE") {
+      return rows.map((row, index) => ({
+        ...row,
+        subtotal: Number(valueSplitAmounts[index] ?? 0),
+        total: Number(valueSplitAmounts[index] ?? 0),
+        items: ["Divisao manual por valor"]
+      }));
+    }
     const activeOrders = orders.filter((order) => order.status !== "CANCELED");
     activeOrders.forEach((order) => {
       order.items.forEach((item) => {
@@ -430,7 +441,13 @@ export default function PdvPage() {
         total: Math.max(0, row.subtotal + serviceFee - discount)
       };
     });
-  }, [accountTotals.discount, accountTotals.serviceFee, billPeople, itemSplitAssignments, orders]);
+  }, [accountTotals.discount, accountTotals.serviceFee, billPeople, billSplitMode, itemSplitAssignments, orders, valueSplitAmounts]);
+  const billSplitValueTotal = useMemo(
+    () => valueSplitAmounts.reduce((sum, amount) => sum + Number(amount || 0), 0),
+    [valueSplitAmounts]
+  );
+  const billSplitValueDifference = billSplitValueTotal - accountTotals.total;
+  const billSplitValueBalanced = billSplitMode !== "VALUE" || Math.abs(billSplitValueDifference) <= 0.02;
   const tableCanReceiveOrders = selectedTable?.activeSession?.status === "OPEN";
   const filteredProductsForDraft = useMemo(() => {
     const term = draftProductSearch.trim().toLowerCase();
@@ -630,6 +647,8 @@ export default function PdvPage() {
     setSplitPayments([]);
     setBillPeople(["Pessoa 1", "Pessoa 2"]);
     setItemSplitAssignments({});
+    setBillSplitMode("ITEMS");
+    setValueSplitAmounts([]);
     setClosedSessions([]);
     setTargetTableId("");
     setShowQrPanel(false);
@@ -867,6 +886,10 @@ export default function PdvPage() {
       toast.error(`Pagamento dividido nao bate com o total. Diferença: ${brl(Math.abs(splitDifference))}`);
       return;
     }
+    if (billSplitMode === "VALUE" && !billSplitValueBalanced) {
+      toast.error(`Divisao por valor nao bate com o total. Diferenca: ${brl(Math.abs(billSplitValueDifference))}`);
+      return;
+    }
     const confirmed = window.confirm(`Fechar a mesa ${selectedTable.number} no valor de ${brl(accountTotals.total)}?`);
     if (!confirmed) return;
     setClosingTable(true);
@@ -1044,7 +1067,11 @@ export default function PdvPage() {
   }
 
   function addBillPerson() {
-    setBillPeople((current) => [...current, `Pessoa ${current.length + 1}`]);
+    setBillPeople((current) => {
+      const next = [...current, `Pessoa ${current.length + 1}`];
+      setValueSplitAmounts(distributeAccountByPeople(next.length));
+      return next;
+    });
   }
 
   function updateBillPerson(index: number, name: string) {
@@ -1056,7 +1083,11 @@ export default function PdvPage() {
       toast.error("A divisao precisa ter pelo menos uma pessoa");
       return;
     }
-    setBillPeople((current) => current.filter((_, currentIndex) => currentIndex !== index));
+    setBillPeople((current) => {
+      const next = current.filter((_, currentIndex) => currentIndex !== index);
+      setValueSplitAmounts(distributeAccountByPeople(next.length));
+      return next;
+    });
     setItemSplitAssignments((current) => {
       const next: Record<string, number> = {};
       Object.entries(current).forEach(([itemId, personIndex]) => {
@@ -1068,6 +1099,29 @@ export default function PdvPage() {
           next[itemId] = personIndex;
         }
       });
+      return next;
+    });
+  }
+
+  function distributeAccountByPeople(count = billPeople.length) {
+    const peopleCount = Math.max(1, count);
+    const cents = Math.round(accountTotals.total * 100);
+    const base = Math.floor(cents / peopleCount);
+    const remainder = cents - base * peopleCount;
+    return Array.from({ length: peopleCount }, (_, index) => (base + (index < remainder ? 1 : 0)) / 100);
+  }
+
+  function switchBillSplitMode(mode: BillSplitMode) {
+    setBillSplitMode(mode);
+    if (mode === "VALUE") {
+      setValueSplitAmounts(distributeAccountByPeople());
+    }
+  }
+
+  function updateValueSplitAmount(index: number, amount: number) {
+    setValueSplitAmounts((current) => {
+      const next = [...current];
+      next[index] = Math.max(0, Number(amount || 0));
       return next;
     });
   }
@@ -1645,13 +1699,29 @@ export default function PdvPage() {
               <div className="mt-3 rounded-2xl border border-blue-200 bg-white/80 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-700">Divisao por pessoa/item</p>
-                    <p className="text-xs opacity-70">Separe os itens da mesa por cliente antes de receber a conta.</p>
+                    <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-700">Divisao da conta</p>
+                    <p className="text-xs opacity-70">Divida por item ou informe quanto cada pessoa vai pagar.</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <button type="button" className="rounded-xl bg-blue-700 px-3 py-2 text-xs font-black text-white" onClick={addBillPerson}>Adicionar pessoa</button>
                     <button type="button" className="rounded-xl border border-blue-200 px-3 py-2 text-xs font-black text-blue-800" onClick={() => void copyBillSplit()}>Copiar divisao</button>
                   </div>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 rounded-2xl bg-blue-50 p-1">
+                  <button
+                    type="button"
+                    className={`rounded-xl px-3 py-2 text-sm font-black ${billSplitMode === "ITEMS" ? "bg-blue-700 text-white" : "text-blue-900"}`}
+                    onClick={() => switchBillSplitMode("ITEMS")}
+                  >
+                    Por item
+                  </button>
+                  <button
+                    type="button"
+                    className={`rounded-xl px-3 py-2 text-sm font-black ${billSplitMode === "VALUE" ? "bg-blue-700 text-white" : "text-blue-900"}`}
+                    onClick={() => switchBillSplitMode("VALUE")}
+                  >
+                    Por valor
+                  </button>
                 </div>
                 <div className="mt-3 grid gap-2 md:grid-cols-2">
                   {billPeople.map((person, index) => (
@@ -1661,7 +1731,45 @@ export default function PdvPage() {
                     </div>
                   ))}
                 </div>
-                <div className="mt-3 space-y-2">
+                {billSplitMode === "VALUE" && (
+                  <div className="mt-3 rounded-2xl border border-blue-100 bg-white p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-black">Valores por pessoa</p>
+                        <p className="text-xs opacity-70">Total da conta: {brl(accountTotals.total)}. Ajuste os valores se alguem pagar mais ou menos.</p>
+                      </div>
+                      <button type="button" className="rounded-xl border border-blue-200 px-3 py-2 text-xs font-black text-blue-800" onClick={() => setValueSplitAmounts(distributeAccountByPeople())}>
+                        Dividir igual
+                      </button>
+                    </div>
+                    <div className="mt-3 grid gap-2 md:grid-cols-2">
+                      {billPeople.map((person, index) => (
+                        <label key={index} className="rounded-2xl bg-slate-50 p-3">
+                          <span className="text-xs font-bold opacity-70">{person || `Pessoa ${index + 1}`}</span>
+                          <input
+                            className="mt-1 w-full rounded-xl border px-3 py-2 font-black"
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={valueSplitAmounts[index] ?? 0}
+                            onChange={(event) => updateValueSplitAmount(index, Number(event.target.value || 0))}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <div className={`mt-3 rounded-xl p-3 text-sm font-bold ${billSplitValueBalanced ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>
+                      <p>Total distribuido: {brl(billSplitValueTotal)}</p>
+                      <p>
+                        {billSplitValueBalanced
+                          ? "Divisao por valor conferida."
+                          : billSplitValueDifference < 0
+                            ? `Falta redistribuir ${brl(Math.abs(billSplitValueDifference))}.`
+                            : `Sobra ${brl(Math.abs(billSplitValueDifference))}.`}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {billSplitMode === "ITEMS" && <div className="mt-3 space-y-2">
                   {orders.filter((order) => order.status !== "CANCELED").flatMap((order) =>
                     order.items.map((item) => (
                       <div key={item.id} className="grid gap-2 rounded-2xl bg-slate-50 p-3 text-sm md:grid-cols-[1fr_180px]">
@@ -1680,7 +1788,7 @@ export default function PdvPage() {
                   {!orders.some((order) => order.status !== "CANCELED" && order.items.length > 0) && (
                     <p className="rounded-xl bg-slate-50 p-3 text-sm opacity-70">Nenhum item para dividir.</p>
                   )}
-                </div>
+                </div>}
                 <div className="mt-3 grid gap-2 md:grid-cols-2">
                   {billSplit.map((person, index) => (
                     <div key={index} className="rounded-2xl border bg-white p-3">
@@ -1715,7 +1823,7 @@ export default function PdvPage() {
                 </div>
               )}
 
-              <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1.5fr_.5fr_auto]">
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-[1fr_1.3fr_100px_140px]">
                 <input
                   className="rounded-xl border px-3 py-2 disabled:opacity-60"
                   placeholder="Buscar produto"
@@ -1732,7 +1840,7 @@ export default function PdvPage() {
                   ))}
                 </select>
                 <input className="rounded-xl border px-3 py-2 disabled:opacity-60" type="number" min={1} value={draftQuantity} disabled={!tableCanReceiveOrders} onChange={(event) => setDraftQuantity(Math.max(1, Number(event.target.value || 1)))} />
-                <button className="rounded-xl bg-ink px-4 py-2 font-bold text-white disabled:opacity-60" disabled={!tableCanReceiveOrders} onClick={addDraftItem}>Adicionar</button>
+                <button className="w-full rounded-xl bg-ink px-4 py-3 font-bold text-white disabled:opacity-60" disabled={!tableCanReceiveOrders} onClick={addDraftItem}>Adicionar</button>
               </div>
 
               <input className="mt-2 w-full rounded-xl border px-3 py-2" placeholder="Nome do cliente opcional" value={draftCustomerName} onChange={(event) => setDraftCustomerName(event.target.value)} />

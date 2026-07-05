@@ -504,6 +504,9 @@ export async function listTableOrders(req: Request, res: Response) {
 
 export async function listClosedTableSessions(req: Request, res: Response) {
   const companyId = getCompanyId(req);
+  const includeOld = req.query.all === "true";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
   const table = await prisma.restaurantTable.findFirst({
     where: { id: req.params.id, companyId, active: true },
     select: { id: true }
@@ -514,7 +517,8 @@ export async function listClosedTableSessions(req: Request, res: Response) {
     where: {
       companyId,
       tableId: table.id,
-      status: TableSessionStatus.CLOSED
+      status: TableSessionStatus.CLOSED,
+      ...(includeOld ? {} : { closedAt: { gte: today } })
     },
     select: {
       id: true,
@@ -538,7 +542,7 @@ export async function listClosedTableSessions(req: Request, res: Response) {
       }
     },
     orderBy: { closedAt: "desc" },
-    take: 15
+    take: includeOld ? 15 : 5
   });
 
   return res.json(sessions.map((session) => ({
