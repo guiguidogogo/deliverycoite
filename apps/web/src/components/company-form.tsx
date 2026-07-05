@@ -203,11 +203,11 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
           )}
         </div>
       </div>
-      <details className="mt-3">
-        <summary className="cursor-pointer text-xs font-semibold opacity-60">Ou informar URL manualmente</summary>
+        <details className="mt-3">
+          <summary className="cursor-pointer text-xs font-semibold opacity-60">Ou informar URL manualmente</summary>
         <input
           className="mt-2 w-full rounded-xl border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/20"
-          type="url"
+          type="text"
           placeholder="https://..."
           value={form[field]}
           onChange={(event) => setForm((value) => ({ ...value, [field]: event.target.value }))}
