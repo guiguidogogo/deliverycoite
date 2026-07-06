@@ -148,6 +148,14 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
   const themeStyle = {
     background: `radial-gradient(circle at top, ${company.primaryColor}30 0%, transparent 35%), radial-gradient(circle at 85% 15%, ${company.secondaryColor}40 0%, transparent 22%), linear-gradient(180deg, #0b1020 0%, #070b14 100%)`
   } as const;
+  const selectedQuantity = Object.values(quantities).reduce((sum, qty) => sum + qty, 0);
+  const canReserve =
+    Boolean(selectedEvent) &&
+    selectedQuantity > 0 &&
+    Boolean(customer.name.trim()) &&
+    Boolean(customer.phone.trim()) &&
+    Boolean(customer.email.trim()) &&
+    customer.password.trim().length >= 6;
 
   async function reserveTickets(event: React.FormEvent) {
     event.preventDefault();
@@ -368,7 +376,7 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
                 <p className="text-sm text-slate-500">Total da reserva</p>
                 <strong className="text-3xl">{money.format(total)}</strong>
               </div>
-              <button className="rounded-2xl bg-orange-500 px-6 py-4 font-black text-white disabled:opacity-50" disabled={submitting}>
+              <button className="rounded-2xl bg-orange-500 px-6 py-4 font-black text-white disabled:opacity-50" disabled={submitting || !canReserve}>
                 {submitting ? "Reservando..." : paymentMethod === "MERCADO_PAGO" ? "Continuar no Mercado Pago" : "Reservar ingressos"}
               </button>
             </div>
