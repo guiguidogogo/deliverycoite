@@ -1179,6 +1179,11 @@ export function Storefront() {
                     ? "Cardapio presencial: faca seus pedidos pelo celular e acompanhe sua conta em tempo real, sem chamar o garcom."
                     : settings?.promoBannerText || "Pe?a seus favoritos com uma experi?ncia r?pida, bonita e feita para delivery regional."}
                 </p>
+                {!isTableMode && settings?.promoBannerTitle && (
+                  <p className="mt-3 inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-black uppercase tracking-[0.2em]">
+                    {settings.promoBannerTitle}
+                  </p>
+                )}
               </div>
             </div>
 

@@ -20,6 +20,8 @@ export default function SettingsManagePage() {
     openTime: "18:00",
     closeTime: "23:59",
     autoMessage: "",
+    promoBannerTitle: "",
+    promoBannerText: "",
     pixKey: "",
     pixQrCodeUrl: "",
     menuiaApiKey: "",
@@ -72,6 +74,8 @@ export default function SettingsManagePage() {
           openTime: data.openTime ?? "18:00",
           closeTime: data.closeTime ?? "23:59",
           autoMessage: data.autoMessage ?? "",
+          promoBannerTitle: data.promoBannerTitle ?? "",
+          promoBannerText: data.promoBannerText ?? "",
           pixKey: data.pixKey ?? "",
           pixQrCodeUrl: data.pixQrCodeUrl ?? "",
           menuiaApiKey: data.menuiaApiKey ?? "",
@@ -304,6 +308,8 @@ export default function SettingsManagePage() {
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Horario fechamento" value={form.closeTime} onChange={(e) => setForm((v) => ({ ...v, closeTime: e.target.value }))} />
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Chave PIX" value={form.pixKey} onChange={(e) => setForm((v) => ({ ...v, pixKey: e.target.value }))} />
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20 md:col-span-2" placeholder="URL QR Code PIX" value={form.pixQrCodeUrl} onChange={(e) => setForm((v) => ({ ...v, pixQrCodeUrl: e.target.value }))} />
+          <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20 md:col-span-2" placeholder="Titulo do banner promocional" value={form.promoBannerTitle} onChange={(e) => setForm((v) => ({ ...v, promoBannerTitle: e.target.value }))} />
+          <textarea className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20 md:col-span-2" placeholder="Texto do banner promocional" value={form.promoBannerText} onChange={(e) => setForm((v) => ({ ...v, promoBannerText: e.target.value }))} />
           <textarea className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20 md:col-span-2" placeholder="Mensagem automatica" value={form.autoMessage} onChange={(e) => setForm((v) => ({ ...v, autoMessage: e.target.value }))} />
         </div>
       </section>
