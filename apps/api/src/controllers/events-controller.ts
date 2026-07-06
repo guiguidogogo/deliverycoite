@@ -37,10 +37,7 @@ const ticketTypeSchema = z.object({
 const ticketOrderSchema = z.object({
   customerName: z.string().trim().min(2, "Informe seu nome"),
   customerPhone: z.string().trim().min(8, "Informe seu telefone"),
-  customerEmail: z.preprocess(
-    (value) => typeof value === "string" && !value.trim() ? null : value,
-    z.string().trim().email("Email invalido").nullable().optional()
-  ),
+  customerEmail: z.string().trim().email("Email invalido"),
   paymentMethod: z.enum(["PIX", "CARD", "MERCADO_PAGO"]).default("PIX"),
   items: z.array(z.object({
     ticketTypeId: z.string().min(1),
@@ -185,7 +182,7 @@ export async function createPublicTicketOrder(req: Request, res: Response) {
         eventId: event.id,
         customerName: body.customerName,
         customerPhone: body.customerPhone.replace(/\D/g, ""),
-        customerEmail: body.customerEmail?.toLowerCase() ?? null,
+        customerEmail: body.customerEmail.toLowerCase(),
         total,
         status: "RESERVED",
         paymentStatus: "PENDING",
