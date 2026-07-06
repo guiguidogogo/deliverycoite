@@ -223,7 +223,10 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
                 <h1 className="text-2xl font-black">{company.tradeName}</h1>
               </div>
             </div>
-            <span className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-bold backdrop-blur">{company.city}</span>
+            <div className="flex items-center gap-2">
+              <a href="/account" className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-bold backdrop-blur transition hover:bg-white/20">Minha conta</a>
+              <span className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-bold backdrop-blur">{company.city}</span>
+            </div>
           </header>
 
           <div className="grid items-end gap-8 py-12 lg:grid-cols-[1.1fr_.9fr]">

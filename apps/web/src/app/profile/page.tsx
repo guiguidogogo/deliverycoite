@@ -50,11 +50,16 @@ type CustomerTicket = {
   }>;
 };
 
+function qrImage(value: string) {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(value)}`;
+}
+
 export default function ProfilePage() {
   const router = useRouter();
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [tickets, setTickets] = useState<CustomerTicket[]>([]);
+  const [activeTicket, setActiveTicket] = useState<CustomerTicket | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAddAddress, setShowAddAddress] = useState(false);
 
@@ -331,17 +336,52 @@ export default function ProfilePage() {
               </div>
               <div className="mt-3 grid gap-2 md:grid-cols-2">
                 {order.tickets.map((ticket) => (
-                  <div key={ticket.id} className="rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-800">
+                  <button key={ticket.id} type="button" onClick={() => setActiveTicket(order)} className="rounded-lg bg-slate-50 p-3 text-left text-sm dark:bg-slate-800">
                     <strong>{ticket.ticketType.name}</strong>
                     <p className="mt-1 text-xs opacity-70">Código: {ticket.code}</p>
-                    <p className="text-xs opacity-70">QR: {ticket.qrCode}</p>
-                  </div>
+                    <p className="text-xs opacity-70">Toque para abrir o QR Code</p>
+                  </button>
                 ))}
               </div>
             </article>
           )) : <p className="rounded-xl bg-slate-50 p-3 text-sm opacity-70 dark:bg-slate-800">Nenhum ingresso encontrado ainda.</p>}
         </div>
       </section>
+
+      {activeTicket && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setActiveTicket(null)}>
+          <div className="w-full max-w-lg rounded-3xl bg-white p-5 text-slate-950 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.25em] text-emerald-600">Meu ingresso</p>
+                <h3 className="mt-1 text-2xl font-black">{activeTicket.event.title}</h3>
+                <p className="mt-1 text-sm text-slate-600">{new Date(activeTicket.event.eventDate).toLocaleDateString("pt-BR")} • {activeTicket.event.startTime}</p>
+              </div>
+              <button type="button" className="rounded-full bg-slate-100 px-3 py-2 font-bold" onClick={() => setActiveTicket(null)}>Fechar</button>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-[260px_1fr]">
+              <img src={qrImage(activeTicket.tickets[0]?.qrCode ?? activeTicket.id)} alt="QR Code do ingresso" className="mx-auto h-[260px] w-[260px] rounded-2xl border bg-white p-3" />
+              <div className="space-y-3">
+                <div className="rounded-2xl bg-slate-50 p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">Códigos</p>
+                  <div className="mt-2 space-y-2">
+                    {activeTicket.tickets.map((ticket) => (
+                      <div key={ticket.id} className="rounded-xl bg-white px-3 py-2 text-sm shadow-sm">
+                        <strong>{ticket.ticketType.name}</strong>
+                        <p className="text-xs text-slate-500">{ticket.code}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <p className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+                  {activeTicket.paidAt ? "Pagamento confirmado. Use este QR Code na entrada." : "Assim que o pagamento for confirmado, o QR Code ficará liberado aqui."}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
         <div className="flex items-center justify-between">
