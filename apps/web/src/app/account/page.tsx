@@ -51,7 +51,7 @@ export default function CustomerAuthPage() {
       localStorage.setItem("delivery:customer-token", response.token);
       localStorage.setItem("delivery:customer", JSON.stringify(response.customer));
       toast.success(`Bem-vindo, ${response.customer.name}!`);
-      router.push("/");
+      router.push("/profile");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Erro ao fazer login");
     } finally {
@@ -84,7 +84,7 @@ export default function CustomerAuthPage() {
       localStorage.setItem("delivery:customer-token", response.token);
       localStorage.setItem("delivery:customer", JSON.stringify(response.customer));
       toast.success("Cadastro realizado com sucesso!");
-      router.push("/");
+      router.push("/profile");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Erro ao criar conta");
     } finally {
