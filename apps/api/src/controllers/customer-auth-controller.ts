@@ -219,19 +219,52 @@ export async function updateCustomerProfile(req: Request, res: Response) {
   const customerId = (req as any).customerId;
   const schema = z.object({
     name: z.string().min(2).optional(),
-    email: z.string().email().optional()
+    email: z.string().email().optional(),
+    phone: z.string().min(8).optional()
   });
 
   const body = schema.parse(req.body);
 
-  const existing = await prisma.customer.findFirst({ where: { id: customerId, ...companyWhere(req) } });
+  const existing = await prisma.customer.findFirst({
+    where: { id: customerId, ...companyWhere(req) },
+    include: { globalCustomer: true }
+  });
   if (!existing) return res.status(404).json({ message: "Cliente nao encontrado" });
-  const customer = await prisma.customer.update({
-    where: { id: existing.id },
-    data: {
-      ...body,
-      ...(body.email !== undefined ? { email: normalizeEmail(body.email) } : {})
+  const nextPhone = body.phone ? normalizePhone(body.phone) : existing.phone;
+  const nextEmail = body.email !== undefined ? normalizeEmail(body.email) : existing.email ?? null;
+
+  if (body.phone) {
+    const conflict = await prisma.globalCustomer.findFirst({
+      where: {
+        phone: nextPhone,
+        NOT: { id: existing.globalCustomerId ?? undefined }
+      }
+    });
+    if (conflict) {
+      return res.status(400).json({ message: "Telefone ja cadastrado em outra conta" });
     }
+  }
+
+  const customer = await prisma.$transaction(async (tx) => {
+    if (existing.globalCustomerId) {
+      await tx.globalCustomer.update({
+        where: { id: existing.globalCustomerId },
+        data: {
+          ...(body.name !== undefined ? { name: body.name } : {}),
+          ...(body.phone !== undefined ? { phone: nextPhone, whatsapp: nextPhone } : {}),
+          ...(body.email !== undefined ? { email: nextEmail } : {})
+        }
+      });
+    }
+
+    return tx.customer.update({
+      where: { id: existing.id },
+      data: {
+        ...(body.name !== undefined ? { name: body.name } : {}),
+        ...(body.phone !== undefined ? { phone: nextPhone } : {}),
+        ...(body.email !== undefined ? { email: nextEmail } : {})
+      }
+    });
   });
 
   return res.json({

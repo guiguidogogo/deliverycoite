@@ -57,6 +57,9 @@ function qrImage(value: string) {
 export default function ProfilePage() {
   const router = useRouter();
   const [customer, setCustomer] = useState<Customer | null>(null);
+  const [profileName, setProfileName] = useState("");
+  const [profilePhone, setProfilePhone] = useState("");
+  const [profileEmail, setProfileEmail] = useState("");
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [tickets, setTickets] = useState<CustomerTicket[]>([]);
   const [activeTicket, setActiveTicket] = useState<CustomerTicket | null>(null);
@@ -103,6 +106,9 @@ export default function ProfilePage() {
         phone: profile.phone,
         email: profile.email
       });
+      setProfileName(profile.name);
+      setProfilePhone(profile.phone);
+      setProfileEmail(profile.email ?? "");
       setAddresses(profile.addresses);
       const ticketOrders = await api<CustomerTicket[]>("/customer/tickets", {
         headers: { Authorization: `Bearer ${token}` }
@@ -266,6 +272,30 @@ export default function ProfilePage() {
     }
   }
 
+  async function saveProfile() {
+    const token = localStorage.getItem("delivery:customer-token");
+    if (!token) return;
+    try {
+      const updated = await api<Customer>("/customer/profile", {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          name: profileName,
+          phone: profilePhone,
+          email: profileEmail
+        })
+      });
+      setCustomer((current) => current ? { ...current, ...updated } : updated);
+      setProfileName(updated.name);
+      setProfilePhone(updated.phone);
+      setProfileEmail(updated.email ?? "");
+      localStorage.setItem("delivery:customer", JSON.stringify(updated));
+      toast.success("Perfil atualizado");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao atualizar perfil");
+    }
+  }
+
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center">
@@ -293,18 +323,13 @@ export default function ProfilePage() {
 
       <section className="rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
         <h2 className="text-xl font-bold">Dados Pessoais</h2>
-        <div className="mt-3 space-y-2">
-          <p>
-            <strong>Nome:</strong> {customer?.name}
-          </p>
-          <p>
-            <strong>Telefone:</strong> {customer?.phone}
-          </p>
-          {customer?.email && (
-            <p>
-              <strong>Email:</strong> {customer.email}
-            </p>
-          )}
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <input className="rounded-xl border px-3 py-2" placeholder="Nome" value={profileName} onChange={(e) => setProfileName(e.target.value)} />
+          <input className="rounded-xl border px-3 py-2" placeholder="Telefone" value={profilePhone} onChange={(e) => setProfilePhone(e.target.value)} />
+          <input className="rounded-xl border px-3 py-2 md:col-span-2" placeholder="Email" type="email" value={profileEmail} onChange={(e) => setProfileEmail(e.target.value)} />
+          <button className="rounded-xl bg-ink px-3 py-2 text-white md:col-span-2" onClick={() => void saveProfile()}>
+            Salvar perfil
+          </button>
         </div>
       </section>
 
