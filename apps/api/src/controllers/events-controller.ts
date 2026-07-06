@@ -4,6 +4,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
+import { linkCustomerToCompany, normalizePhone } from "../utils/customer-linking.js";
 import { createMercadoPagoPixPayment, createMercadoPagoPreference } from "../services/mercadopago.js";
 
 const optionalText = z.preprocess(
@@ -38,6 +39,7 @@ const ticketOrderSchema = z.object({
   customerName: z.string().trim().min(2, "Informe seu nome"),
   customerPhone: z.string().trim().min(8, "Informe seu telefone"),
   customerEmail: z.string().trim().email("Email invalido"),
+  customerPassword: z.string().trim().min(6, "Crie uma senha para acessar depois"),
   paymentMethod: z.enum(["PIX", "CARD", "MERCADO_PAGO"]).default("PIX"),
   items: z.array(z.object({
     ticketTypeId: z.string().min(1),
@@ -141,6 +143,15 @@ export async function createPublicTicketOrder(req: Request, res: Response) {
       select: { id: true, title: true, companyId: true, company: true }
     });
     if (!event) throw new Error("Evento nao encontrado");
+
+    await linkCustomerToCompany({
+      companyId,
+      name: body.customerName,
+      phone: normalizePhone(body.customerPhone),
+      email: body.customerEmail,
+      password: body.customerPassword,
+      db: tx
+    });
 
     const ids = [...new Set(body.items.map((item) => item.ticketTypeId))];
     const ticketTypes = await tx.ticketType.findMany({

@@ -85,7 +85,7 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
   const [loading, setLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState<EventItem | null>(null);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
-  const [customer, setCustomer] = useState({ name: "", phone: "", email: "" });
+  const [customer, setCustomer] = useState({ name: "", phone: "", email: "", password: "" });
   const [paymentMethod, setPaymentMethod] = useState<"PIX" | "CARD" | "MERCADO_PAGO">("PIX");
   const [lastOrder, setLastOrder] = useState<TicketOrder | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -168,6 +168,7 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
           customerName: customer.name,
           customerPhone: customer.phone,
           customerEmail: customer.email,
+          customerPassword: customer.password,
           items
         })
       });
@@ -301,6 +302,11 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
               <button type="button" className="rounded-full bg-slate-100 px-4 py-2 font-bold" onClick={() => setSelectedEvent(null)}>Fechar</button>
             </div>
 
+            <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+              <p className="font-black">Crie seu acesso agora</p>
+              <p className="mt-1">Seu e-mail e telefone são obrigatórios. Com a senha, você entra depois em <strong>Minha Conta</strong> e vê seus ingressos com QR Code liberado após o pagamento.</p>
+            </div>
+
             <div className="mt-5 space-y-3">
               {selectedEvent.ticketTypes.map((ticketType) => {
                 const remaining = ticketType.quantityTotal - ticketType.quantitySold;
@@ -324,10 +330,11 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
               })}
             </div>
 
-            <div className="mt-5 grid gap-3 md:grid-cols-3">
+            <div className="mt-5 grid gap-3 md:grid-cols-2">
               <input className="rounded-xl border px-3 py-3" placeholder="Nome completo" required value={customer.name} onChange={(event) => setCustomer((value) => ({ ...value, name: event.target.value }))} />
               <input className="rounded-xl border px-3 py-3" placeholder="WhatsApp" required value={customer.phone} onChange={(event) => setCustomer((value) => ({ ...value, phone: event.target.value }))} />
               <input className="rounded-xl border px-3 py-3" placeholder="Email" type="email" required value={customer.email} onChange={(event) => setCustomer((value) => ({ ...value, email: event.target.value }))} />
+              <input className="rounded-xl border px-3 py-3" placeholder="Senha para acessar depois" type="password" required minLength={6} value={customer.password} onChange={(event) => setCustomer((value) => ({ ...value, password: event.target.value }))} />
             </div>
 
             <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">

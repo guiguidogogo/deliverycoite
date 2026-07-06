@@ -32,6 +32,7 @@ import {
   registerCustomer,
   loginCustomer,
   getCustomerProfile,
+  listCustomerTicketOrders,
   updateCustomerProfile,
   changeCustomerPassword,
   addCustomerAddress,
@@ -236,6 +237,7 @@ route.post("/customer/login", loginCustomer);
 route.post("/customer/password/request", requestCustomerPasswordReset);
 route.post("/customer/password/reset", resetCustomerPassword);
 route.get("/customer/profile", customerAuth, getCustomerProfile);
+route.get("/customer/tickets", customerAuth, listCustomerTicketOrders);
 route.patch("/customer/profile", customerAuth, updateCustomerProfile);
 route.patch("/customer/password", customerAuth, changeCustomerPassword);
 route.post("/customer/addresses", customerAuth, addCustomerAddress);

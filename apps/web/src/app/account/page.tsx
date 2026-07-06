@@ -251,10 +251,11 @@ export default function CustomerAuthPage() {
             />
             <input
               className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
-              placeholder="Email (opcional)"
+              placeholder="Email *"
               type="email"
               value={registerEmail}
               onChange={(e) => setRegisterEmail(e.target.value)}
+              required
             />
             <input
               className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"

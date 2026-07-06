@@ -27,10 +27,34 @@ type Address = {
   isDefault: boolean;
 };
 
+type CustomerTicket = {
+  id: string;
+  total: number;
+  paidAt?: string | null;
+  paymentStatus?: string | null;
+  event: {
+    title: string;
+    eventDate: string;
+    startTime: string;
+    location: string;
+  };
+  tickets: Array<{
+    id: string;
+    code: string;
+    qrCode: string;
+    status: string;
+    ticketType: {
+      name: string;
+      audience?: string;
+    };
+  }>;
+};
+
 export default function ProfilePage() {
   const router = useRouter();
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [addresses, setAddresses] = useState<Address[]>([]);
+  const [tickets, setTickets] = useState<CustomerTicket[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddAddress, setShowAddAddress] = useState(false);
 
@@ -75,6 +99,10 @@ export default function ProfilePage() {
         email: profile.email
       });
       setAddresses(profile.addresses);
+      const ticketOrders = await api<CustomerTicket[]>("/customer/tickets", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setTickets(ticketOrders);
     } catch (error) {
       toast.error("Erro ao carregar perfil");
       router.push("/account");
@@ -283,6 +311,35 @@ export default function ProfilePage() {
           <button className="rounded-xl bg-ink px-3 py-2 text-white md:col-span-2" onClick={() => void changePassword()}>
             Alterar senha
           </button>
+        </div>
+      </section>
+
+      <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
+        <h2 className="text-xl font-bold">Meus ingressos</h2>
+        <p className="mt-1 text-sm opacity-70">Aqui aparecem seus ingressos e QR Codes após o pagamento confirmado.</p>
+        <div className="mt-4 space-y-3">
+          {tickets.length ? tickets.map((order) => (
+            <article key={order.id} className="rounded-xl border border-black/10 p-3 dark:border-white/10">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold">{order.event.title}</p>
+                  <p className="text-xs opacity-70">{new Date(order.event.eventDate).toLocaleDateString("pt-BR")} • {order.event.startTime} • {order.event.location}</p>
+                </div>
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${order.paidAt ? "bg-emerald-500 text-white" : "bg-amber-500 text-white"}`}>
+                  {order.paidAt ? "Pago" : order.paymentStatus || "Pendente"}
+                </span>
+              </div>
+              <div className="mt-3 grid gap-2 md:grid-cols-2">
+                {order.tickets.map((ticket) => (
+                  <div key={ticket.id} className="rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-800">
+                    <strong>{ticket.ticketType.name}</strong>
+                    <p className="mt-1 text-xs opacity-70">Código: {ticket.code}</p>
+                    <p className="text-xs opacity-70">QR: {ticket.qrCode}</p>
+                  </div>
+                ))}
+              </div>
+            </article>
+          )) : <p className="rounded-xl bg-slate-50 p-3 text-sm opacity-70 dark:bg-slate-800">Nenhum ingresso encontrado ainda.</p>}
         </div>
       </section>
 

@@ -259,6 +259,59 @@ export async function changeCustomerPassword(req: Request, res: Response) {
   return res.json({ message: "Senha alterada" });
 }
 
+export async function listCustomerTicketOrders(req: Request, res: Response) {
+  const customerId = (req as any).customerId;
+  const customer = await prisma.customer.findFirst({
+    where: { id: customerId, ...companyWhere(req) },
+    select: { phone: true, companyId: true }
+  });
+
+  if (!customer) {
+    return res.status(404).json({ message: "Cliente nao encontrado" });
+  }
+
+  const orders = await prisma.ticketOrder.findMany({
+    where: {
+      companyId: customer.companyId,
+      customerPhone: customer.phone
+    },
+    include: {
+      event: true,
+      tickets: { include: { ticketType: true } }
+    },
+    orderBy: { createdAt: "desc" }
+  });
+
+  return res.json(orders.map((order) => ({
+    id: order.id,
+    total: Number(order.total),
+    customerName: order.customerName,
+    customerPhone: order.customerPhone,
+    customerEmail: order.customerEmail,
+    status: order.status,
+    paymentStatus: order.paymentStatus,
+    paidAt: order.paidAt,
+    event: {
+      id: order.event.id,
+      title: order.event.title,
+      eventDate: order.event.eventDate,
+      startTime: order.event.startTime,
+      location: order.event.location
+    },
+    tickets: order.tickets.map((ticket) => ({
+      id: ticket.id,
+      code: ticket.code,
+      qrCode: ticket.qrCode,
+      status: ticket.status,
+      ticketType: {
+        id: ticket.ticketType.id,
+        name: ticket.ticketType.name,
+        audience: ticket.ticketType.audience
+      }
+    }))
+  })));
+}
+
 export async function addCustomerAddress(req: Request, res: Response) {
   const customerId = (req as any).customerId;
   const body = addressSchema.parse(req.body);
