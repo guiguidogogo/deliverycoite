@@ -20,10 +20,27 @@ const registerSchema = z.object({
   longitude: z.number().optional()
 });
 
-const loginSchema = z.object({
-  identifier: z.string().min(3, "Informe seu telefone ou e-mail"),
-  password: z.string().min(6)
-});
+const loginSchema = z.preprocess(
+  (value) => {
+    if (!value || typeof value !== "object") return value;
+    const body = value as Record<string, unknown>;
+    const identifier = typeof body.identifier === "string" && body.identifier.trim()
+      ? body.identifier
+      : typeof body.phone === "string" && body.phone.trim()
+        ? body.phone
+        : typeof body.email === "string" && body.email.trim()
+          ? body.email
+          : "";
+    return {
+      ...body,
+      identifier
+    };
+  },
+  z.object({
+    identifier: z.string().min(3, "Informe seu telefone ou e-mail"),
+    password: z.string().min(6)
+  })
+);
 
 const lookupSchema = z.object({
   phone: z.string().min(8).optional(),
