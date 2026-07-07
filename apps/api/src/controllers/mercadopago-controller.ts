@@ -518,3 +518,55 @@ export async function refundOrderMercadoPago(req: Request, res: Response) {
 
   return res.json({ ...updated, refund });
 }
+
+export async function refundTicketOrderMercadoPago(req: Request, res: Response) {
+  const ticketOrder = await prisma.ticketOrder.findFirst({
+    where: { id: req.params.id, ...companyWhere(req) },
+    include: { company: true, tickets: true }
+  });
+
+  if (!ticketOrder) return res.status(404).json({ message: "Ingresso nao encontrado" });
+  if (!ticketOrder.mercadoPagoPaymentId) {
+    return res.status(400).json({ message: "Este pedido nao possui pagamento Mercado Pago" });
+  }
+  if (ticketOrder.mercadoPagoStatus === "refunded") {
+    return res.status(400).json({ message: "Este pedido ja foi estornado" });
+  }
+  if (!ticketOrder.paidAt) {
+    return res.status(400).json({ message: "Somente pagamentos confirmados podem ser estornados" });
+  }
+  if (!ticketOrder.company.mercadoPagoAccessToken) {
+    return res.status(400).json({ message: "Mercado Pago nao configurado para esta empresa" });
+  }
+
+  const refund = await refundMercadoPagoPayment(ticketOrder.company.mercadoPagoAccessToken, ticketOrder.mercadoPagoPaymentId);
+  const updated = await prisma.$transaction(async (transaction) => {
+    const row = await transaction.ticketOrder.update({
+      where: { id: ticketOrder.id },
+      data: {
+        paidAt: null,
+        paymentStatus: "REFUNDED",
+        status: "CANCELLED",
+        mercadoPagoStatus: "refunded",
+        mercadoPagoStatusDetail: refund.status ?? "refunded"
+      }
+    });
+
+    await transaction.ticket.updateMany({
+      where: { ticketOrderId: ticketOrder.id },
+      data: { status: "CANCELLED" }
+    });
+
+    await audit(req, {
+      action: "MERCADO_PAGO_REFUND",
+      entity: "TicketOrder",
+      entityId: ticketOrder.id,
+      oldValue: { paidAt: ticketOrder.paidAt, mercadoPagoStatus: ticketOrder.mercadoPagoStatus },
+      newValue: { refundId: refund.id, status: refund.status }
+    }, transaction);
+
+    return row;
+  });
+
+  return res.json({ ...updated, refund });
+}

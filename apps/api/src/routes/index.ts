@@ -122,7 +122,7 @@ import {
   listPublicServices
 } from "../controllers/services-controller.js";
 import { getFutureIntegrations, testMenuiaIntegration, testN8nIntegration } from "../controllers/integrations-controller.js";
-import { createOrderMercadoPagoPix, createOrderMercadoPagoPreference, getMercadoPagoPublicConfig, getOrderMercadoPagoStatus, getTicketOrderMercadoPagoStatus, mercadoPagoWebhook, refundOrderMercadoPago } from "../controllers/mercadopago-controller.js";
+import { createOrderMercadoPagoPix, createOrderMercadoPagoPreference, getMercadoPagoPublicConfig, getOrderMercadoPagoStatus, getTicketOrderMercadoPagoStatus, mercadoPagoWebhook, refundOrderMercadoPago, refundTicketOrderMercadoPago } from "../controllers/mercadopago-controller.js";
 import { listNewOrders } from "../controllers/notifications-controller.js";
 import {
   generatePrinterAgentToken,
@@ -296,6 +296,7 @@ route.patch("/admin/orders/:id/status", requirePermission("ORDERS"), updateOrder
 route.patch("/admin/orders/:id/viewed", requirePermission("ORDERS"), markOrderViewed);
 route.patch("/admin/orders/:id/paid", requirePermission("ORDERS"), markOrderPaid);
 route.post("/admin/orders/:id/mercadopago/refund", requirePermission("ORDERS"), refundOrderMercadoPago);
+route.post("/admin/ticket-orders/:id/mercadopago/refund", requirePermission("ORDERS"), refundTicketOrderMercadoPago);
 route.delete("/admin/orders/:id", requirePermission("ORDERS"), deleteOrder);
 route.post("/admin/orders/:id/send-delivery", requirePermission("ORDERS"), sendToDelivery);
 route.post("/admin/orders/:id/print", requirePermission("ORDERS"), printOrderById);

@@ -14,6 +14,23 @@ export function normalizeEmail(value?: string | null) {
   return email || null;
 }
 
+export async function findExistingGlobalCustomer(params: {
+  phone?: string | null;
+  email?: string | null;
+  db?: Db;
+}) {
+  const db = params.db ?? prisma;
+  const phone = params.phone ? normalizePhone(params.phone) : null;
+  const email = normalizeEmail(params.email);
+
+  const [byPhone, byEmail] = await Promise.all([
+    phone ? db.globalCustomer.findUnique({ where: { phone } }) : Promise.resolve(null),
+    email ? db.globalCustomer.findUnique({ where: { email } }) : Promise.resolve(null)
+  ]);
+
+  return byPhone ?? byEmail ?? null;
+}
+
 export async function ensureGlobalCustomer(params: {
   name: string;
   phone: string;
@@ -29,16 +46,11 @@ export async function ensureGlobalCustomer(params: {
     ? await bcrypt.hash(params.password, 10)
     : params.passwordHash ?? undefined;
 
-  const [existingByPhone, existingByEmail] = await Promise.all([
-    db.globalCustomer.findUnique({ where: { phone } }),
-    email ? db.globalCustomer.findUnique({ where: { email } }) : Promise.resolve(null)
-  ]);
-
-  const existing = existingByEmail ?? existingByPhone;
+  const existing = await findExistingGlobalCustomer({ phone, email, db });
 
   if (existing) {
-    const canUsePhone = existing.phone === phone || !existingByPhone || existingByPhone.id === existing.id;
-    const canUseEmail = !email || existing.email === email || !existingByEmail || existingByEmail.id === existing.id;
+    const canUsePhone = existing.phone === phone;
+    const canUseEmail = !email || existing.email === email;
 
     return db.globalCustomer.update({
       where: { id: existing.id },

@@ -5,7 +5,7 @@ import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { env } from "../utils/env.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
-import { linkCustomerToCompany, normalizeEmail, normalizePhone } from "../utils/customer-linking.js";
+import { findExistingGlobalCustomer, linkCustomerToCompany, normalizeEmail, normalizePhone } from "../utils/customer-linking.js";
 
 const registerSchema = z.object({
   name: z.string().min(2),
@@ -41,6 +41,11 @@ export async function registerCustomer(req: Request, res: Response) {
   const companyId = getCompanyId(req);
   const phone = normalizePhone(body.phone);
   const email = normalizeEmail(body.email);
+
+  const existingGlobalCustomer = await findExistingGlobalCustomer({ phone, email });
+  if (existingGlobalCustomer) {
+    return res.status(409).json({ message: "Ja existe um cadastro com este e-mail ou telefone. Faça login para continuar sua compra." });
+  }
 
   const passwordHash = body.password ? await bcrypt.hash(body.password, 10) : null;
   const linked = await linkCustomerToCompany({

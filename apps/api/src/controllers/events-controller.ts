@@ -4,7 +4,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
-import { linkCustomerToCompany, normalizePhone } from "../utils/customer-linking.js";
+import { findExistingGlobalCustomer, linkCustomerToCompany, normalizePhone } from "../utils/customer-linking.js";
 import { createMercadoPagoPixPayment, createMercadoPagoPreference } from "../services/mercadopago.js";
 
 const optionalText = z.preprocess(
@@ -40,12 +40,29 @@ const ticketOrderSchema = z.object({
   customerPhone: z.string().trim().min(8, "Informe seu telefone"),
   customerEmail: z.string().trim().email("Email invalido"),
   customerPassword: z.string().trim().min(6, "Crie uma senha para acessar depois"),
-  paymentMethod: z.enum(["PIX", "CARD", "MERCADO_PAGO"]).default("PIX"),
+  paymentMethod: z.enum(["MERCADO_PAGO", "PIX", "CARD"]).default("MERCADO_PAGO"),
+  mercadoPagoType: z.enum(["PIX", "CARD"]).default("PIX"),
   items: z.array(z.object({
     ticketTypeId: z.string().min(1),
     quantity: z.coerce.number().int().min(1).max(20)
   })).min(1, "Selecione pelo menos um ingresso")
 });
+
+function startOfToday() {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  return now;
+}
+
+function filterAvailableTicketTypes<T extends { active: boolean; saleStart?: Date | null; saleEnd?: Date | null; quantitySold: number; quantityTotal: number }>(ticketTypes: T[], now = new Date()) {
+  return ticketTypes.filter((ticketType) => {
+    if (!ticketType.active) return false;
+    if (ticketType.saleStart && ticketType.saleStart > now) return false;
+    if (ticketType.saleEnd && ticketType.saleEnd < now) return false;
+    if (ticketType.quantitySold >= ticketType.quantityTotal) return false;
+    return true;
+  });
+}
 
 function serializeEvent<T extends { ticketTypes?: Array<{ price: Prisma.Decimal }>; ticketOrders?: Array<{ total: Prisma.Decimal }>; }>(event: T) {
   return {
@@ -102,125 +119,133 @@ function serializeTicketOrder<T extends { total: Prisma.Decimal; tickets?: Array
 }
 
 export async function listPublicEvents(req: Request, res: Response) {
+  const now = new Date();
   const events = await prisma.event.findMany({
     where: {
       companyId: getCompanyId(req),
-      status: "PUBLISHED"
+      status: "PUBLISHED",
+      eventDate: { gte: startOfToday() }
     },
     include: {
-      ticketTypes: {
-        where: { active: true },
-        orderBy: [{ saleStart: "asc" }, { price: "asc" }]
-      }
+      ticketTypes: { orderBy: [{ saleStart: "asc" }, { price: "asc" }] }
     },
     orderBy: [{ eventDate: "asc" }, { startTime: "asc" }]
   });
 
-  return res.json(events.map(serializeEvent));
+  return res.json(events.map((event) => serializeEvent({ ...event, ticketTypes: filterAvailableTicketTypes(event.ticketTypes, now) })));
 }
 
 export async function getPublicEvent(req: Request, res: Response) {
+  const now = new Date();
   const event = await prisma.event.findFirst({
-    where: { id: req.params.id, companyId: getCompanyId(req), status: "PUBLISHED" },
+    where: { id: req.params.id, companyId: getCompanyId(req), status: "PUBLISHED", eventDate: { gte: startOfToday() } },
     include: {
-      ticketTypes: {
-        where: { active: true },
-        orderBy: [{ saleStart: "asc" }, { price: "asc" }]
-      }
+      ticketTypes: { orderBy: [{ saleStart: "asc" }, { price: "asc" }] }
     }
   });
   if (!event) return res.status(404).json({ message: "Evento nao encontrado" });
-  return res.json(serializeEvent(event));
+  return res.json(serializeEvent({ ...event, ticketTypes: filterAvailableTicketTypes(event.ticketTypes, now) }));
 }
 
 export async function createPublicTicketOrder(req: Request, res: Response) {
-  const companyId = getCompanyId(req);
-  const body = ticketOrderSchema.parse(req.body);
+  try {
+    const companyId = getCompanyId(req);
+    const body = ticketOrderSchema.parse(req.body);
+    const selectedMercadoPagoType = body.paymentMethod === "PIX" || body.paymentMethod === "CARD"
+      ? body.paymentMethod
+      : body.mercadoPagoType;
 
-  const result = await prisma.$transaction(async (tx) => {
-    const event = await tx.event.findFirst({
-      where: { id: req.params.id, companyId, status: "PUBLISHED" },
-      select: { id: true, title: true, companyId: true, company: true }
-    });
-    if (!event) throw new Error("Evento nao encontrado");
+    const result = await prisma.$transaction(async (tx) => {
+      const event = await tx.event.findFirst({
+        where: { id: req.params.id, companyId, status: "PUBLISHED", eventDate: { gte: startOfToday() } },
+        select: { id: true, title: true, companyId: true, company: true }
+      });
+      if (!event) throw new Error("Evento nao encontrado");
 
-    await linkCustomerToCompany({
-      companyId,
-      name: body.customerName,
-      phone: normalizePhone(body.customerPhone),
-      email: body.customerEmail,
-      password: body.customerPassword,
-      db: tx
-    });
+      const existingGlobalCustomer = await findExistingGlobalCustomer({
+        phone: body.customerPhone,
+        email: body.customerEmail,
+        db: tx
+      });
+      if (existingGlobalCustomer) {
+        throw new Error("Ja existe um cadastro com este e-mail ou telefone. Fa?a login para continuar sua compra.");
+      }
 
-    const ids = [...new Set(body.items.map((item) => item.ticketTypeId))];
-    const ticketTypes = await tx.ticketType.findMany({
-      where: { id: { in: ids }, eventId: event.id, active: true }
-    });
+      await linkCustomerToCompany({
+        companyId,
+        name: body.customerName,
+        phone: normalizePhone(body.customerPhone),
+        email: body.customerEmail,
+        password: body.customerPassword,
+        db: tx
+      });
 
-    if (ticketTypes.length !== ids.length) {
-      throw new Error("Ingresso indisponivel");
-    }
+      const ids = [...new Set(body.items.map((item) => item.ticketTypeId))];
+      const ticketTypes = await tx.ticketType.findMany({
+        where: { id: { in: ids }, eventId: event.id, active: true }
+      });
+      if (ticketTypes.length !== ids.length) {
+        throw new Error("Ingresso indisponivel");
+      }
 
-    const now = new Date();
-    let total = new Prisma.Decimal(0);
-    const ticketsToCreate: Array<{ ticketTypeId: string; code: string; qrCode: string; status: TicketStatus }> = [];
+      const now = new Date();
+      let total = new Prisma.Decimal(0);
+      const ticketsToCreate: Array<{ ticketTypeId: string; code: string; qrCode: string; status: TicketStatus }> = [];
 
-    for (const item of body.items) {
-      const ticketType = ticketTypes.find((candidate) => candidate.id === item.ticketTypeId)!;
-      if (ticketType.saleStart && ticketType.saleStart > now) throw new Error(`${ticketType.name} ainda nao esta a venda`);
-      if (ticketType.saleEnd && ticketType.saleEnd < now) throw new Error(`${ticketType.name} encerrou as vendas`);
-      if (ticketType.quantitySold + item.quantity > ticketType.quantityTotal) throw new Error(`${ticketType.name} sem quantidade suficiente`);
+      for (const item of body.items) {
+        const ticketType = ticketTypes.find((candidate) => candidate.id === item.ticketTypeId)!;
+        if (ticketType.saleStart && ticketType.saleStart > now) throw new Error(`${ticketType.name} ainda nao esta a venda`);
+        if (ticketType.saleEnd && ticketType.saleEnd < now) throw new Error(`${ticketType.name} encerrou as vendas`);
+        if (ticketType.quantitySold + item.quantity > ticketType.quantityTotal) throw new Error(`${ticketType.name} sem quantidade suficiente`);
 
-      total = total.plus(ticketType.price.mul(item.quantity));
-      for (let index = 0; index < item.quantity; index += 1) {
-        ticketsToCreate.push({
-          ticketTypeId: ticketType.id,
-          code: ticketCode(),
-          qrCode: qrCode(),
-          status: "RESERVED"
+        total = total.plus(ticketType.price.mul(item.quantity));
+        for (let index = 0; index < item.quantity; index += 1) {
+          ticketsToCreate.push({
+            ticketTypeId: ticketType.id,
+            code: ticketCode(),
+            qrCode: qrCode(),
+            status: "RESERVED"
+          });
+        }
+        await tx.ticketType.update({
+          where: { id: ticketType.id },
+          data: { quantitySold: { increment: item.quantity } }
         });
       }
-      await tx.ticketType.update({
-        where: { id: ticketType.id },
-        data: { quantitySold: { increment: item.quantity } }
+
+      const order = await tx.ticketOrder.create({
+        data: {
+          companyId,
+          eventId: event.id,
+          customerName: body.customerName,
+          customerPhone: body.customerPhone.replace(/\D/g, ""),
+          customerEmail: body.customerEmail.toLowerCase(),
+          total,
+          status: "RESERVED",
+          paymentStatus: "PENDING",
+          paymentMethod: PaymentMethod.MERCADO_PAGO,
+          tickets: { create: ticketsToCreate }
+        },
+        include: {
+          event: { select: { title: true, eventDate: true, location: true } },
+          tickets: { include: { ticketType: true } }
+        }
       });
+
+      const settings = await tx.company.findUnique({
+        where: { id: companyId },
+        select: { mercadoPagoEnabled: true, mercadoPagoPublicKey: true, mercadoPagoAccessToken: true, subdomain: true, tradeName: true }
+      });
+      return { order, settings };
+    });
+
+    const order = serializeTicketOrder(result.order);
+    if (!result.settings?.mercadoPagoEnabled || !result.settings?.mercadoPagoAccessToken) {
+      return res.status(201).json(order);
     }
 
-    const order = await tx.ticketOrder.create({
-      data: {
-        companyId,
-        eventId: event.id,
-        customerName: body.customerName,
-        customerPhone: body.customerPhone.replace(/\D/g, ""),
-        customerEmail: body.customerEmail.toLowerCase(),
-        total,
-        status: "RESERVED",
-        paymentStatus: "PENDING",
-        paymentMethod: body.paymentMethod === "PIX" ? PaymentMethod.PIX : body.paymentMethod === "CARD" ? PaymentMethod.CARD : PaymentMethod.MERCADO_PAGO,
-        tickets: { create: ticketsToCreate }
-      },
-      include: {
-        event: { select: { title: true, eventDate: true, location: true } },
-        tickets: { include: { ticketType: true } }
-      }
-    });
-
-    const settings = await tx.company.findUnique({
-      where: { id: companyId },
-      select: { mercadoPagoEnabled: true, mercadoPagoPublicKey: true, mercadoPagoAccessToken: true, subdomain: true, tradeName: true }
-    });
-    return { order, settings };
-  });
-
-  const order = serializeTicketOrder(result.order);
-  if (!result.settings?.mercadoPagoEnabled || !result.settings?.mercadoPagoAccessToken) {
-    return res.status(201).json(order);
-  }
-
-  try {
     const displayNumber = Number(String(Date.now()).slice(-6));
-    if (body.paymentMethod === "PIX") {
+    if (selectedMercadoPagoType === "PIX") {
       const payment = await createMercadoPagoPixPayment({
         accessToken: result.settings.mercadoPagoAccessToken,
         orderId: order.id,
@@ -290,8 +315,9 @@ export async function createPublicTicketOrder(req: Request, res: Response) {
         sandboxInitPoint: preference.sandbox_init_point ?? null
       }
     });
-  } catch {
-    return res.status(201).json(order);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Falha ao reservar ingresso";
+    return res.status(message.includes("Ja existe") ? 409 : 400).json({ message });
   }
 }
 
@@ -427,3 +453,4 @@ export async function validateTicket(req: Request, res: Response) {
     ticketOrder: { ...updated.ticketOrder, total: Number(updated.ticketOrder.total) }
   });
 }
+

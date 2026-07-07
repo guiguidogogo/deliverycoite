@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { apiFetch } from "../../../../lib/api";
 
@@ -66,6 +66,7 @@ export default function AdminEventsPage() {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [orders, setOrders] = useState<TicketOrder[]>([]);
   const [selected, setSelected] = useState<EventItem | null>(null);
+  const [refundingId, setRefundingId] = useState("");
   const [eventForm, setEventForm] = useState({
     title: "",
     description: "",
@@ -86,7 +87,13 @@ export default function AdminEventsPage() {
     active: true
   });
   const [validateCode, setValidateCode] = useState("");
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerError, setScannerError] = useState("");
+  const [scannerStatus, setScannerStatus] = useState("Pronto para escanear");
   const [loading, setLoading] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const scannerStreamRef = useRef<MediaStream | null>(null);
+  const scannerLoopRef = useRef<number | null>(null);
 
   async function load() {
     setLoading(true);
@@ -174,6 +181,89 @@ export default function AdminEventsPage() {
       toast.error(error instanceof Error ? error.message : "Ingresso invalido");
     }
   }
+
+  async function refundTicket(order: TicketOrder) {
+    if (!confirm(`Estornar o pagamento de ${order.customerName}?`)) return;
+    setRefundingId(order.id);
+    try {
+      await adminRequest(`/admin/ticket-orders/${order.id}/mercadopago/refund`, {
+        method: "POST"
+      });
+      toast.success("Pagamento estornado");
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao estornar pagamento");
+    } finally {
+      setRefundingId("");
+    }
+  }
+
+  async function stopScanner() {
+    if (scannerLoopRef.current) {
+      window.clearInterval(scannerLoopRef.current);
+      scannerLoopRef.current = null;
+    }
+    scannerStreamRef.current?.getTracks().forEach((track) => track.stop());
+    scannerStreamRef.current = null;
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setScannerOpen(false);
+  }
+
+  async function startScanner() {
+    setScannerError("");
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setScannerError("Seu navegador nao suporta acesso a camera.");
+      return;
+    }
+    const BarcodeDetectorCtor = (window as Window & {
+      BarcodeDetector?: new (options: { formats: string[] }) => {
+        detect: (source: HTMLVideoElement) => Promise<Array<{ rawValue?: string }>>;
+      };
+    }).BarcodeDetector;
+
+    if (!BarcodeDetectorCtor) {
+      setScannerError("BarcodeDetector nao esta disponivel neste navegador. Use o leitor USB ou o campo manual.");
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      scannerStreamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      const detector = new BarcodeDetectorCtor({ formats: ["qr_code"] });
+      setScannerStatus("Escaneando...");
+      scannerLoopRef.current = window.setInterval(async () => {
+        if (!videoRef.current) return;
+        const video = videoRef.current;
+        if (video.readyState < 2) return;
+        try {
+          const codes = await detector.detect(video);
+          const code = codes[0]?.rawValue;
+          if (code) {
+            setValidateCode(code);
+            await stopScanner();
+            toast.success("QR Code capturado!");
+          }
+        } catch {
+          // keep trying
+        }
+      }, 700);
+      setScannerOpen(true);
+    } catch (error) {
+      setScannerError(error instanceof Error ? error.message : "Falha ao abrir camera");
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      void stopScanner();
+    };
+  }, []);
 
   return (
     <main className="mx-auto max-w-6xl p-4 md:p-8">
@@ -285,14 +375,17 @@ export default function AdminEventsPage() {
         <div className="rounded-3xl border bg-white p-5 shadow-sm">
           <h2 className="text-xl font-black">Validar ingresso</h2>
           <p className="text-sm text-slate-500">Digite ou cole o codigo/QR Code apresentado na entrada.</p>
-          <div className="mt-4 flex gap-2">
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button className="rounded-xl bg-slate-950 px-4 py-2 font-bold text-white" onClick={() => void startScanner()}>Abrir câmera</button>
             <input className="input" placeholder="Codigo do ingresso" value={validateCode} onChange={(event) => setValidateCode(event.target.value)} />
             <button className="rounded-xl bg-emerald-700 px-4 py-2 font-bold text-white" onClick={() => void validateTicket()}>Validar</button>
           </div>
+          {scannerError && <p className="mt-2 text-sm font-semibold text-red-600">{scannerError}</p>}
+          <p className="mt-2 text-xs text-slate-500">{scannerStatus}</p>
         </div>
 
         <div className="rounded-3xl border bg-white p-5 shadow-sm">
-          <h2 className="text-xl font-black">Pedidos de ingressos</h2>
+          <h2 className="text-xl font-black">Pagamentos de ingressos</h2>
           <div className="mt-4 space-y-3">
             {orders.slice(0, 12).map((order) => (
               <article key={order.id} className="rounded-2xl border p-4">
@@ -307,12 +400,44 @@ export default function AdminEventsPage() {
                     <p className="text-xs font-bold uppercase text-orange-600">{order.status} / {order.paymentStatus}</p>
                   </div>
                 </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button className="rounded-xl border px-3 py-2 text-sm font-semibold" onClick={() => setValidateCode(order.tickets[0]?.code ?? "")}>Usar primeiro QR</button>
+                  {order.paymentStatus === "PAID" && (
+                    <button
+                      className="rounded-xl bg-red-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                      onClick={() => void refundTicket(order)}
+                      disabled={refundingId === order.id}
+                    >
+                      {refundingId === order.id ? "Estornando..." : "Estornar pagamento"}
+                    </button>
+                  )}
+                </div>
               </article>
             ))}
             {!orders.length && <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">Nenhum pedido de ingresso ainda.</p>}
           </div>
         </div>
       </section>
+
+      {scannerOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => void stopScanner()}>
+          <div className="w-full max-w-2xl rounded-3xl bg-white p-5 text-slate-950 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.25em] text-orange-600">Leitura de QR Code</p>
+                <h3 className="text-2xl font-black">Escaneando ingresso</h3>
+                <p className="text-sm text-slate-500">{scannerStatus}</p>
+              </div>
+              <button className="rounded-full bg-slate-100 px-3 py-2 font-bold" onClick={() => void stopScanner()}>Fechar</button>
+            </div>
+            <video ref={videoRef} className="mt-4 w-full rounded-2xl bg-black" muted playsInline />
+            <div className="mt-4 flex gap-2">
+              <input className="input flex-1" value={validateCode} onChange={(event) => setValidateCode(event.target.value)} placeholder="Codigo lido ou manual" />
+              <button className="rounded-xl bg-emerald-700 px-4 py-2 font-bold text-white" onClick={() => void validateTicket()}>Validar agora</button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
