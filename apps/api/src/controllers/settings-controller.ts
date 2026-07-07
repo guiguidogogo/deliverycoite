@@ -74,17 +74,10 @@ const settingsSchema = z.object({
 
 async function ensureDefaultSettings(req: Request) {
   const companyId = getCompanyId(req);
-  const existing = await prisma.setting.findFirst({
+  return prisma.setting.upsert({
     where: { companyId },
-    include: { deliveryFeeTiers: { orderBy: { sortOrder: "asc" } } }
-  });
-
-  if (existing) {
-    return existing;
-  }
-
-  return prisma.setting.create({
-    data: {
+    update: {},
+    create: {
       companyId,
       companyName: "Lanchonete Delivery",
       whatsappNumber: process.env.WHATSAPP_NUMBER ?? "5575999999999",

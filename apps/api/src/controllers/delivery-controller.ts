@@ -11,10 +11,13 @@ const quoteSchema = z.object({
 
 export async function quoteDelivery(req: Request, res: Response) {
   const coordinates = quoteSchema.parse(req.query);
-  const settings = await prisma.setting.findFirstOrThrow({
+  const settings = await prisma.setting.findFirst({
     where: companyWhere(req),
     include: { deliveryFeeTiers: true }
   });
+  if (!settings) {
+    return res.status(404).json({ message: "Configuracoes de entrega nao encontradas" });
+  }
   const quote = calculateDeliveryFee(settings, coordinates);
 
   if (quote.fee === null) {
