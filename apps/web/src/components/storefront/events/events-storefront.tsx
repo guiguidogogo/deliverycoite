@@ -93,7 +93,7 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
   const [submitting, setSubmitting] = useState(false);
   const [accountLookup, setAccountLookup] = useState<{ exists: boolean; name?: string; phone?: string; email?: string; matchedBy?: string }>({ exists: false });
   const [accountLookupLoading, setAccountLookupLoading] = useState(false);
-  const customerToken = typeof window === "undefined" ? null : window.localStorage.getItem("delivery:customer-token");
+  const [customerToken, setCustomerToken] = useState<string | null>(null);
 
   useEffect(() => {
     void apiFetch("/events", { cache: "no-store" })
@@ -137,6 +137,31 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
       // ignore invalid draft
     }
   }, [company.subdomain]);
+
+  useEffect(() => {
+    setCustomerToken(window.localStorage.getItem("delivery:customer-token"));
+  }, []);
+
+  useEffect(() => {
+    if (!customerToken) return;
+
+    void apiFetch("/customer/profile", {
+      cache: "no-store",
+      headers: { Authorization: `Bearer ${customerToken}` }
+    })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const profile = await response.json();
+        setCustomer((current) => ({
+          ...current,
+          name: profile.name ?? current.name,
+          phone: profile.phone ?? current.phone,
+          email: profile.email ?? current.email
+        }));
+        setAccountLookup({ exists: true, matchedBy: "session" });
+      })
+      .catch(() => undefined);
+  }, [customerToken]);
 
   useEffect(() => {
     const storedOrderId = window.localStorage.getItem(`events:lastOrder:${company.subdomain}`);
@@ -193,9 +218,13 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
     Boolean(customer.name.trim()) &&
     Boolean(customer.phone.trim()) &&
     Boolean(customer.email.trim()) &&
-    customer.password.trim().length >= 6;
+    (customerToken ? true : customer.password.trim().length >= 6);
 
   async function lookupExistingAccount() {
+    if (customerToken) {
+      setAccountLookup({ exists: true, matchedBy: "session" });
+      return;
+    }
     if (!customer.phone.trim() && !customer.email.trim()) {
       setAccountLookup({ exists: false });
       return;
@@ -205,10 +234,6 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
       const params = new URLSearchParams();
       if (customer.phone.trim()) params.set("phone", customer.phone.trim());
       if (customer.email.trim()) params.set("email", customer.email.trim());
-      if (customerToken) {
-        setAccountLookup({ exists: true, matchedBy: "session" });
-        return;
-      }
       const response = await apiFetch(`/customer/account/lookup?${params.toString()}`, { cache: "no-store" });
       if (!response.ok) throw new Error("Falha ao verificar conta");
       setAccountLookup(await response.json());
@@ -230,6 +255,15 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
       })
     );
     router.push(`/account?returnTo=${encodeURIComponent(window.location.pathname)}`);
+  }
+
+  function logoutAccount() {
+    window.localStorage.removeItem("delivery:customer-token");
+    window.localStorage.removeItem("delivery:customer");
+    setCustomerToken(null);
+    setAccountLookup({ exists: false });
+    setCustomer((current) => ({ ...current, name: "", phone: "", email: "" }));
+    toast.success("Conta desconectada");
   }
 
   async function reserveTickets(event: React.FormEvent) {
@@ -421,16 +455,32 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
               })}
             </div>
 
-            <div className="mt-5 grid gap-3 md:grid-cols-2">
-              <input className="rounded-xl border px-3 py-3" placeholder="Nome completo" required value={customer.name} onChange={(event) => setCustomer((value) => ({ ...value, name: event.target.value }))} />
-              <input className="rounded-xl border px-3 py-3" placeholder="WhatsApp" required value={customer.phone} onChange={(event) => setCustomer((value) => ({ ...value, phone: event.target.value }))} onBlur={() => void lookupExistingAccount()} />
-              <input className="rounded-xl border px-3 py-3" placeholder="Email" type="email" required value={customer.email} onChange={(event) => setCustomer((value) => ({ ...value, email: event.target.value }))} onBlur={() => void lookupExistingAccount()} />
-              <input className="rounded-xl border px-3 py-3" placeholder="Senha para acessar depois" type="password" required minLength={6} value={customer.password} onChange={(event) => setCustomer((value) => ({ ...value, password: event.target.value }))} />
-            </div>
+            {customerToken ? (
+              <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-[0.25em] text-orange-600">Comprando como</p>
+                <div className="mt-2 space-y-1 text-sm text-slate-700">
+                  <p><strong>Nome:</strong> {customer.name || "Conta logada"}</p>
+                  <p><strong>Email:</strong> {customer.email || "-"}</p>
+                  <p><strong>Telefone:</strong> {customer.phone || "-"}</p>
+                </div>
+                <button type="button" className="mt-4 rounded-xl border border-red-300 px-4 py-2 font-semibold text-red-700" onClick={logoutAccount}>
+                  Sair da conta
+                </button>
+              </div>
+            ) : (
+              <div className="mt-5 grid gap-3 md:grid-cols-2">
+                <input className="rounded-xl border px-3 py-3" placeholder="Nome completo" required value={customer.name} onChange={(event) => setCustomer((value) => ({ ...value, name: event.target.value }))} />
+                <input className="rounded-xl border px-3 py-3" placeholder="WhatsApp" required value={customer.phone} onChange={(event) => setCustomer((value) => ({ ...value, phone: event.target.value }))} onBlur={() => void lookupExistingAccount()} />
+                <input className="rounded-xl border px-3 py-3" placeholder="Email" type="email" required value={customer.email} onChange={(event) => setCustomer((value) => ({ ...value, email: event.target.value }))} onBlur={() => void lookupExistingAccount()} />
+                <input className="rounded-xl border px-3 py-3" placeholder="Senha para acessar depois" type="password" required minLength={6} value={customer.password} onChange={(event) => setCustomer((value) => ({ ...value, password: event.target.value }))} />
+              </div>
+            )}
 
             <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <p className="text-xs font-black uppercase tracking-[0.25em] text-orange-600">Acesso</p>
-              {accountLookupLoading ? (
+              {customerToken ? (
+                <p className="mt-2 text-sm text-slate-600">Conta identificada automaticamente. Você pode continuar sem refazer o cadastro.</p>
+              ) : accountLookupLoading ? (
                 <p className="mt-2 text-sm text-slate-600">Verificando conta...</p>
               ) : customerToken || accountLookup.exists ? (
                 <div className="mt-2 space-y-3">

@@ -41,7 +41,7 @@ const ticketOrderSchema = z.object({
   customerName: z.string().trim().min(2, "Informe seu nome"),
   customerPhone: z.string().trim().min(8, "Informe seu telefone"),
   customerEmail: z.string().trim().email("Email invalido"),
-  customerPassword: z.string().trim().min(6, "Crie uma senha para acessar depois"),
+  customerPassword: z.string().trim().min(6, "Crie uma senha para acessar depois").optional(),
   paymentMethod: z.enum(["MERCADO_PAGO", "PIX", "CARD"]).default("MERCADO_PAGO"),
   mercadoPagoType: z.enum(["PIX", "CARD"]).default("PIX"),
   items: z.array(z.object({
@@ -184,13 +184,16 @@ export async function createPublicTicketOrder(req: Request, res: Response) {
       if (existingGlobalCustomer && !currentCustomerId) {
         throw new Error("Ja existe um cadastro com este e-mail ou telefone. Fa?a login para continuar sua compra.");
       }
+      if (!currentCustomerId && !body.customerPassword) {
+        throw new Error("Crie uma senha para acessar depois");
+      }
 
       await linkCustomerToCompany({
         companyId,
         name: body.customerName,
         phone: normalizePhone(body.customerPhone),
         email: body.customerEmail,
-        password: body.customerPassword,
+        password: body.customerPassword ?? undefined,
         db: tx
       });
 
