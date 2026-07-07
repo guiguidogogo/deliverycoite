@@ -34,6 +34,12 @@ export default function SettingsManagePage() {
     n8nEnabled: false,
     n8nWebhookUrl: "",
     n8nSecret: "",
+    n8nEventsOrderCreated: true,
+    n8nEventsOrderPaid: true,
+    n8nEventsOrderStatusChanged: true,
+    n8nEventsTableSession: true,
+    n8nEventsCustomerCreated: false,
+    n8nEventsTicketOrder: false,
     mercadoPagoEnabled: false,
     mercadoPagoPublicKey: "",
     mercadoPagoAccessToken: "",
@@ -95,6 +101,12 @@ export default function SettingsManagePage() {
           n8nEnabled: data.n8nEnabled ?? false,
           n8nWebhookUrl: data.n8nWebhookUrl ?? "",
           n8nSecret: data.n8nSecret ?? "",
+          n8nEventsOrderCreated: data.n8nEventsOrderCreated ?? true,
+          n8nEventsOrderPaid: data.n8nEventsOrderPaid ?? true,
+          n8nEventsOrderStatusChanged: data.n8nEventsOrderStatusChanged ?? true,
+          n8nEventsTableSession: data.n8nEventsTableSession ?? true,
+          n8nEventsCustomerCreated: data.n8nEventsCustomerCreated ?? false,
+          n8nEventsTicketOrder: data.n8nEventsTicketOrder ?? false,
           mercadoPagoEnabled: data.mercadoPagoEnabled ?? false,
           mercadoPagoPublicKey: data.mercadoPagoPublicKey ?? "",
           mercadoPagoAccessToken: data.mercadoPagoAccessToken ?? "",
@@ -692,6 +704,25 @@ export default function SettingsManagePage() {
         <p className="mt-2 text-xs opacity-70">
           O backend envia eventos com cabe?alho de seguran?a opcional: X-HubRegional-N8N-Secret.
         </p>
+        <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2">
+          {[
+            ["n8nEventsOrderCreated", "Pedido criado"],
+            ["n8nEventsOrderPaid", "Pagamento confirmado"],
+            ["n8nEventsOrderStatusChanged", "Mudanca de status do pedido"],
+            ["n8nEventsTableSession", "Sessao de mesa"],
+            ["n8nEventsCustomerCreated", "Cliente cadastrado"],
+            ["n8nEventsTicketOrder", "Ingressos / eventos"]
+          ].map(([field, label]) => (
+            <label key={field} className="flex items-center gap-2 rounded-xl border border-black/10 px-3 py-2 dark:border-white/20">
+              <input
+                type="checkbox"
+                checked={Boolean(form[field as keyof typeof form])}
+                onChange={(e) => setForm((v) => ({ ...v, [field]: e.target.checked }))}
+              />
+              Enviar evento: {label}
+            </label>
+          ))}
+        </div>
         <button className="mt-3 rounded-xl bg-ink px-4 py-2 text-sm text-white" onClick={() => void testN8n()}>
           Testar conex?o n8n
         </button>

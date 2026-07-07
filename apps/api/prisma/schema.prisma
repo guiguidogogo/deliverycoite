@@ -1048,6 +1048,12 @@ model Setting {
   n8nEnabled                 Boolean           @default(false)
   n8nWebhookUrl              String?
   n8nSecret                  String?
+  n8nEventsOrderCreated      Boolean           @default(true)
+  n8nEventsOrderPaid         Boolean           @default(true)
+  n8nEventsOrderStatusChanged Boolean          @default(true)
+  n8nEventsTableSession      Boolean           @default(true)
+  n8nEventsCustomerCreated   Boolean           @default(false)
+  n8nEventsTicketOrder       Boolean           @default(false)
   whatsappOnReceived         Boolean           @default(true)
   whatsappOnPreparing        Boolean           @default(true)
   whatsappOnOutForDelivery   Boolean           @default(true)

@@ -10,6 +10,17 @@ export type N8nEventName =
   | "event.ticket_order.created"
   | "event.ticket_order.paid";
 
+const EVENT_FLAGS: Record<N8nEventName, string> = {
+  "order.created": "n8nEventsOrderCreated",
+  "order.paid": "n8nEventsOrderPaid",
+  "order.status_changed": "n8nEventsOrderStatusChanged",
+  "table.session.created": "n8nEventsTableSession",
+  "table.session.closed": "n8nEventsTableSession",
+  "customer.created": "n8nEventsCustomerCreated",
+  "event.ticket_order.created": "n8nEventsTicketOrder",
+  "event.ticket_order.paid": "n8nEventsTicketOrder"
+} as const;
+
 export async function dispatchN8nEvent(
   companyId: string,
   event: N8nEventName,
@@ -17,11 +28,26 @@ export async function dispatchN8nEvent(
 ) {
   const settings = await prisma.setting.findFirst({
     where: { companyId },
-    select: { n8nEnabled: true, n8nWebhookUrl: true, n8nSecret: true, companyName: true }
+    select: {
+      n8nEnabled: true,
+      n8nWebhookUrl: true,
+      n8nSecret: true,
+      companyName: true,
+      n8nEventsOrderCreated: true,
+      n8nEventsOrderPaid: true,
+      n8nEventsOrderStatusChanged: true,
+      n8nEventsTableSession: true,
+      n8nEventsCustomerCreated: true,
+      n8nEventsTicketOrder: true
+    }
   });
 
   if (!settings?.n8nEnabled || !settings.n8nWebhookUrl) {
     return { ok: false, skipped: true, reason: "n8n_disabled" as const };
+  }
+
+  if (!settings[EVENT_FLAGS[event] as keyof typeof settings]) {
+    return { ok: false, skipped: true, reason: "event_disabled" as const };
   }
 
   const response = await fetch(settings.n8nWebhookUrl, {
