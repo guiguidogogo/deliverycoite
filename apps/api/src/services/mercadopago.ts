@@ -40,6 +40,18 @@ export type MercadoPagoRefundResponse = {
   amount?: number;
 };
 
+export type MercadoPagoMerchantOrderResponse = {
+  id: number | string;
+  status?: string;
+  external_reference?: string;
+  preference_id?: string;
+  payments?: Array<{
+    id?: number | string;
+    status?: string;
+    payment_type_id?: string;
+  }>;
+};
+
 async function mpFetch<T>(path: string, accessToken: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${MP_API}${path}`, {
     ...init,
@@ -163,4 +175,8 @@ export async function createMercadoPagoPixPayment(params: {
       }
     })
   });
+}
+
+export async function getMercadoPagoMerchantOrder(accessToken: string, merchantOrderId: string) {
+  return mpFetch<MercadoPagoMerchantOrderResponse>(`/merchant_orders/${encodeURIComponent(merchantOrderId)}`, accessToken);
 }

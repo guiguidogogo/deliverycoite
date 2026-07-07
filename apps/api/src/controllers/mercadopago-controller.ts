@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   createMercadoPagoPixPayment,
   createMercadoPagoPreference,
+  getMercadoPagoMerchantOrder,
   getMercadoPagoPayment,
   refundMercadoPagoPayment,
   searchMercadoPagoPayments,
@@ -207,6 +208,38 @@ async function applyApprovedMercadoPagoPayment(orderId: string, payment: Mercado
   return updated;
 }
 
+async function resolveMercadoPagoWebhookPayment(
+  accessToken: string,
+  paymentOrMerchantOrderId: string,
+  eventType?: string | null
+) {
+  try {
+    return await getMercadoPagoPayment(accessToken, paymentOrMerchantOrderId);
+  } catch {
+    if (eventType !== "merchant_order") return null;
+  }
+
+  const merchantOrder = await getMercadoPagoMerchantOrder(accessToken, paymentOrMerchantOrderId).catch(() => null);
+  if (!merchantOrder) return null;
+
+  const approvedPaymentId = merchantOrder.payments?.find((item) => item.status === "approved")?.id;
+  if (approvedPaymentId) {
+    return await getMercadoPagoPayment(accessToken, String(approvedPaymentId)).catch(() => null);
+  }
+
+  const paymentId = merchantOrder.payments?.[0]?.id;
+  if (paymentId) {
+    return await getMercadoPagoPayment(accessToken, String(paymentId)).catch(() => null);
+  }
+
+  if (merchantOrder.external_reference) {
+    const search = await searchMercadoPagoPayments(accessToken, { externalReference: merchantOrder.external_reference }).catch(() => null);
+    return chooseBestPayment(search?.results ?? []);
+  }
+
+  return null;
+}
+
 async function applyApprovedMercadoPagoTicketPayment(ticketOrderId: string, payment: MercadoPagoPaymentResponse) {
   const ticketOrder = await prisma.ticketOrder.findUnique({ where: { id: ticketOrderId }, include: { company: true } });
   if (!ticketOrder) return null;
@@ -393,7 +426,7 @@ export async function mercadoPagoWebhook(req: Request, res: Response) {
   });
 
   let accessToken = existingByPayment?.company.mercadoPagoAccessToken;
-  let payment = accessToken ? await getMercadoPagoPayment(accessToken, paymentId) : null;
+  let payment = accessToken ? await resolveMercadoPagoWebhookPayment(accessToken, paymentId, eventType) : null;
   let orderId = payment?.external_reference || payment?.metadata?.order_id || existingByPayment?.id;
 
   if (!orderId) {
@@ -408,7 +441,11 @@ export async function mercadoPagoWebhook(req: Request, res: Response) {
   }
 
   if (!payment) {
-    payment = await getMercadoPagoPayment(companyToken, paymentId);
+    payment = await resolveMercadoPagoWebhookPayment(companyToken, paymentId, eventType);
+  }
+
+  if (!payment) {
+    return res.status(200).json({ ok: true, ignored: true, reason: "payment_not_found" });
   }
 
   if (order) {
