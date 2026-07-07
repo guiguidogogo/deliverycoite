@@ -407,6 +407,49 @@ export default function SettingsManagePage() {
       </section>
 
       <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
+        <h2 className="text-xl font-bold">Previa da vitrine</h2>
+        <p className="mt-1 text-sm opacity-70">Veja aqui como a loja vai aparecer para o cliente antes de salvar.</p>
+        <div
+          className="mt-4 overflow-hidden rounded-3xl border p-4 text-white shadow-lg"
+          style={{ background: `linear-gradient(135deg, ${form.primaryColor} 0%, ${form.secondaryColor} 100%)` }}
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="grid h-14 w-14 place-items-center overflow-hidden rounded-2xl bg-white/15">
+                {form.logoUrl ? (
+                  <img src={resolveAssetUrl(form.logoUrl)} alt="Logo da loja" className="h-full w-full object-contain p-1" />
+                ) : (
+                  <span className="text-xs font-bold">LOGO</span>
+                )}
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-white/75">{form.promoBannerTitle || "Sua loja"}</p>
+                <h3 className="text-2xl font-black leading-tight">{form.companyName || "Nome da empresa"}</h3>
+                <p className="mt-1 max-w-xl text-sm text-white/85">{form.promoBannerText || "Escreva aqui a mensagem principal da vitrine para chamar aten??o do cliente."}</p>
+              </div>
+            </div>
+            <div className="hidden rounded-full border border-white/25 bg-white/10 px-3 py-1 text-xs font-bold md:block">
+              {form.faviconUrl ? "Favicon ativo" : "Sem favicon"}
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <div className="rounded-2xl bg-white/12 p-3">
+              <p className="text-xs uppercase tracking-widest text-white/70">Contato</p>
+              <p className="mt-1 font-semibold">{form.whatsappNumber || "WhatsApp da loja"}</p>
+            </div>
+            <div className="rounded-2xl bg-white/12 p-3">
+              <p className="text-xs uppercase tracking-widest text-white/70">Categoria</p>
+              <p className="mt-1 font-semibold">{form.companyName ? form.companyName : "Lanchonete / Delivery"}</p>
+            </div>
+            <div className="rounded-2xl bg-white/12 p-3">
+              <p className="text-xs uppercase tracking-widest text-white/70">Destaque</p>
+              <p className="mt-1 font-semibold">{form.autoMessage || "Promo??es e novidades em destaque"}</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
         <h2 className="text-xl font-bold">Frete por distancia</h2>
         <p className="mt-1 text-sm opacity-70">
           Informe o local da loja e crie faixas como: ate 3 km por R$ 3,00 e ate 5 km por R$ 10,00.
