@@ -121,7 +121,7 @@ import {
   listAdminServices,
   listPublicServices
 } from "../controllers/services-controller.js";
-import { getFutureIntegrations, testMenuiaIntegration } from "../controllers/integrations-controller.js";
+import { getFutureIntegrations, testMenuiaIntegration, testN8nIntegration } from "../controllers/integrations-controller.js";
 import { createOrderMercadoPagoPix, createOrderMercadoPagoPreference, getMercadoPagoPublicConfig, getOrderMercadoPagoStatus, getTicketOrderMercadoPagoStatus, mercadoPagoWebhook, refundOrderMercadoPago } from "../controllers/mercadopago-controller.js";
 import { listNewOrders } from "../controllers/notifications-controller.js";
 import {
@@ -396,6 +396,7 @@ route.delete("/admin/coupons/:id", requirePermission("COUPONS"), deleteCoupon);
 route.patch("/admin/settings", requirePermission("SETTINGS"), updateSettings);
 route.patch("/admin/store/pause", requirePermission("STORE_PAUSE"), updateSettings);
 route.post("/admin/integrations/menuia/test", requirePermission("SETTINGS"), testMenuiaIntegration);
+route.post("/admin/integrations/n8n/test", requirePermission("SETTINGS"), testN8nIntegration);
 route.get("/admin/staff/roles", requirePermission("USERS"), listStaffRoles);
 route.post("/admin/staff/roles", requirePermission("USERS"), createStaffRole);
 route.patch("/admin/staff/roles/:id", requirePermission("USERS"), updateStaffRole);

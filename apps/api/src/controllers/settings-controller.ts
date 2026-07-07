@@ -45,6 +45,9 @@ const settingsSchema = z.object({
   menuiaApiKey: optionalText,
   menuiaStoreId: optionalText,
   menuiaEnabled: z.boolean().optional(),
+  n8nEnabled: z.boolean().optional(),
+  n8nWebhookUrl: optionalText,
+  n8nSecret: optionalText,
   whatsappOnReceived: z.boolean().optional(),
   whatsappOnPreparing: z.boolean().optional(),
   whatsappOnOutForDelivery: z.boolean().optional(),
@@ -112,14 +115,17 @@ export async function getSettings(req: Request, res: Response) {
     secondaryColor: company?.secondaryColor ?? null,
     mercadoPagoPublicKey: company?.mercadoPagoPublicKey ?? null,
     ...(isAdminRequest ? { mercadoPagoAccessToken: company?.mercadoPagoAccessToken ?? null } : {}),
-    mercadoPagoEnabled: company?.mercadoPagoEnabled ?? false
+    mercadoPagoEnabled: company?.mercadoPagoEnabled ?? false,
+    n8nEnabled: settings.n8nEnabled,
+    n8nWebhookUrl: settings.n8nWebhookUrl,
+    ...(isAdminRequest ? { n8nSecret: settings.n8nSecret ?? null } : {})
   });
 }
 
 export async function updateSettings(req: Request, res: Response) {
   const body = settingsSchema.parse(req.body);
   const current = await ensureDefaultSettings(req);
-  const { deliveryFeeTiers, mercadoPagoEnabled, mercadoPagoPublicKey, mercadoPagoAccessToken, ...settingsData } = body;
+  const { deliveryFeeTiers, mercadoPagoEnabled, mercadoPagoPublicKey, mercadoPagoAccessToken, n8nEnabled, n8nWebhookUrl, n8nSecret, ...settingsData } = body;
 
   const settings = await prisma.$transaction(async (transaction) => {
     const updated = await transaction.setting.update({
@@ -130,6 +136,17 @@ export async function updateSettings(req: Request, res: Response) {
         ...(body.deliveryFee !== undefined ? { deliveryFee: new Prisma.Decimal(body.deliveryFee) } : {})
       }
     });
+
+    if (n8nEnabled !== undefined || n8nWebhookUrl !== undefined || n8nSecret !== undefined) {
+      await transaction.setting.update({
+        where: { id: current.id },
+        data: {
+          ...(n8nEnabled !== undefined ? { n8nEnabled } : {}),
+          ...(n8nWebhookUrl !== undefined ? { n8nWebhookUrl: n8nWebhookUrl.trim() || null } : {}),
+          ...(n8nSecret !== undefined ? { n8nSecret: n8nSecret.trim() || null } : {})
+        }
+      });
+    }
 
     if (
       settingsData.companyName !== undefined ||
@@ -211,7 +228,10 @@ export async function updateSettings(req: Request, res: Response) {
       ...savedSettings,
       mercadoPagoPublicKey: savedCompany?.mercadoPagoPublicKey ?? null,
       mercadoPagoAccessToken: savedCompany?.mercadoPagoAccessToken ?? null,
-      mercadoPagoEnabled: savedCompany?.mercadoPagoEnabled ?? false
+      mercadoPagoEnabled: savedCompany?.mercadoPagoEnabled ?? false,
+      n8nEnabled: savedSettings.n8nEnabled,
+      n8nWebhookUrl: savedSettings.n8nWebhookUrl,
+      n8nSecret: savedSettings.n8nSecret
     };
   });
 

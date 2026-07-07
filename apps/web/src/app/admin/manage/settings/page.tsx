@@ -31,6 +31,9 @@ export default function SettingsManagePage() {
     menuiaApiKey: "",
     menuiaStoreId: "",
     menuiaEnabled: false,
+    n8nEnabled: false,
+    n8nWebhookUrl: "",
+    n8nSecret: "",
     mercadoPagoEnabled: false,
     mercadoPagoPublicKey: "",
     mercadoPagoAccessToken: "",
@@ -89,6 +92,9 @@ export default function SettingsManagePage() {
           menuiaApiKey: data.menuiaApiKey ?? "",
           menuiaStoreId: data.menuiaStoreId ?? "",
           menuiaEnabled: data.menuiaEnabled ?? false,
+          n8nEnabled: data.n8nEnabled ?? false,
+          n8nWebhookUrl: data.n8nWebhookUrl ?? "",
+          n8nSecret: data.n8nSecret ?? "",
           mercadoPagoEnabled: data.mercadoPagoEnabled ?? false,
           mercadoPagoPublicKey: data.mercadoPagoPublicKey ?? "",
           mercadoPagoAccessToken: data.mercadoPagoAccessToken ?? "",
@@ -202,6 +208,24 @@ export default function SettingsManagePage() {
     }
 
     toast.success(payload.message ?? "Menuia conectado com sucesso");
+  }
+
+  async function testN8n() {
+    const token = localStorage.getItem("delivery:token");
+    if (!token) return;
+
+    const res = await apiFetch(`/admin/integrations/n8n/test`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok || !payload.ok) {
+      toast.error(payload.message ?? "Teste n8n falhou");
+      return;
+    }
+
+    toast.success(payload.message ?? "n8n conectado com sucesso");
   }
 
   function locateStore() {
@@ -632,6 +656,44 @@ export default function SettingsManagePage() {
         </div>
         <button className="mt-3 rounded-xl bg-ink px-4 py-2 text-sm text-white" onClick={() => void testMenuia()}>
           Testar conexao Menuia
+        </button>
+      </section>
+
+      <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
+        <h2 className="mb-3 text-xl font-bold">Integra??o n8n</h2>
+        <p className="mb-3 text-sm opacity-70">
+          Conecte automa??es por empresa: pedidos, pagamentos, status, clientes e eventos do PDV.
+        </p>
+        <div className="mb-3 flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="n8nEnabled"
+            checked={form.n8nEnabled}
+            onChange={(e) => setForm((v) => ({ ...v, n8nEnabled: e.target.checked }))}
+            className="h-4 w-4"
+          />
+          <label htmlFor="n8nEnabled">Ativar integra??o com n8n nesta empresa</label>
+        </div>
+        <div className="grid grid-cols-1 gap-2">
+          <input
+            className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
+            placeholder="URL do webhook do n8n"
+            value={form.n8nWebhookUrl}
+            onChange={(e) => setForm((v) => ({ ...v, n8nWebhookUrl: e.target.value }))}
+          />
+          <input
+            className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
+            placeholder="Segredo opcional do webhook"
+            type="password"
+            value={form.n8nSecret}
+            onChange={(e) => setForm((v) => ({ ...v, n8nSecret: e.target.value }))}
+          />
+        </div>
+        <p className="mt-2 text-xs opacity-70">
+          O backend envia eventos com cabe?alho de seguran?a opcional: X-HubRegional-N8N-Secret.
+        </p>
+        <button className="mt-3 rounded-xl bg-ink px-4 py-2 text-sm text-white" onClick={() => void testN8n()}>
+          Testar conex?o n8n
         </button>
       </section>
 

@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { FulfillmentType, OrderSource, OrderStatus, PaymentMethod, Prisma, TableSessionStatus } from "@prisma/client";
 import { z } from "zod";
 import { publishNewOrder } from "../services/realtime.js";
+import { dispatchN8nEvent } from "../services/n8n.js";
 import { printOrder } from "../services/thermal-printer.js";
 import { buildOrderStatusWhatsappMessage, buildWhatsappMessage, dispatchWhatsappMessage } from "../services/whatsapp.js";
 import { getMercadoPagoPayment, searchMercadoPagoPayments, type MercadoPagoPaymentResponse } from "../services/mercadopago.js";
@@ -589,6 +590,21 @@ export async function createOrder(req: Request, res: Response) {
     total: Number(updatedOrder.total)
   });
 
+  void dispatchN8nEvent(companyId, "order.created", {
+    orderId: updatedOrder.id,
+    orderNumber: updatedOrder.orderNumber,
+    customer: {
+      name: order.customer.name,
+      phone: order.customer.phone
+    },
+    paymentMethod: updatedOrder.paymentMethod,
+    total: Number(updatedOrder.total),
+    status: updatedOrder.status,
+    source: updatedOrder.source
+  }).catch((error) => {
+    console.error("Falha ao enviar evento n8n de pedido criado", error);
+  });
+
   return res.status(201).json({
     orderId: updatedOrder.id,
     whatsappUrl: sent.whatsappUrl ?? null,
@@ -758,6 +774,19 @@ export async function updateOrderStatus(req: Request, res: Response) {
   if (settings && statusWhatsapp) {
     statusSendResult = await dispatchWhatsappMessage(settings, current.customer.phone, statusWhatsapp.message, current.customer.phone);
   }
+
+  void dispatchN8nEvent(getCompanyId(req), "order.status_changed", {
+    orderId: order.id,
+    orderNumber: order.orderNumber,
+    previousStatus: current.status,
+    nextStatus: body.status,
+    reason: body.reason ?? null,
+    paymentMethod: order.paymentMethod,
+    paidAt: order.paidAt,
+    total: Number(order.total)
+  }).catch((error) => {
+    console.error("Falha ao enviar evento n8n de status do pedido", error);
+  });
 
   return res.json({
     ...order,
@@ -931,6 +960,17 @@ export async function markOrderPaid(req: Request, res: Response) {
         .join(" "),
       status: order.status === "RECEIVED" ? "PREPARING" : order.status
     }
+  });
+
+  void dispatchN8nEvent(getCompanyId(req), "order.paid", {
+    orderId: updated.id,
+    orderNumber: updated.orderNumber,
+    paymentMethod: updated.paymentMethod,
+    paidMethodDetail: updated.paidMethodDetail,
+    total: Number(updated.total),
+    paymentDetail
+  }).catch((error) => {
+    console.error("Falha ao enviar evento n8n de pagamento manual", error);
   });
 
   await recordCashPayments(session.id, getCompanyId(req), [{

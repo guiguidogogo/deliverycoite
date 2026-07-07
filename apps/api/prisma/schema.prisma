@@ -1045,6 +1045,9 @@ model Setting {
   menuiaApiKey               String?
   menuiaStoreId              String?
   menuiaEnabled              Boolean           @default(false)
+  n8nEnabled                 Boolean           @default(false)
+  n8nWebhookUrl              String?
+  n8nSecret                  String?
   whatsappOnReceived         Boolean           @default(true)
   whatsappOnPreparing        Boolean           @default(true)
   whatsappOnOutForDelivery   Boolean           @default(true)

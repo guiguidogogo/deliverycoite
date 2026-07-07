@@ -13,6 +13,7 @@ import {
 import { publishNewOrder } from "../services/realtime.js";
 import { printOrder } from "../services/thermal-printer.js";
 import { buildWhatsappMessage, dispatchWhatsappMessage } from "../services/whatsapp.js";
+import { dispatchN8nEvent } from "../services/n8n.js";
 import { prisma } from "../utils/prisma.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
 import { formatOrderCode } from "../utils/order-code.js";
@@ -201,6 +202,18 @@ async function applyApprovedMercadoPagoPayment(orderId: string, payment: Mercado
         orderId: paidOrder.id,
         customer: paidOrder.customer.name,
         total: Number(paidOrder.total)
+      });
+
+      void dispatchN8nEvent(paidOrder.companyId, "order.paid", {
+        orderId: paidOrder.id,
+        orderNumber: paidOrder.orderNumber,
+        paymentMethod: paidOrder.paymentMethod,
+        paidMethodDetail: paidOrder.paidMethodDetail,
+        total: Number(paidOrder.total),
+        mercadoPagoPaymentId: paidOrder.mercadoPagoPaymentId,
+        mercadoPagoStatus: paidOrder.mercadoPagoStatus
+      }).catch((error) => {
+        console.error("Falha ao enviar evento n8n de pagamento aprovado", error);
       });
     }
   }
