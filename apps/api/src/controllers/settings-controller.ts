@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { getCompanyId } from "../utils/tenant.js";
 import { optionalImageUrl } from "../utils/image-url.js";
+import { ensureCompanySettings } from "../utils/settings.js";
 
 const optionalText = z.preprocess(
   (value) => typeof value === "string" && !value.trim() ? undefined : value,
@@ -73,21 +74,7 @@ const settingsSchema = z.object({
 });
 
 async function ensureDefaultSettings(req: Request) {
-  const companyId = getCompanyId(req);
-  return prisma.setting.upsert({
-    where: { companyId },
-    update: {},
-    create: {
-      companyId,
-      companyName: "Lanchonete Delivery",
-      whatsappNumber: process.env.WHATSAPP_NUMBER ?? "5575999999999",
-      deliveryFee: new Prisma.Decimal(5),
-      openTime: "00:00",
-      closeTime: "23:59",
-      autoMessage: "Obrigado pelo pedido!"
-    },
-    include: { deliveryFeeTiers: { orderBy: { sortOrder: "asc" } } }
-  });
+  return ensureCompanySettings(getCompanyId(req));
 }
 
 export async function getSettings(req: Request, res: Response) {

@@ -14,6 +14,7 @@ import { companyWhere, getCompanyId } from "../utils/tenant.js";
 import { audit } from "../utils/audit.js";
 import { linkCustomerToCompany, normalizeEmail, normalizePhone, recordCompanyCustomerPurchase } from "../utils/customer-linking.js";
 import { restoreStockFromOrderItems, validateAndDecrementStock } from "../utils/stock.js";
+import { ensureCompanySettings } from "../utils/settings.js";
 
 function shouldSendStatusWhatsapp(
   settings: Awaited<ReturnType<typeof prisma.setting.findFirstOrThrow>>,
@@ -186,10 +187,7 @@ export async function createOrder(req: Request, res: Response) {
   const companyId = getCompanyId(req);
   const tableOrder = body.source === OrderSource.TABLE || body.source === OrderSource.TABLE_QR;
 
-  const settings = await prisma.setting.findFirstOrThrow({
-    where: { companyId },
-    include: { deliveryFeeTiers: true }
-  });
+  const settings = await ensureCompanySettings(companyId);
 
   if (settings.ordersPaused) {
     return res.status(400).json({
@@ -809,7 +807,7 @@ export async function markOrderViewed(req: Request, res: Response) {
 }
 
 export async function sendToDelivery(req: Request, res: Response) {
-  const settings = await prisma.setting.findFirstOrThrow({ where: companyWhere(req) });
+  const settings = await ensureCompanySettings(getCompanyId(req));
   
   if (!settings.deliveryPhoneNumber) {
     return res.status(400).json({ message: "Numero do motoboy nao configurado" });
@@ -1022,7 +1020,7 @@ export async function markOrderPaid(req: Request, res: Response) {
 
 export async function printOrderById(req: Request, res: Response) {
   const [settings, order] = await Promise.all([
-    prisma.setting.findFirstOrThrow({ where: companyWhere(req) }),
+    ensureCompanySettings(getCompanyId(req)),
     prisma.order.findFirst({
       where: { id: req.params.id, ...companyWhere(req) },
       include: { customer: true, items: { include: { product: true, complements: true } } }
@@ -1048,7 +1046,7 @@ export async function printOrderById(req: Request, res: Response) {
 
 export async function getOrderPrintData(req: Request, res: Response) {
   const [settings, order] = await Promise.all([
-    prisma.setting.findFirstOrThrow({ where: companyWhere(req) }),
+    ensureCompanySettings(getCompanyId(req)),
     prisma.order.findFirst({
       where: { id: req.params.id, ...companyWhere(req) },
       include: { customer: true, items: { include: { product: true, complements: true } } }
