@@ -3,6 +3,7 @@ import { dispatchWhatsappMessage } from "../services/whatsapp.js";
 import { dispatchN8nEvent } from "../services/n8n.js";
 import { prisma } from "../utils/prisma.js";
 import { companyWhere } from "../utils/tenant.js";
+import { ensureCompanySettings } from "../utils/settings.js";
 
 export async function getFutureIntegrations(_req: Request, res: Response) {
   return res.json({
@@ -15,11 +16,7 @@ export async function getFutureIntegrations(_req: Request, res: Response) {
 }
 
 export async function testMenuiaIntegration(req: Request, res: Response) {
-  const settings = await prisma.setting.findFirst({ where: companyWhere(req) });
-
-  if (!settings) {
-    return res.status(404).json({ message: "Configuracoes nao encontradas" });
-  }
+  const settings = await ensureCompanySettings(companyWhere(req).companyId);
 
   if (!settings.menuiaEnabled) {
     return res.status(400).json({ message: "Menuia esta desabilitado nas configuracoes" });
@@ -57,11 +54,7 @@ export async function testMenuiaIntegration(req: Request, res: Response) {
 }
 
 export async function testN8nIntegration(req: Request, res: Response) {
-  const settings = await prisma.setting.findFirst({ where: companyWhere(req) });
-
-  if (!settings) {
-    return res.status(404).json({ message: "Configuracoes nao encontradas" });
-  }
+  const settings = await ensureCompanySettings(companyWhere(req).companyId);
 
   if (!settings.n8nEnabled) {
     return res.status(400).json({ message: "n8n esta desabilitado nas configuracoes" });
