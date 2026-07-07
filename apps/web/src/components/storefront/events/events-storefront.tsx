@@ -285,6 +285,18 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
       toast.error("Selecione pelo menos um ingresso");
       return;
     }
+    if (!customer.name.trim() || !customer.phone.trim() || !customer.email.trim()) {
+      toast.error("Preencha nome, telefone e e-mail");
+      return;
+    }
+    if (!customerToken && accountLookup.exists && customer.password.trim().length < 6) {
+      toast.error("Faça login para continuar sua compra");
+      return;
+    }
+    if (!customerToken && !accountLookup.exists && customer.password.trim().length < 6) {
+      toast.error("Crie sua senha para concluir a compra");
+      return;
+    }
     setSubmitting(true);
     try {
       const response = await apiFetch(`/events/${selectedEvent.id}/orders`, {
@@ -596,7 +608,7 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
                 <p className="text-sm text-slate-500">Total da reserva</p>
                 <strong className="text-3xl">{money.format(total)}</strong>
               </div>
-              <button className="rounded-2xl bg-orange-500 px-6 py-4 font-black text-white disabled:opacity-50" disabled={submitting || !canReserve}>
+              <button className="rounded-2xl bg-orange-500 px-6 py-4 font-black text-white disabled:opacity-50" disabled={submitting}>
                 {submitting ? "Reservando..." : "Continuar no Mercado Pago"}
               </button>
             </div>
