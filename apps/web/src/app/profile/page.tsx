@@ -120,7 +120,9 @@ export default function ProfilePage() {
 
         if (status.paid || status.paymentStatus === "PAID") {
           setPendingOrder(null);
-          localStorage.removeItem(`events:lastOrderData:${pendingOrder.id}`);
+          Object.keys(localStorage)
+            .filter((key) => key.startsWith("events:lastOrderData:"))
+            .forEach((key) => localStorage.removeItem(key));
           await loadProfile(token);
           toast.success("Pagamento confirmado!");
         }
@@ -162,16 +164,29 @@ export default function ProfilePage() {
         headers: { Authorization: `Bearer ${token}` }
       });
       setTickets(ticketOrders);
-      const storedPending = Object.keys(localStorage)
+      const storedPendingRaw = Object.keys(localStorage)
         .filter((key) => key.startsWith("events:lastOrderData:"))
         .map((key) => localStorage.getItem(key))
         .find(Boolean);
-      if (storedPending) {
+
+      if (storedPendingRaw) {
         try {
-          setPendingOrder(JSON.parse(storedPending) as CustomerTicket);
+          const storedPending = JSON.parse(storedPendingRaw) as CustomerTicket;
+          const matchingTicketOrder = ticketOrders.find((order) => order.id === storedPending.id);
+          const alreadyPaid = Boolean(storedPending.paidAt || storedPending.paymentStatus === "PAID" || matchingTicketOrder?.paidAt || matchingTicketOrder?.paymentStatus === "PAID");
+          if (alreadyPaid) {
+            setPendingOrder(null);
+            Object.keys(localStorage)
+              .filter((key) => key.startsWith("events:lastOrderData:"))
+              .forEach((key) => localStorage.removeItem(key));
+          } else {
+            setPendingOrder(storedPending);
+          }
         } catch {
           setPendingOrder(null);
         }
+      } else {
+        setPendingOrder(null);
       }
     } catch (error) {
       toast.error("Erro ao carregar perfil");
@@ -309,9 +324,12 @@ export default function ProfilePage() {
   }
 
   function handleLogout() {
-    localStorage.removeItem("delivery:customer-token");
-    localStorage.removeItem("delivery:customer");
-    router.push("/");
+      localStorage.removeItem("delivery:customer-token");
+      localStorage.removeItem("delivery:customer");
+      Object.keys(localStorage)
+        .filter((key) => key.startsWith("events:lastOrderData:"))
+        .forEach((key) => localStorage.removeItem(key));
+      router.push("/");
   }
 
   async function changePassword() {
