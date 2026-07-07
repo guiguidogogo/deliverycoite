@@ -86,7 +86,7 @@ function chooseApprovedMercadoPagoPayment(payments: MercadoPagoPaymentResponse[]
   return payments.find((payment) => payment.status === "approved") ?? null;
 }
 
-async function reconcileMercadoPagoPendingOrders(
+export async function reconcileMercadoPagoPendingOrders(
   orders: Array<{
     id: string;
     paymentMethod: PaymentMethod;
@@ -133,6 +133,27 @@ async function reconcileMercadoPagoPendingOrders(
       }
     });
   }));
+}
+
+export async function reconcileAllMercadoPagoPendingOrders() {
+  const reconciliationRows = await prisma.order.findMany({
+    where: {
+      paymentMethod: PaymentMethod.MERCADO_PAGO,
+      paidAt: null,
+      mercadoPagoStatus: { not: "refunded" }
+    },
+    select: {
+      id: true,
+      paymentMethod: true,
+      paidAt: true,
+      mercadoPagoStatus: true,
+      mercadoPagoPaymentId: true,
+      mercadoPagoPreferenceId: true,
+      company: { select: { mercadoPagoAccessToken: true } }
+    }
+  });
+
+  await reconcileMercadoPagoPendingOrders(reconciliationRows);
 }
 
 function toDecimal(value: number) {

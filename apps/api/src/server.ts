@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { app } from "./app.js";
+import { reconcileAllMercadoPagoPendingOrders } from "./controllers/orders-controller.js";
 import { attachRealtimeServer } from "./services/realtime.js";
 import { env } from "./utils/env.js";
 import { prisma } from "./utils/prisma.js";
@@ -34,6 +35,15 @@ async function bootstrap() {
 
   const server = http.createServer(app);
   attachRealtimeServer(server);
+
+  const reconcilePendingPayments = () => {
+    void reconcileAllMercadoPagoPendingOrders().catch((error) => {
+      console.error("Falha ao reconciliar pagamentos Mercado Pago", error);
+    });
+  };
+
+  reconcilePendingPayments();
+  setInterval(reconcilePendingPayments, 60_000);
 
   server.listen(env.port, "0.0.0.0", () => {
     console.log(`API online na porta ${env.port}`);
