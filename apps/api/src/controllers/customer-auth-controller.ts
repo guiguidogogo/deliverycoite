@@ -195,23 +195,32 @@ export async function loginCustomer(req: Request, res: Response) {
 
   const globalCustomer = globalCandidates.find((candidate) => candidate.id === credentialSource?.id) ?? null;
   const legacyCustomerMatch = legacyCustomer?.id === credentialSource?.id ? legacyCustomer : null;
+  const customerPhone = globalCustomer?.phone ?? legacyCustomerMatch?.phone;
+  if (!customerPhone) {
+    return res.status(400).json({ message: "Nao foi possivel identificar o telefone desta conta" });
+  }
+  const customerEmail = globalCustomer?.email ?? legacyCustomerMatch?.email ?? email ?? null;
   const linked = await linkCustomerToCompany({
     companyId,
     name: globalCustomer?.name ?? legacyCustomerMatch?.name ?? body.identifier,
-    phone: phone ?? legacyCustomerMatch?.phone ?? normalizePhone(body.identifier),
-    email: globalCustomer?.email ?? legacyCustomerMatch?.email ?? email,
+    phone: customerPhone,
+    email: customerEmail,
     passwordHash: credentialSource.passwordHash
   });
 
+  const customerWhere = customerEmail
+    ? { companyId_email: { companyId, email: customerEmail } }
+    : { companyId_phone: { companyId, phone: customerPhone } };
+
   const customer = await prisma.customer.upsert({
-    where: { companyId_phone: { companyId, phone: phone ?? legacyCustomerMatch?.phone ?? normalizePhone(body.identifier) } },
+    where: customerWhere,
     create: {
       companyId,
       globalCustomerId: linked.globalCustomer.id,
       companyCustomerId: linked.companyCustomer.id,
       name: linked.globalCustomer.name,
-      phone: phone ?? legacyCustomerMatch?.phone ?? normalizePhone(body.identifier),
-      email: linked.globalCustomer.email,
+      phone: customerPhone,
+      email: customerEmail,
       passwordHash: credentialSource.passwordHash,
       address: legacyCustomerMatch?.address ?? "",
       number: legacyCustomerMatch?.number ?? "",
@@ -222,7 +231,8 @@ export async function loginCustomer(req: Request, res: Response) {
       globalCustomerId: linked.globalCustomer.id,
       companyCustomerId: linked.companyCustomer.id,
       name: linked.globalCustomer.name,
-      email: linked.globalCustomer.email,
+      email: customerEmail,
+      phone: customerPhone,
       ...(legacyCustomerMatch?.address ? { address: legacyCustomerMatch.address } : {}),
       ...(legacyCustomerMatch?.number ? { number: legacyCustomerMatch.number } : {}),
       ...(legacyCustomerMatch?.district ? { district: legacyCustomerMatch.district } : {}),
