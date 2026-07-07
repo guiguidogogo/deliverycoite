@@ -1,8 +1,10 @@
 import crypto from "node:crypto";
+import jwt from "jsonwebtoken";
 import { EventStatus, PaymentMethod, Prisma, TicketStatus } from "@prisma/client";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
+import { env } from "../utils/env.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
 import { findExistingGlobalCustomer, linkCustomerToCompany, normalizePhone } from "../utils/customer-linking.js";
 import { createMercadoPagoPixPayment, createMercadoPagoPreference } from "../services/mercadopago.js";
@@ -86,6 +88,17 @@ function qrCode() {
   return `hub_ticket_${crypto.randomBytes(18).toString("hex")}`;
 }
 
+function authenticatedCustomerId(req: Request) {
+  const header = req.headers.authorization;
+  if (!header?.startsWith("Bearer ")) return null;
+  try {
+    const decoded = jwt.verify(header.slice(7), env.jwtSecret) as { customerId?: string; companyId?: string };
+    return decoded.customerId ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function requestBaseUrl(req: Request) {
   const proto = req.get("x-forwarded-proto")?.split(",")[0] || req.protocol || "https";
   const host = req.get("x-forwarded-host") || req.get("host");
@@ -167,7 +180,8 @@ export async function createPublicTicketOrder(req: Request, res: Response) {
         email: body.customerEmail,
         db: tx
       });
-      if (existingGlobalCustomer) {
+      const currentCustomerId = authenticatedCustomerId(req);
+      if (existingGlobalCustomer && !currentCustomerId) {
         throw new Error("Ja existe um cadastro com este e-mail ou telefone. Fa?a login para continuar sua compra.");
       }
 

@@ -93,6 +93,7 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
   const [submitting, setSubmitting] = useState(false);
   const [accountLookup, setAccountLookup] = useState<{ exists: boolean; name?: string; phone?: string; email?: string; matchedBy?: string }>({ exists: false });
   const [accountLookupLoading, setAccountLookupLoading] = useState(false);
+  const customerToken = typeof window === "undefined" ? null : window.localStorage.getItem("delivery:customer-token");
 
   useEffect(() => {
     void apiFetch("/events", { cache: "no-store" })
@@ -204,6 +205,10 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
       const params = new URLSearchParams();
       if (customer.phone.trim()) params.set("phone", customer.phone.trim());
       if (customer.email.trim()) params.set("email", customer.email.trim());
+      if (customerToken) {
+        setAccountLookup({ exists: true, matchedBy: "session" });
+        return;
+      }
       const response = await apiFetch(`/customer/account/lookup?${params.toString()}`, { cache: "no-store" });
       if (!response.ok) throw new Error("Falha ao verificar conta");
       setAccountLookup(await response.json());
@@ -241,7 +246,10 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
     try {
       const response = await apiFetch(`/events/${selectedEvent.id}/orders`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(customerToken ? { Authorization: `Bearer ${customerToken}` } : {})
+        },
           body: JSON.stringify({
             customerName: customer.name,
             customerPhone: customer.phone,
@@ -424,9 +432,9 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
               <p className="text-xs font-black uppercase tracking-[0.25em] text-orange-600">Acesso</p>
               {accountLookupLoading ? (
                 <p className="mt-2 text-sm text-slate-600">Verificando conta...</p>
-              ) : accountLookup.exists ? (
+              ) : customerToken || accountLookup.exists ? (
                 <div className="mt-2 space-y-3">
-                  <p className="text-sm text-slate-700">Encontramos uma conta vinculada a este e-mail ou telefone.</p>
+                  <p className="text-sm text-slate-700">Sua conta j? est? identificada. Voc? pode continuar a compra sem refazer o cadastro.</p>
                   <button type="button" className="rounded-xl bg-slate-950 px-4 py-2 font-bold text-white" onClick={saveDraftAndGoToAccount}>
                     Entrar na minha conta
                   </button>
