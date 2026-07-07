@@ -26,14 +26,12 @@ function storeIsOpen(companyOpen: boolean, settings?: {
 export async function listMarketplaceCompanies(req: Request, res: Response) {
   const search = req.query.search?.toString().trim();
   const category = req.query.category?.toString().trim();
-  const businessType = req.query.businessType?.toString().trim().toUpperCase();
   const city = req.query.city?.toString().trim();
 
   const companies = await prisma.company.findMany({
     where: {
       active: true,
       marketplaceVisible: true,
-      ...(businessType ? { businessType: businessType as any } : {}),
       ...(category ? { category: { equals: category, mode: "insensitive" } } : {}),
       ...(city ? { city: { equals: city, mode: "insensitive" } } : {}),
       ...(search ? {
@@ -53,7 +51,6 @@ export async function listMarketplaceCompanies(req: Request, res: Response) {
       primaryColor: true,
       secondaryColor: true,
       category: true,
-      businessType: true,
       city: true,
       isOpen: true,
       deliveryFee: true,
@@ -102,7 +99,6 @@ export async function listMarketplaceCompanies(req: Request, res: Response) {
       primaryColor: company.primaryColor,
       secondaryColor: company.secondaryColor,
       category: company.category,
-      businessType: company.businessType,
       city: company.city,
       isOpen: storeIsOpen(company.isOpen, settings),
       deliveryFee: Number(company.deliveryFee),
@@ -139,22 +135,11 @@ export async function marketplaceSummary(_req: Request, res: Response) {
     })
   ]);
 
-  const businessTypes = await prisma.company.groupBy({
-    by: ["businessType"],
-    where: { active: true, marketplaceVisible: true },
-    _count: { _all: true },
-    orderBy: { _count: { businessType: "desc" } }
-  });
-
   return res.json({
     companies,
     cities: cities.map((item) => item.city),
     categories: categories.map((item) => ({
       name: item.category,
-      count: item._count._all
-    })),
-    businessTypes: businessTypes.map((item) => ({
-      name: item.businessType,
       count: item._count._all
     }))
   });

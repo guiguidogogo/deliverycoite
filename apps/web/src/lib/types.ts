@@ -73,7 +73,6 @@ export type PublicCompany = {
   instagram?: string | null;
   subdomain: string;
   active: boolean;
-  businessType: "FOOD" | "EVENTS" | "BARBERSHOP" | "BEAUTY_SALON" | "PHARMACY" | "MARKET" | "CLINIC" | "SERVICES";
   category: string;
   city: string;
   isOpen: boolean;

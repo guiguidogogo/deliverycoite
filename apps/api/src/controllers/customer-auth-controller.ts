@@ -5,11 +5,11 @@ import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { env } from "../utils/env.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
-import { findExistingGlobalCustomer, linkCustomerToCompany, normalizeEmail, normalizePhone } from "../utils/customer-linking.js";
+import { linkCustomerToCompany, normalizeEmail, normalizePhone } from "../utils/customer-linking.js";
 
 const registerSchema = z.object({
   name: z.string().min(2),
-  phone: z.string().min(6, "Informe um telefone com pelo menos 6 digitos"),
+  phone: z.string().min(8),
   email: z.string().email().optional(),
   password: z.string().min(6).optional(),
   address: z.string().min(3).optional(),
@@ -20,31 +20,9 @@ const registerSchema = z.object({
   longitude: z.number().optional()
 });
 
-const loginSchema = z.preprocess(
-  (value) => {
-    if (!value || typeof value !== "object") return value;
-    const body = value as Record<string, unknown>;
-    const identifier = typeof body.identifier === "string" && body.identifier.trim()
-      ? body.identifier
-      : typeof body.phone === "string" && body.phone.trim()
-        ? body.phone
-        : typeof body.email === "string" && body.email.trim()
-          ? body.email
-          : "";
-    return {
-      ...body,
-      identifier
-    };
-  },
-  z.object({
-    identifier: z.string().min(3, "Informe seu telefone ou e-mail"),
-    password: z.string().min(6)
-  })
-);
-
-const lookupSchema = z.object({
-  phone: z.string().min(8).optional(),
-  email: z.string().email().optional()
+const loginSchema = z.object({
+  phone: z.string().min(8),
+  password: z.string().min(6)
 });
 
 const addressSchema = z.object({
@@ -63,11 +41,6 @@ export async function registerCustomer(req: Request, res: Response) {
   const companyId = getCompanyId(req);
   const phone = normalizePhone(body.phone);
   const email = normalizeEmail(body.email);
-
-  const existingGlobalCustomer = await findExistingGlobalCustomer({ phone, email });
-  if (existingGlobalCustomer) {
-    return res.status(409).json({ message: "Ja existe um cadastro com este e-mail ou telefone. Faça login para continuar sua compra." });
-  }
 
   const passwordHash = body.password ? await bcrypt.hash(body.password, 10) : null;
   const linked = await linkCustomerToCompany({
@@ -153,91 +126,51 @@ export async function registerCustomer(req: Request, res: Response) {
 export async function loginCustomer(req: Request, res: Response) {
   const body = loginSchema.parse(req.body);
   const companyId = getCompanyId(req);
+  const phone = normalizePhone(body.phone);
 
-  const isEmail = body.identifier.includes("@");
-  const phone = isEmail ? null : normalizePhone(body.identifier);
-  const email = isEmail ? normalizeEmail(body.identifier) : null;
+  const globalCustomer = await prisma.globalCustomer.findUnique({ where: { phone } });
+  const legacyCustomer = !globalCustomer
+    ? await prisma.customer.findFirst({ where: { phone, ...companyWhere(req) } })
+    : null;
+  const passwordHash = globalCustomer?.passwordHash ?? legacyCustomer?.passwordHash;
 
-  const [globalByPhone, globalByEmail, legacyCustomer] = await Promise.all([
-    phone ? prisma.globalCustomer.findUnique({ where: { phone } }) : Promise.resolve(null),
-    email ? prisma.globalCustomer.findUnique({ where: { email } }) : Promise.resolve(null),
-    prisma.customer.findFirst({
-      where: {
-        ...companyWhere(req),
-        OR: [
-          ...(phone ? [{ phone }] : []),
-          ...(email ? [{ email }] : [])
-        ]
-      }
-    })
-  ]);
-
-  const globalCandidates = [globalByPhone, globalByEmail].filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate));
-  const allCandidates = [...(legacyCustomer ? [legacyCustomer] : []), ...globalCandidates];
-
-  let credentialSource = allCandidates.find((candidate) => Boolean(candidate.passwordHash)) ?? null;
-  if (credentialSource) {
-    const validMatches = await Promise.all(allCandidates.map(async (candidate) => ({
-      candidate,
-      valid: Boolean(candidate.passwordHash) && await bcrypt.compare(body.password, candidate.passwordHash!)
-    })));
-    credentialSource = validMatches.find((entry) => entry.valid)?.candidate ?? null;
-  }
-
-  if (!credentialSource?.passwordHash) {
+  if (!passwordHash) {
     return res.status(401).json({ message: "Credenciais invalidas" });
   }
 
-  const valid = await bcrypt.compare(body.password, credentialSource.passwordHash);
+  const valid = await bcrypt.compare(body.password, passwordHash);
   if (!valid) {
     return res.status(401).json({ message: "Credenciais invalidas" });
   }
 
-  const globalCustomer = globalCandidates.find((candidate) => candidate.id === credentialSource?.id) ?? null;
-  const legacyCustomerMatch = legacyCustomer?.id === credentialSource?.id ? legacyCustomer : null;
-  const customerPhone = globalCustomer?.phone ?? legacyCustomerMatch?.phone;
-  if (!customerPhone) {
-    return res.status(400).json({ message: "Nao foi possivel identificar o telefone desta conta" });
-  }
-  const customerEmail = globalCustomer?.email ?? legacyCustomerMatch?.email ?? email ?? null;
   const linked = await linkCustomerToCompany({
     companyId,
-    name: globalCustomer?.name ?? legacyCustomerMatch?.name ?? body.identifier,
-    phone: customerPhone,
-    email: customerEmail,
-    passwordHash: credentialSource.passwordHash
+    name: globalCustomer?.name ?? legacyCustomer!.name,
+    phone,
+    email: globalCustomer?.email ?? legacyCustomer?.email,
+    passwordHash
   });
 
-  const customerWhere = customerEmail
-    ? { companyId_email: { companyId, email: customerEmail } }
-    : { companyId_phone: { companyId, phone: customerPhone } };
-
   const customer = await prisma.customer.upsert({
-    where: customerWhere,
+    where: { companyId_phone: { companyId, phone } },
     create: {
       companyId,
       globalCustomerId: linked.globalCustomer.id,
       companyCustomerId: linked.companyCustomer.id,
       name: linked.globalCustomer.name,
-      phone: customerPhone,
-      email: customerEmail,
-      passwordHash: credentialSource.passwordHash,
-      address: legacyCustomerMatch?.address ?? "",
-      number: legacyCustomerMatch?.number ?? "",
-      district: legacyCustomerMatch?.district ?? "",
-      complement: legacyCustomerMatch?.complement ?? null
+      phone,
+      email: linked.globalCustomer.email,
+      passwordHash,
+      address: legacyCustomer?.address ?? "",
+      number: legacyCustomer?.number ?? "",
+      district: legacyCustomer?.district ?? "",
+      complement: legacyCustomer?.complement ?? null
     },
     update: {
       globalCustomerId: linked.globalCustomer.id,
       companyCustomerId: linked.companyCustomer.id,
       name: linked.globalCustomer.name,
-      email: customerEmail,
-      phone: customerPhone,
-      ...(legacyCustomerMatch?.address ? { address: legacyCustomerMatch.address } : {}),
-      ...(legacyCustomerMatch?.number ? { number: legacyCustomerMatch.number } : {}),
-      ...(legacyCustomerMatch?.district ? { district: legacyCustomerMatch.district } : {}),
-      ...(legacyCustomerMatch?.complement !== undefined ? { complement: legacyCustomerMatch.complement } : {}),
-      ...(credentialSource.passwordHash ? { passwordHash: credentialSource.passwordHash } : {}),
+      email: linked.globalCustomer.email,
       deletedAt: null,
       deletedBy: null,
       deletionReason: null
@@ -286,52 +219,19 @@ export async function updateCustomerProfile(req: Request, res: Response) {
   const customerId = (req as any).customerId;
   const schema = z.object({
     name: z.string().min(2).optional(),
-    email: z.string().email().optional(),
-    phone: z.string().min(8).optional()
+    email: z.string().email().optional()
   });
 
   const body = schema.parse(req.body);
 
-  const existing = await prisma.customer.findFirst({
-    where: { id: customerId, ...companyWhere(req) },
-    include: { globalCustomer: true }
-  });
+  const existing = await prisma.customer.findFirst({ where: { id: customerId, ...companyWhere(req) } });
   if (!existing) return res.status(404).json({ message: "Cliente nao encontrado" });
-  const nextPhone = body.phone ? normalizePhone(body.phone) : existing.phone;
-  const nextEmail = body.email !== undefined ? normalizeEmail(body.email) : existing.email ?? null;
-
-  if (body.phone) {
-    const conflict = await prisma.globalCustomer.findFirst({
-      where: {
-        phone: nextPhone,
-        NOT: { id: existing.globalCustomerId ?? undefined }
-      }
-    });
-    if (conflict) {
-      return res.status(400).json({ message: "Telefone ja cadastrado em outra conta" });
+  const customer = await prisma.customer.update({
+    where: { id: existing.id },
+    data: {
+      ...body,
+      ...(body.email !== undefined ? { email: normalizeEmail(body.email) } : {})
     }
-  }
-
-  const customer = await prisma.$transaction(async (tx) => {
-    if (existing.globalCustomerId) {
-      await tx.globalCustomer.update({
-        where: { id: existing.globalCustomerId },
-        data: {
-          ...(body.name !== undefined ? { name: body.name } : {}),
-          ...(body.phone !== undefined ? { phone: nextPhone, whatsapp: nextPhone } : {}),
-          ...(body.email !== undefined ? { email: nextEmail } : {})
-        }
-      });
-    }
-
-    return tx.customer.update({
-      where: { id: existing.id },
-      data: {
-        ...(body.name !== undefined ? { name: body.name } : {}),
-        ...(body.phone !== undefined ? { phone: nextPhone } : {}),
-        ...(body.email !== undefined ? { email: nextEmail } : {})
-      }
-    });
   });
 
   return res.json({
@@ -357,105 +257,6 @@ export async function changeCustomerPassword(req: Request, res: Response) {
     data: { passwordHash: await bcrypt.hash(body.newPassword, 10) }
   });
   return res.json({ message: "Senha alterada" });
-}
-
-export async function lookupCustomerAccount(req: Request, res: Response) {
-  const body = lookupSchema.parse(req.query);
-  const phone = body.phone ? normalizePhone(body.phone) : null;
-  const email = normalizeEmail(body.email);
-
-  const [byPhone, byEmail, companyCustomer] = await Promise.all([
-    phone ? prisma.globalCustomer.findUnique({ where: { phone } }) : Promise.resolve(null),
-    email ? prisma.globalCustomer.findUnique({ where: { email } }) : Promise.resolve(null),
-    phone || email
-      ? prisma.customer.findFirst({
-          where: {
-            deletedAt: null,
-            ...companyWhere(req),
-            OR: [
-              ...(phone ? [{ phone }] : []),
-              ...(email ? [{ email }] : [])
-            ]
-          },
-          select: { id: true, name: true, phone: true, email: true }
-        })
-      : Promise.resolve(null)
-  ]);
-
-  const account = companyCustomer || byPhone || byEmail;
-  if (!account) {
-    return res.json({ exists: false });
-  }
-
-  return res.json({
-    exists: true,
-    matchedBy: companyCustomer ? "companyCustomer" : byEmail ? "email" : "phone",
-    account: {
-      id: "id" in account ? account.id : null,
-      name: account.name,
-      phone: account.phone,
-      email: account.email ?? null
-    }
-  });
-}
-
-export async function listCustomerTicketOrders(req: Request, res: Response) {
-  const customerId = (req as any).customerId;
-  const customer = await prisma.customer.findFirst({
-    where: { id: customerId, ...companyWhere(req) },
-    select: { phone: true, companyId: true }
-  });
-
-  if (!customer) {
-    return res.status(404).json({ message: "Cliente nao encontrado" });
-  }
-
-  const orders = await prisma.ticketOrder.findMany({
-    where: {
-      companyId: customer.companyId,
-      customerPhone: customer.phone
-    },
-    include: {
-      event: true,
-      tickets: { include: { ticketType: true } }
-    },
-    orderBy: { createdAt: "desc" }
-  });
-
-  return res.json(orders.map((order) => ({
-    id: order.id,
-    total: Number(order.total),
-    customerName: order.customerName,
-    customerPhone: order.customerPhone,
-    customerEmail: order.customerEmail,
-    status: order.status,
-    paymentStatus: order.paymentStatus,
-    paidAt: order.paidAt,
-    mercadoPago: {
-      paymentId: order.mercadoPagoPaymentId,
-      preferenceId: order.mercadoPagoPreferenceId,
-      status: order.mercadoPagoStatus,
-      statusDetail: order.mercadoPagoStatusDetail
-    },
-    event: {
-      id: order.event.id,
-      title: order.event.title,
-      eventDate: order.event.eventDate,
-      startTime: order.event.startTime,
-      location: order.event.location
-    },
-    tickets: order.tickets.map((ticket) => ({
-      id: ticket.id,
-      code: ticket.code,
-      qrCode: ticket.qrCode,
-      status: ticket.status,
-      ticketType: {
-        id: ticket.ticketType.id,
-        name: ticket.ticketType.name,
-        audience: ticket.ticketType.audience
-      }
-    }))
-  })));
 }
 
 export async function addCustomerAddress(req: Request, res: Response) {

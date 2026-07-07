@@ -17,7 +17,6 @@ export async function getPublicCompany(req: Request, res: Response) {
       instagram: true,
       subdomain: true,
       active: true,
-      businessType: true,
       category: true,
       city: true,
       isOpen: true,

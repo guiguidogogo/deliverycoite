@@ -42,11 +42,12 @@ function buildHeaders(headers?: HeadersInit, options?: { json?: boolean; subdoma
 }
 
 export async function apiFetch(path: string, init?: RequestInit, options?: { json?: boolean; subdomain?: string | null; skipSubdomain?: boolean }) {
+  const isAdminRequest = path.startsWith("/admin");
   return fetch(`${API_URL}${path}`, {
     ...init,
     headers: buildHeaders(init?.headers, {
       ...options,
-      skipSubdomain: options?.skipSubdomain ?? false
+      skipSubdomain: options?.skipSubdomain || isAdminRequest
     }),
     cache: init?.cache ?? "no-store"
   });

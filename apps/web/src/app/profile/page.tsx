@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { MapPin, Plus, Trash2, Home, Briefcase } from "lucide-react";
@@ -27,56 +27,12 @@ type Address = {
   isDefault: boolean;
 };
 
-type CustomerTicket = {
-  id: string;
-  total: number;
-  paidAt?: string | null;
-  paymentStatus?: string | null;
-  mercadoPago?: {
-    paymentId?: string | null;
-    preferenceId?: string | null;
-    status?: string | null;
-    statusDetail?: string | null;
-    qrCode?: string | null;
-    qrCodeBase64?: string | null;
-    ticketUrl?: string | null;
-    initPoint?: string | null;
-  };
-  event: {
-    title: string;
-    eventDate: string;
-    startTime: string;
-    location: string;
-  };
-  tickets: Array<{
-    id: string;
-    code: string;
-    qrCode: string;
-    status: string;
-    ticketType: {
-      name: string;
-      audience?: string;
-    };
-  }>;
-};
-
-function qrImage(value: string) {
-  return `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(value)}`;
-}
-
 export default function ProfilePage() {
   const router = useRouter();
   const [customer, setCustomer] = useState<Customer | null>(null);
-  const [profileName, setProfileName] = useState("");
-  const [profilePhone, setProfilePhone] = useState("");
-  const [profileEmail, setProfileEmail] = useState("");
   const [addresses, setAddresses] = useState<Address[]>([]);
-  const [tickets, setTickets] = useState<CustomerTicket[]>([]);
-  const [activeTicket, setActiveTicket] = useState<CustomerTicket | null>(null);
-  const [pendingOrder, setPendingOrder] = useState<CustomerTicket | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAddAddress, setShowAddAddress] = useState(false);
-  const confirmedPaymentRef = useRef<string | null>(null);
 
   // Novo endereço
   const [newLabel, setNewLabel] = useState("Casa");
@@ -101,49 +57,6 @@ export default function ProfilePage() {
     loadProfile(token);
   }, [router]);
 
-  useEffect(() => {
-    if (!pendingOrder?.id) return;
-    if (confirmedPaymentRef.current === pendingOrder.id) return;
-
-    let active = true;
-    const refreshPendingOrder = async () => {
-      const token = localStorage.getItem("delivery:customer-token");
-      if (!token) return;
-      try {
-        const status = await api<{
-          paid: boolean;
-          paidAt?: string | null;
-          paymentStatus?: string | null;
-        }>(`/events/orders/${pendingOrder.id}/mercadopago/status`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-
-        if (!active) return;
-
-        if (status.paid || status.paymentStatus === "PAID") {
-          if (confirmedPaymentRef.current !== pendingOrder.id) {
-            confirmedPaymentRef.current = pendingOrder.id;
-            toast.success("Pagamento confirmado!");
-          }
-          setPendingOrder(null);
-          Object.keys(localStorage)
-            .filter((key) => key.startsWith("events:lastOrderData:"))
-            .forEach((key) => localStorage.removeItem(key));
-          await loadProfile(token);
-        }
-      } catch {
-        // mantém pendente e tenta novamente
-      }
-    };
-
-    void refreshPendingOrder();
-    const timer = window.setInterval(refreshPendingOrder, 8000);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-  }, [pendingOrder?.id]);
-
   async function loadProfile(token: string) {
     try {
       const profile = await api<{ id: string; name: string; phone: string; email?: string; addresses: Address[] }>(
@@ -161,39 +74,7 @@ export default function ProfilePage() {
         phone: profile.phone,
         email: profile.email
       });
-      setProfileName(profile.name);
-      setProfilePhone(profile.phone);
-      setProfileEmail(profile.email ?? "");
       setAddresses(profile.addresses);
-      const ticketOrders = await api<CustomerTicket[]>("/customer/tickets", {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setTickets(ticketOrders);
-      const storedPendingRaw = Object.keys(localStorage)
-        .filter((key) => key.startsWith("events:lastOrderData:"))
-        .map((key) => localStorage.getItem(key))
-        .find(Boolean);
-
-      if (storedPendingRaw) {
-        try {
-          const storedPending = JSON.parse(storedPendingRaw) as CustomerTicket;
-          const matchingTicketOrder = ticketOrders.find((order) => order.id === storedPending.id);
-          const alreadyPaid = Boolean(storedPending.paidAt || storedPending.paymentStatus === "PAID" || matchingTicketOrder?.paidAt || matchingTicketOrder?.paymentStatus === "PAID");
-          if (alreadyPaid) {
-            confirmedPaymentRef.current = storedPending.id;
-            setPendingOrder(null);
-            Object.keys(localStorage)
-              .filter((key) => key.startsWith("events:lastOrderData:"))
-              .forEach((key) => localStorage.removeItem(key));
-          } else {
-            setPendingOrder(storedPending);
-          }
-        } catch {
-          setPendingOrder(null);
-        }
-      } else {
-        setPendingOrder(null);
-      }
     } catch (error) {
       toast.error("Erro ao carregar perfil");
       router.push("/account");
@@ -332,10 +213,6 @@ export default function ProfilePage() {
   function handleLogout() {
     localStorage.removeItem("delivery:customer-token");
     localStorage.removeItem("delivery:customer");
-    Object.keys(localStorage)
-      .filter((key) => key.startsWith("events:lastOrderData:"))
-      .forEach((key) => localStorage.removeItem(key));
-    confirmedPaymentRef.current = null;
     router.push("/");
   }
 
@@ -353,30 +230,6 @@ export default function ProfilePage() {
       toast.success("Senha alterada");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao alterar senha");
-    }
-  }
-
-  async function saveProfile() {
-    const token = localStorage.getItem("delivery:customer-token");
-    if (!token) return;
-    try {
-      const updated = await api<Customer>("/customer/profile", {
-        method: "PATCH",
-        headers: { Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          name: profileName,
-          phone: profilePhone,
-          email: profileEmail
-        })
-      });
-      setCustomer((current) => current ? { ...current, ...updated } : updated);
-      setProfileName(updated.name);
-      setProfilePhone(updated.phone);
-      setProfileEmail(updated.email ?? "");
-      localStorage.setItem("delivery:customer", JSON.stringify(updated));
-      toast.success("Perfil atualizado");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Falha ao atualizar perfil");
     }
   }
 
@@ -407,13 +260,18 @@ export default function ProfilePage() {
 
       <section className="rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
         <h2 className="text-xl font-bold">Dados Pessoais</h2>
-        <div className="mt-3 grid gap-3 md:grid-cols-2">
-          <input className="rounded-xl border px-3 py-2" placeholder="Nome" value={profileName} onChange={(e) => setProfileName(e.target.value)} />
-          <input className="rounded-xl border px-3 py-2" placeholder="Telefone" value={profilePhone} onChange={(e) => setProfilePhone(e.target.value)} />
-          <input className="rounded-xl border px-3 py-2 md:col-span-2" placeholder="Email" type="email" value={profileEmail} onChange={(e) => setProfileEmail(e.target.value)} />
-          <button className="rounded-xl bg-ink px-3 py-2 text-white md:col-span-2" onClick={() => void saveProfile()}>
-            Salvar perfil
-          </button>
+        <div className="mt-3 space-y-2">
+          <p>
+            <strong>Nome:</strong> {customer?.name}
+          </p>
+          <p>
+            <strong>Telefone:</strong> {customer?.phone}
+          </p>
+          {customer?.email && (
+            <p>
+              <strong>Email:</strong> {customer.email}
+            </p>
+          )}
         </div>
       </section>
 
@@ -427,127 +285,6 @@ export default function ProfilePage() {
           </button>
         </div>
       </section>
-
-      <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
-        <h2 className="text-xl font-bold">Pagamentos pendentes</h2>
-        <p className="mt-1 text-sm opacity-70">Se você gerou um Pix e ainda não pagou, ele aparece aqui para concluir a compra.</p>
-        <div className="mt-4 space-y-3">
-          {pendingOrder?.mercadoPago?.qrCode ? (
-            <article className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 dark:bg-emerald-900/20">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="font-semibold">{pendingOrder.event.title}</p>
-                  <p className="text-xs opacity-70">{new Date(pendingOrder.event.eventDate).toLocaleDateString("pt-BR")} • {pendingOrder.event.startTime} • {pendingOrder.event.location}</p>
-                  <p className="mt-1 text-sm font-bold text-emerald-700">Pagamento Pix pendente</p>
-                </div>
-                <span className="rounded-full bg-amber-500 px-3 py-1 text-xs font-bold text-white">{pendingOrder.paymentStatus || "PENDENTE"}</span>
-              </div>
-              <div className="mt-4 grid gap-4 md:grid-cols-[240px_1fr]">
-                <img
-                  src={pendingOrder.mercadoPago.qrCodeBase64 ? `data:image/png;base64,${pendingOrder.mercadoPago.qrCodeBase64}` : qrImage(pendingOrder.mercadoPago.qrCode)}
-                  alt="QR Code Pix pendente"
-                  className="mx-auto h-[240px] w-[240px] rounded-2xl border bg-white p-3"
-                />
-                <div className="space-y-3">
-                  <textarea
-                    readOnly
-                    value={pendingOrder.mercadoPago.qrCode ?? ""}
-                    className="h-32 w-full rounded-xl border bg-white p-3 text-xs break-all"
-                  />
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className="rounded-xl bg-ink px-4 py-2 text-sm font-bold text-white"
-                      onClick={async () => {
-                        await navigator.clipboard.writeText(pendingOrder.mercadoPago?.qrCode ?? "");
-                        toast.success("Código Pix copiado!");
-                      }}
-                    >
-                      Copiar código Pix
-                    </button>
-                    {pendingOrder.mercadoPago.ticketUrl && (
-                      <a
-                        href={pendingOrder.mercadoPago.ticketUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="rounded-xl border border-emerald-300 px-4 py-2 text-sm font-bold text-emerald-800"
-                      >
-                        Abrir pagamento
-                      </a>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </article>
-          ) : (
-            <p className="rounded-xl bg-slate-50 p-3 text-sm opacity-70 dark:bg-slate-800">Nenhum pagamento pendente encontrado.</p>
-          )}
-        </div>
-      </section>
-
-      <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
-        <h2 className="text-xl font-bold">Meus ingressos</h2>
-        <p className="mt-1 text-sm opacity-70">Aqui aparecem seus ingressos e QR Codes após o pagamento confirmado.</p>
-        <div className="mt-4 space-y-3">
-          {tickets.length ? tickets.map((order) => (
-            <article key={order.id} className="rounded-xl border border-black/10 p-3 dark:border-white/10">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-semibold">{order.event.title}</p>
-                  <p className="text-xs opacity-70">{new Date(order.event.eventDate).toLocaleDateString("pt-BR")} • {order.event.startTime} • {order.event.location}</p>
-                </div>
-                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${order.paidAt ? "bg-emerald-500 text-white" : "bg-amber-500 text-white"}`}>
-                  {order.paidAt ? "Pago" : order.paymentStatus || "Pendente"}
-                </span>
-              </div>
-              <div className="mt-3 grid gap-2 md:grid-cols-2">
-                {order.tickets.map((ticket) => (
-                  <button key={ticket.id} type="button" onClick={() => setActiveTicket(order)} className="rounded-lg bg-slate-50 p-3 text-left text-sm dark:bg-slate-800">
-                    <strong>{ticket.ticketType.name}</strong>
-                    <p className="mt-1 text-xs opacity-70">Código: {ticket.code}</p>
-                    <p className="text-xs opacity-70">Toque para abrir o QR Code</p>
-                  </button>
-                ))}
-              </div>
-            </article>
-          )) : <p className="rounded-xl bg-slate-50 p-3 text-sm opacity-70 dark:bg-slate-800">Nenhum ingresso encontrado ainda.</p>}
-        </div>
-      </section>
-
-      {activeTicket && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setActiveTicket(null)}>
-          <div className="w-full max-w-lg rounded-3xl bg-white p-5 text-slate-950 shadow-2xl" onClick={(event) => event.stopPropagation()}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.25em] text-emerald-600">Meu ingresso</p>
-                <h3 className="mt-1 text-2xl font-black">{activeTicket.event.title}</h3>
-                <p className="mt-1 text-sm text-slate-600">{new Date(activeTicket.event.eventDate).toLocaleDateString("pt-BR")} • {activeTicket.event.startTime}</p>
-              </div>
-              <button type="button" className="rounded-full bg-slate-100 px-3 py-2 font-bold" onClick={() => setActiveTicket(null)}>Fechar</button>
-            </div>
-
-            <div className="mt-5 grid gap-4 md:grid-cols-[260px_1fr]">
-              <img src={qrImage(activeTicket.tickets[0]?.qrCode ?? activeTicket.id)} alt="QR Code do ingresso" className="mx-auto h-[260px] w-[260px] rounded-2xl border bg-white p-3" />
-              <div className="space-y-3">
-                <div className="rounded-2xl bg-slate-50 p-4">
-                  <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">Códigos</p>
-                  <div className="mt-2 space-y-2">
-                    {activeTicket.tickets.map((ticket) => (
-                      <div key={ticket.id} className="rounded-xl bg-white px-3 py-2 text-sm shadow-sm">
-                        <strong>{ticket.ticketType.name}</strong>
-                        <p className="text-xs text-slate-500">{ticket.code}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <p className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-                  {activeTicket.paidAt ? "Pagamento confirmado. Use este QR Code na entrada." : "Assim que o pagamento for confirmado, o QR Code ficará liberado aqui."}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
         <div className="flex items-center justify-between">

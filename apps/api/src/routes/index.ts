@@ -31,9 +31,7 @@ import {
 import {
   registerCustomer,
   loginCustomer,
-  lookupCustomerAccount,
   getCustomerProfile,
-  listCustomerTicketOrders,
   updateCustomerProfile,
   changeCustomerPassword,
   addCustomerAddress,
@@ -102,28 +100,8 @@ import {
   receiveReceivable,
   reopenCashSession
 } from "../controllers/finance-controller.js";
-import {
-  createAdminEvent,
-  createAdminTicketType,
-  createPublicTicketOrder,
-  getAdminEvent,
-  getPublicEvent,
-  listAdminEvents,
-  listAdminTicketOrders,
-  listPublicEvents,
-  updateAdminEvent,
-  updateAdminTicketType,
-  validateTicket
-} from "../controllers/events-controller.js";
-import {
-  createAdminProfessional,
-  createAdminService,
-  createPublicAppointment,
-  listAdminServices,
-  listPublicServices
-} from "../controllers/services-controller.js";
-import { getFutureIntegrations, testMenuiaIntegration, testN8nIntegration } from "../controllers/integrations-controller.js";
-import { createOrderMercadoPagoPix, createOrderMercadoPagoPreference, getMercadoPagoPublicConfig, getOrderMercadoPagoStatus, getTicketOrderMercadoPagoStatus, mercadoPagoWebhook, refundOrderMercadoPago, refundTicketOrderMercadoPago } from "../controllers/mercadopago-controller.js";
+import { getFutureIntegrations, testMenuiaIntegration } from "../controllers/integrations-controller.js";
+import { createOrderMercadoPagoPix, createOrderMercadoPagoPreference, getMercadoPagoPublicConfig, getOrderMercadoPagoStatus, mercadoPagoWebhook, refundOrderMercadoPago } from "../controllers/mercadopago-controller.js";
 import { listNewOrders } from "../controllers/notifications-controller.js";
 import {
   generatePrinterAgentToken,
@@ -235,11 +213,9 @@ route.post("/auth/password/reset", resetStaffPassword);
 // Customer auth routes
 route.post("/customer/register", registerCustomer);
 route.post("/customer/login", loginCustomer);
-route.get("/customer/account/lookup", lookupCustomerAccount);
 route.post("/customer/password/request", requestCustomerPasswordReset);
 route.post("/customer/password/reset", resetCustomerPassword);
 route.get("/customer/profile", customerAuth, getCustomerProfile);
-route.get("/customer/tickets", customerAuth, listCustomerTicketOrders);
 route.patch("/customer/profile", customerAuth, updateCustomerProfile);
 route.patch("/customer/password", customerAuth, changeCustomerPassword);
 route.post("/customer/addresses", customerAuth, addCustomerAddress);
@@ -253,11 +229,6 @@ route.get("/customers/lookup", lookupCustomer);
 route.get("/categories", listCategories);
 route.get("/products", listProducts);
 route.get("/complements", listComplements);
-route.get("/events", listPublicEvents);
-route.get("/events/:id", getPublicEvent);
-route.post("/events/:id/orders", createPublicTicketOrder);
-route.get("/services", listPublicServices);
-route.post("/services/appointments", createPublicAppointment);
 route.get("/tables/:number", getPublicTable);
 route.post("/tables/:number/session-request", requestTableSession);
 route.post("/tables/:number/call-waiter", callWaiterFromTable);
@@ -274,7 +245,6 @@ route.get("/mercadopago/config", getMercadoPagoPublicConfig);
 route.post("/orders/:orderId/mercadopago/preference", createOrderMercadoPagoPreference);
 route.post("/orders/:orderId/mercadopago/pix", createOrderMercadoPagoPix);
 route.get("/orders/:orderId/mercadopago/status", getOrderMercadoPagoStatus);
-route.get("/events/orders/:ticketOrderId/mercadopago/status", getTicketOrderMercadoPagoStatus);
 route.post("/mercadopago/webhook", mercadoPagoWebhook);
 route.get("/mercadopago/webhook", mercadoPagoWebhook);
 route.get("/printer-agent/orders", listPrinterAgentOrders);
@@ -298,7 +268,6 @@ route.patch("/admin/orders/:id/status", requirePermission("ORDERS"), updateOrder
 route.patch("/admin/orders/:id/viewed", requirePermission("ORDERS"), markOrderViewed);
 route.patch("/admin/orders/:id/paid", requirePermission("ORDERS"), markOrderPaid);
 route.post("/admin/orders/:id/mercadopago/refund", requirePermission("ORDERS"), refundOrderMercadoPago);
-route.post("/admin/ticket-orders/:id/mercadopago/refund", requirePermission("ORDERS"), refundTicketOrderMercadoPago);
 route.delete("/admin/orders/:id", requirePermission("ORDERS"), deleteOrder);
 route.post("/admin/orders/:id/send-delivery", requirePermission("ORDERS"), sendToDelivery);
 route.post("/admin/orders/:id/print", requirePermission("ORDERS"), printOrderById);
@@ -317,17 +286,6 @@ route.get("/admin/deliveries/routes", requirePermission("ORDERS"), listDeliveryR
 route.post("/admin/deliveries/routes", requirePermission("ORDERS"), createDeliveryRoute);
 route.get("/admin/deliveries/routes/:id", requirePermission("ORDERS"), getDeliveryRoute);
 route.patch("/admin/deliveries/routes/:id/status", requirePermission("ORDERS"), updateDeliveryRouteStatus);
-route.get("/admin/events", requireAnyPermission(["CATALOG", "ORDERS", "SETTINGS"]), listAdminEvents);
-route.post("/admin/events", requireAnyPermission(["CATALOG", "ORDERS", "SETTINGS"]), createAdminEvent);
-route.get("/admin/events/:id", requireAnyPermission(["CATALOG", "ORDERS", "SETTINGS"]), getAdminEvent);
-route.patch("/admin/events/:id", requireAnyPermission(["CATALOG", "ORDERS", "SETTINGS"]), updateAdminEvent);
-route.post("/admin/events/:id/ticket-types", requireAnyPermission(["CATALOG", "ORDERS", "SETTINGS"]), createAdminTicketType);
-route.patch("/admin/events/:id/ticket-types/:ticketTypeId", requireAnyPermission(["CATALOG", "ORDERS", "SETTINGS"]), updateAdminTicketType);
-route.get("/admin/ticket-orders", requireAnyPermission(["ORDERS", "CATALOG"]), listAdminTicketOrders);
-route.post("/admin/tickets/validate", requireAnyPermission(["ORDERS", "CATALOG"]), validateTicket);
-route.get("/admin/services", requireAnyPermission(["CATALOG", "SETTINGS"]), listAdminServices);
-route.post("/admin/services", requireAnyPermission(["CATALOG", "SETTINGS"]), createAdminService);
-route.post("/admin/professionals", requireAnyPermission(["CATALOG", "SETTINGS"]), createAdminProfessional);
 route.get("/admin/dining-areas", requirePermission("SETTINGS"), listDiningAreas);
 route.post("/admin/dining-areas", requirePermission("SETTINGS"), createDiningArea);
 route.patch("/admin/dining-areas/:id", requirePermission("SETTINGS"), updateDiningArea);
@@ -399,7 +357,6 @@ route.delete("/admin/coupons/:id", requirePermission("COUPONS"), deleteCoupon);
 route.patch("/admin/settings", requirePermission("SETTINGS"), updateSettings);
 route.patch("/admin/store/pause", requirePermission("STORE_PAUSE"), updateSettings);
 route.post("/admin/integrations/menuia/test", requirePermission("SETTINGS"), testMenuiaIntegration);
-route.post("/admin/integrations/n8n/test", requirePermission("SETTINGS"), testN8nIntegration);
 route.get("/admin/staff/roles", requirePermission("USERS"), listStaffRoles);
 route.post("/admin/staff/roles", requirePermission("USERS"), createStaffRole);
 route.patch("/admin/staff/roles/:id", requirePermission("USERS"), updateStaffRole);

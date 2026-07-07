@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { BusinessType, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
@@ -37,7 +37,6 @@ const companySchema = z.object({
   active: z.boolean().default(true),
   marketplaceVisible: z.boolean().default(true),
   featured: z.boolean().default(false),
-  businessType: z.nativeEnum(BusinessType).default("FOOD"),
   category: z.string().trim().min(2).max(50).default("Lanches"),
   city: z.string().trim().min(2).max(80).default("Conceição do Coité"),
   isOpen: z.boolean().default(true),
@@ -256,7 +255,6 @@ export async function createCompany(req: Request, res: Response) {
           active: data.active,
           marketplaceVisible: data.marketplaceVisible,
           featured: data.featured,
-          businessType: data.businessType,
           category: data.category,
           city: data.city,
           isOpen: data.isOpen,
@@ -333,7 +331,6 @@ export async function updateCompany(req: Request, res: Response) {
     active: body.active ?? existing.active,
     marketplaceVisible: body.marketplaceVisible ?? existing.marketplaceVisible,
     featured: body.featured ?? existing.featured,
-    businessType: body.businessType ?? existing.businessType,
     category: body.category ?? existing.category,
     city: body.city ?? existing.city,
     isOpen: body.isOpen ?? existing.isOpen,

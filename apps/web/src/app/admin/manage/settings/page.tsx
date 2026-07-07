@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { API_URL, apiFetch, resolveAssetUrl } from "../../../../lib/api";
+import { API_URL, apiFetch } from "../../../../lib/api";
 import { LocationPicker } from "../../../../components/location-picker";
 import { printTestReceipt, testReceiptHtml } from "../../../../lib/browser-print";
 import { findLocalPrinters, printAgentInstallUrl, printHtmlWithAgent } from "../../../../lib/qz-print";
@@ -11,10 +11,6 @@ import { findLocalPrinters, printAgentInstallUrl, printHtmlWithAgent } from "../
 export default function SettingsManagePage() {
   const [form, setForm] = useState({
     companyName: "",
-    logoUrl: "",
-    faviconUrl: "",
-    primaryColor: "#e76f51",
-    secondaryColor: "#7ebc59",
     whatsappNumber: "",
     deliveryPhoneNumber: "",
     deliveryFee: "5",
@@ -24,22 +20,11 @@ export default function SettingsManagePage() {
     openTime: "18:00",
     closeTime: "23:59",
     autoMessage: "",
-    promoBannerTitle: "",
-    promoBannerText: "",
     pixKey: "",
     pixQrCodeUrl: "",
     menuiaApiKey: "",
     menuiaStoreId: "",
     menuiaEnabled: false,
-    n8nEnabled: false,
-    n8nWebhookUrl: "",
-    n8nSecret: "",
-    n8nEventsOrderCreated: true,
-    n8nEventsOrderPaid: true,
-    n8nEventsOrderStatusChanged: true,
-    n8nEventsTableSession: true,
-    n8nEventsCustomerCreated: false,
-    n8nEventsTicketOrder: false,
     mercadoPagoEnabled: false,
     mercadoPagoPublicKey: "",
     mercadoPagoAccessToken: "",
@@ -70,15 +55,11 @@ export default function SettingsManagePage() {
     void apiFetch(`/admin/settings`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store"
-    }, { skipSubdomain: true })
+    })
       .then((res) => res.json())
       .then((data) => {
         setForm({
           companyName: data.companyName ?? "",
-          logoUrl: data.logoUrl ?? "",
-          faviconUrl: data.faviconUrl ?? "",
-          primaryColor: data.primaryColor ?? "#e76f51",
-          secondaryColor: data.secondaryColor ?? "#7ebc59",
           whatsappNumber: data.whatsappNumber ?? "",
           deliveryPhoneNumber: data.deliveryPhoneNumber ?? "",
           deliveryFee: String(Number(data.deliveryFee ?? 0)),
@@ -91,22 +72,11 @@ export default function SettingsManagePage() {
           openTime: data.openTime ?? "18:00",
           closeTime: data.closeTime ?? "23:59",
           autoMessage: data.autoMessage ?? "",
-          promoBannerTitle: data.promoBannerTitle ?? "",
-          promoBannerText: data.promoBannerText ?? "",
           pixKey: data.pixKey ?? "",
           pixQrCodeUrl: data.pixQrCodeUrl ?? "",
           menuiaApiKey: data.menuiaApiKey ?? "",
           menuiaStoreId: data.menuiaStoreId ?? "",
           menuiaEnabled: data.menuiaEnabled ?? false,
-          n8nEnabled: data.n8nEnabled ?? false,
-          n8nWebhookUrl: data.n8nWebhookUrl ?? "",
-          n8nSecret: data.n8nSecret ?? "",
-          n8nEventsOrderCreated: data.n8nEventsOrderCreated ?? true,
-          n8nEventsOrderPaid: data.n8nEventsOrderPaid ?? true,
-          n8nEventsOrderStatusChanged: data.n8nEventsOrderStatusChanged ?? true,
-          n8nEventsTableSession: data.n8nEventsTableSession ?? true,
-          n8nEventsCustomerCreated: data.n8nEventsCustomerCreated ?? false,
-          n8nEventsTicketOrder: data.n8nEventsTicketOrder ?? false,
           mercadoPagoEnabled: data.mercadoPagoEnabled ?? false,
           mercadoPagoPublicKey: data.mercadoPagoPublicKey ?? "",
           mercadoPagoAccessToken: data.mercadoPagoAccessToken ?? "",
@@ -127,7 +97,7 @@ export default function SettingsManagePage() {
     void apiFetch(`/admin/printer-agent`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store"
-    }, { skipSubdomain: true })
+    })
       .then((res) => res.ok ? res.json() : null)
       .then((data) => {
         if (data) {
@@ -158,7 +128,7 @@ export default function SettingsManagePage() {
             fee: Number(tier.fee)
           }))
       })
-    }, { skipSubdomain: true });
+    });
 
     if (!res.ok) {
       const payload = await res.json().catch(() => ({}));
@@ -211,7 +181,7 @@ export default function SettingsManagePage() {
     const res = await apiFetch(`/admin/integrations/menuia/test`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` }
-    }, { skipSubdomain: true });
+    });
 
     const payload = await res.json().catch(() => ({}));
     if (!res.ok || !payload.ok) {
@@ -220,24 +190,6 @@ export default function SettingsManagePage() {
     }
 
     toast.success(payload.message ?? "Menuia conectado com sucesso");
-  }
-
-  async function testN8n() {
-    const token = localStorage.getItem("delivery:token");
-    if (!token) return;
-
-    const res = await apiFetch(`/admin/integrations/n8n/test`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` }
-    }, { skipSubdomain: true });
-
-    const payload = await res.json().catch(() => ({}));
-    if (!res.ok || !payload.ok) {
-      toast.error(payload.message ?? "Teste n8n falhou");
-      return;
-    }
-
-    toast.success(payload.message ?? "n8n conectado com sucesso");
   }
 
   function locateStore() {
@@ -283,7 +235,7 @@ export default function SettingsManagePage() {
       method: "PATCH",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ enabled })
-    }, { skipSubdomain: true });
+    });
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) {
       toast.error(payload.message ?? "Falha ao atualizar agente de impressao");
@@ -304,7 +256,7 @@ export default function SettingsManagePage() {
     const res = await apiFetch(`/admin/printer-agent/token`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` }
-    }, { skipSubdomain: true });
+    });
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) {
       toast.error(payload.message ?? "Falha ao gerar token");
@@ -332,41 +284,6 @@ export default function SettingsManagePage() {
     }));
   }
 
-  async function uploadBrandImage(field: "logoUrl" | "faviconUrl", file?: File) {
-    if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      toast.error("Selecione um arquivo de imagem");
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("A imagem deve ter no máximo 5 MB");
-      return;
-    }
-
-    const token = localStorage.getItem("delivery:token");
-    if (!token) return;
-
-    try {
-      const data = new FormData();
-      data.append("image", file);
-      const response = await apiFetch(
-        "/admin/companies/upload",
-        {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-          body: data
-        },
-        { json: false, skipSubdomain: true }
-      );
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.message ?? "Falha ao enviar imagem");
-      setForm((value) => ({ ...value, [field]: result.url }));
-      toast.success(field === "logoUrl" ? "Logo enviada" : "Ícone enviado");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Falha ao enviar imagem");
-    }
-  }
-
   return (
     <main className="mx-auto max-w-3xl p-4">
       <div className="mb-3 flex items-center justify-between">
@@ -383,105 +300,11 @@ export default function SettingsManagePage() {
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="WhatsApp Loja" value={form.whatsappNumber} onChange={(e) => setForm((v) => ({ ...v, whatsappNumber: e.target.value }))} />
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="WhatsApp Motoboy" value={form.deliveryPhoneNumber} onChange={(e) => setForm((v) => ({ ...v, deliveryPhoneNumber: e.target.value }))} />
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Taxa de entrega" value={form.deliveryFee} onChange={(e) => setForm((v) => ({ ...v, deliveryFee: e.target.value }))} />
-          <label className="grid gap-1 text-sm">
-            <span className="font-semibold">Cor principal</span>
-            <input className="h-11 rounded-xl border border-black/10 bg-transparent px-2 py-2 dark:border-white/20" type="color" value={form.primaryColor} onChange={(e) => setForm((v) => ({ ...v, primaryColor: e.target.value }))} />
-          </label>
-          <label className="grid gap-1 text-sm">
-            <span className="font-semibold">Cor secundaria</span>
-            <input className="h-11 rounded-xl border border-black/10 bg-transparent px-2 py-2 dark:border-white/20" type="color" value={form.secondaryColor} onChange={(e) => setForm((v) => ({ ...v, secondaryColor: e.target.value }))} />
-          </label>
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Horario abertura" value={form.openTime} onChange={(e) => setForm((v) => ({ ...v, openTime: e.target.value }))} />
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Horario fechamento" value={form.closeTime} onChange={(e) => setForm((v) => ({ ...v, closeTime: e.target.value }))} />
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Chave PIX" value={form.pixKey} onChange={(e) => setForm((v) => ({ ...v, pixKey: e.target.value }))} />
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20 md:col-span-2" placeholder="URL QR Code PIX" value={form.pixQrCodeUrl} onChange={(e) => setForm((v) => ({ ...v, pixQrCodeUrl: e.target.value }))} />
-          <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20 md:col-span-2" placeholder="Titulo do banner promocional" value={form.promoBannerTitle} onChange={(e) => setForm((v) => ({ ...v, promoBannerTitle: e.target.value }))} />
-          <textarea className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20 md:col-span-2" placeholder="Texto do banner promocional" value={form.promoBannerText} onChange={(e) => setForm((v) => ({ ...v, promoBannerText: e.target.value }))} />
           <textarea className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20 md:col-span-2" placeholder="Mensagem automatica" value={form.autoMessage} onChange={(e) => setForm((v) => ({ ...v, autoMessage: e.target.value }))} />
-        </div>
-        <div className="mt-5 grid gap-3 md:grid-cols-2">
-          <div className="rounded-2xl border border-black/10 p-4 dark:border-white/20">
-            <div className="flex items-center gap-4">
-              <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-2xl border bg-slate-50 text-xs text-slate-400">
-                {form.logoUrl ? <img src={resolveAssetUrl(form.logoUrl)} alt="Logo da empresa" className="h-full w-full object-contain p-1" /> : "Sem logo"}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="font-semibold">Logo da empresa</p>
-                <p className="mt-1 text-xs opacity-60">A vitrine p?blica usa esta marca.</p>
-                <label className="mt-3 inline-flex cursor-pointer rounded-xl bg-ink px-4 py-2 text-sm font-semibold text-white dark:bg-ember">
-                  Escolher arquivo
-                  <input className="hidden" type="file" accept="image/*" onChange={(event) => { void uploadBrandImage("logoUrl", event.target.files?.[0]); event.target.value = ""; }} />
-                </label>
-              </div>
-            </div>
-            <details className="mt-3">
-              <summary className="cursor-pointer text-xs font-semibold opacity-60">Ou informar URL manualmente</summary>
-              <input className="mt-2 w-full rounded-xl border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/20" placeholder="https://..." value={form.logoUrl} onChange={(e) => setForm((v) => ({ ...v, logoUrl: e.target.value }))} />
-            </details>
-          </div>
-
-          <div className="rounded-2xl border border-black/10 p-4 dark:border-white/20">
-            <div className="flex items-center gap-4">
-              <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-full border bg-slate-50 text-xs text-slate-400">
-                {form.faviconUrl ? <img src={resolveAssetUrl(form.faviconUrl)} alt="?cone da loja" className="h-full w-full object-contain p-1" /> : "Sem ?cone"}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="font-semibold">?cone / favicon</p>
-                <p className="mt-1 text-xs opacity-60">Aparece na aba do navegador e no acesso mobile.</p>
-                <label className="mt-3 inline-flex cursor-pointer rounded-xl bg-ink px-4 py-2 text-sm font-semibold text-white dark:bg-ember">
-                  Escolher arquivo
-                  <input className="hidden" type="file" accept="image/*" onChange={(event) => { void uploadBrandImage("faviconUrl", event.target.files?.[0]); event.target.value = ""; }} />
-                </label>
-              </div>
-            </div>
-            <details className="mt-3">
-              <summary className="cursor-pointer text-xs font-semibold opacity-60">Ou informar URL manualmente</summary>
-              <input className="mt-2 w-full rounded-xl border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/20" placeholder="https://..." value={form.faviconUrl} onChange={(e) => setForm((v) => ({ ...v, faviconUrl: e.target.value }))} />
-            </details>
-          </div>
-        </div>
-      </section>
-
-      <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
-        <h2 className="text-xl font-bold">Previa da vitrine</h2>
-        <p className="mt-1 text-sm opacity-70">Veja aqui como a loja vai aparecer para o cliente antes de salvar.</p>
-        <div
-          className="mt-4 overflow-hidden rounded-3xl border p-4 text-white shadow-lg"
-          style={{ background: `linear-gradient(135deg, ${form.primaryColor} 0%, ${form.secondaryColor} 100%)` }}
-        >
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="grid h-14 w-14 place-items-center overflow-hidden rounded-2xl bg-white/15">
-                {form.logoUrl ? (
-                  <img src={resolveAssetUrl(form.logoUrl)} alt="Logo da loja" className="h-full w-full object-contain p-1" />
-                ) : (
-                  <span className="text-xs font-bold">LOGO</span>
-                )}
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-white/75">{form.promoBannerTitle || "Sua loja"}</p>
-                <h3 className="text-2xl font-black leading-tight">{form.companyName || "Nome da empresa"}</h3>
-                <p className="mt-1 max-w-xl text-sm text-white/85">{form.promoBannerText || "Escreva aqui a mensagem principal da vitrine para chamar aten??o do cliente."}</p>
-              </div>
-            </div>
-            <div className="hidden rounded-full border border-white/25 bg-white/10 px-3 py-1 text-xs font-bold md:block">
-              {form.faviconUrl ? "Favicon ativo" : "Sem favicon"}
-            </div>
-          </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <div className="rounded-2xl bg-white/12 p-3">
-              <p className="text-xs uppercase tracking-widest text-white/70">Contato</p>
-              <p className="mt-1 font-semibold">{form.whatsappNumber || "WhatsApp da loja"}</p>
-            </div>
-            <div className="rounded-2xl bg-white/12 p-3">
-              <p className="text-xs uppercase tracking-widest text-white/70">Categoria</p>
-              <p className="mt-1 font-semibold">{form.companyName ? form.companyName : "Lanchonete / Delivery"}</p>
-            </div>
-            <div className="rounded-2xl bg-white/12 p-3">
-              <p className="text-xs uppercase tracking-widest text-white/70">Destaque</p>
-              <p className="mt-1 font-semibold">{form.autoMessage || "Promo??es e novidades em destaque"}</p>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -668,63 +491,6 @@ export default function SettingsManagePage() {
         </div>
         <button className="mt-3 rounded-xl bg-ink px-4 py-2 text-sm text-white" onClick={() => void testMenuia()}>
           Testar conexao Menuia
-        </button>
-      </section>
-
-      <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
-        <h2 className="mb-3 text-xl font-bold">Integra??o n8n</h2>
-        <p className="mb-3 text-sm opacity-70">
-          Conecte automa??es por empresa: pedidos, pagamentos, status, clientes e eventos do PDV.
-        </p>
-        <div className="mb-3 flex items-center gap-2">
-          <input
-            type="checkbox"
-            id="n8nEnabled"
-            checked={form.n8nEnabled}
-            onChange={(e) => setForm((v) => ({ ...v, n8nEnabled: e.target.checked }))}
-            className="h-4 w-4"
-          />
-          <label htmlFor="n8nEnabled">Ativar integra??o com n8n nesta empresa</label>
-        </div>
-        <div className="grid grid-cols-1 gap-2">
-          <input
-            className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
-            placeholder="URL do webhook do n8n"
-            value={form.n8nWebhookUrl}
-            onChange={(e) => setForm((v) => ({ ...v, n8nWebhookUrl: e.target.value }))}
-          />
-          <input
-            className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
-            placeholder="Segredo opcional do webhook"
-            type="password"
-            value={form.n8nSecret}
-            onChange={(e) => setForm((v) => ({ ...v, n8nSecret: e.target.value }))}
-          />
-        </div>
-        <p className="mt-2 text-xs opacity-70">
-          O backend envia eventos com cabe?alho de seguran?a opcional: X-HubRegional-N8N-Secret.
-        </p>
-        <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2">
-          {[
-            ["n8nEventsOrderCreated", "Pedido criado"],
-            ["n8nEventsOrderPaid", "Pagamento confirmado"],
-            ["n8nEventsOrderStatusChanged", "Mudanca de status do pedido"],
-            ["n8nEventsTableSession", "Sessao de mesa"],
-            ["n8nEventsCustomerCreated", "Cliente cadastrado"],
-            ["n8nEventsTicketOrder", "Ingressos / eventos"]
-          ].map(([field, label]) => (
-            <label key={field} className="flex items-center gap-2 rounded-xl border border-black/10 px-3 py-2 dark:border-white/20">
-              <input
-                type="checkbox"
-                checked={Boolean(form[field as keyof typeof form])}
-                onChange={(e) => setForm((v) => ({ ...v, [field]: e.target.checked }))}
-              />
-              Enviar evento: {label}
-            </label>
-          ))}
-        </div>
-        <button className="mt-3 rounded-xl bg-ink px-4 py-2 text-sm text-white" onClick={() => void testN8n()}>
-          Testar conex?o n8n
         </button>
       </section>
 

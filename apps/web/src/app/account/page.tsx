@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { MapPin } from "lucide-react";
@@ -11,7 +11,6 @@ type Tab = "login" | "register";
 
 export default function CustomerAuthPage() {
   const router = useRouter();
-  const [returnTo, setReturnTo] = useState("/profile");
   const [tab, setTab] = useState<Tab>("login");
   const [loading, setLoading] = useState(false);
 
@@ -35,16 +34,6 @@ export default function CustomerAuthPage() {
   const [registerLng, setRegisterLng] = useState<number | undefined>();
   const [addressMode, setAddressMode] = useState<"MANUAL" | "LOCATION">("MANUAL");
 
-  function safeReturnTo() {
-    return returnTo.startsWith("/") ? returnTo : "/profile";
-  }
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const next = params.get("returnTo") || "/profile";
-    setReturnTo(next);
-  }, []);
-
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -53,7 +42,7 @@ export default function CustomerAuthPage() {
       const response = await api<{ token: string; customer: any }>("/customer/login", {
         method: "POST",
         body: JSON.stringify({
-          identifier: loginPhone,
+          phone: loginPhone,
           password: loginPassword,
           subdomain: getBrowserSubdomain() || undefined
         })
@@ -62,7 +51,7 @@ export default function CustomerAuthPage() {
       localStorage.setItem("delivery:customer-token", response.token);
       localStorage.setItem("delivery:customer", JSON.stringify(response.customer));
       toast.success(`Bem-vindo, ${response.customer.name}!`);
-      router.push(safeReturnTo() as never);
+      router.push("/");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Erro ao fazer login");
     } finally {
@@ -95,7 +84,7 @@ export default function CustomerAuthPage() {
       localStorage.setItem("delivery:customer-token", response.token);
       localStorage.setItem("delivery:customer", JSON.stringify(response.customer));
       toast.success("Cadastro realizado com sucesso!");
-      router.push(safeReturnTo() as never);
+      router.push("/");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Erro ao criar conta");
     } finally {
@@ -206,7 +195,7 @@ export default function CustomerAuthPage() {
           <form onSubmit={handleLogin} className="mt-4 space-y-3">
             <input
               className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
-              placeholder="Telefone ou e-mail"
+              placeholder="Telefone"
               value={loginPhone}
               onChange={(e) => setLoginPhone(e.target.value)}
               required
@@ -262,11 +251,10 @@ export default function CustomerAuthPage() {
             />
             <input
               className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
-              placeholder="Email *"
+              placeholder="Email (opcional)"
               type="email"
               value={registerEmail}
               onChange={(e) => setRegisterEmail(e.target.value)}
-              required
             />
             <input
               className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"

@@ -161,7 +161,6 @@ export function AdminPanel() {
   const [connected, setConnected] = useState(false);
   const [permissions, setPermissions] = useState<string[]>([]);
   const [userRole, setUserRole] = useState<string>("");
-  const [businessType, setBusinessType] = useState<string>("FOOD");
   const [ordersPaused, setOrdersPaused] = useState(false);
   const [printSettings, setPrintSettings] = useState({
     companyName: "Delivery",
@@ -216,7 +215,7 @@ export function AdminPanel() {
       return;
     }
     setToken(storedToken);
-    void authApi<{ permissions: string[]; role: string; company?: { businessType?: string } | null }>("/admin/me", storedToken)
+    void authApi<{ permissions: string[]; role: string }>("/admin/me", storedToken)
       .then((me) => {
         if (me.role === "SUPER_ADMIN") {
           router.replace("/admin/companies");
@@ -224,7 +223,6 @@ export function AdminPanel() {
         }
         setPermissions(me.permissions);
         setUserRole(me.role);
-        setBusinessType(me.company?.businessType ?? "FOOD");
         return apiFetch(`/admin/settings`, {
           headers: { Authorization: `Bearer ${storedToken}` },
           cache: "no-store"
@@ -472,12 +470,6 @@ export function AdminPanel() {
         {userRole === "SUPER_ADMIN" && <a className="rounded-lg bg-violet-700 px-3 py-2 text-sm text-white" href="/admin/companies">
           Empresas
         </a>}
-        {businessType === "EVENTS" && can("CATALOG") && <a className="rounded-lg bg-purple-700 px-3 py-2 text-sm text-white" href="/admin/manage/events">
-          Eventos / Ingressos
-        </a>}
-        {(businessType === "BARBERSHOP" || businessType === "BEAUTY_SALON") && can("CATALOG") && <a className="rounded-lg bg-amber-700 px-3 py-2 text-sm text-white" href="/admin/manage/services">
-          Servicos / Agenda
-        </a>}
         {can("CATALOG") && <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/products">
           Produtos
         </a>}
@@ -574,16 +566,9 @@ export function AdminPanel() {
                   </p>
                   <p className="text-xs opacity-60">{formatDateTime(order.createdAt)}</p>
                   {isMercadoPagoPending(order) && (
-                    <div className="mt-1 space-y-1">
-                      <p className="rounded-full bg-amber-100 px-2 py-1 text-xs font-bold text-amber-700">
-                        Aguardando pagamento Mercado Pago
-                      </p>
-                      <p className="rounded-full bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700">
-                        {order.mercadoPagoStatusDetail?.includes("qr")
-                          ? "QR Code emitido"
-                          : order.mercadoPagoStatusDetail || "QR gerado e aguardando leitura"}
-                      </p>
-                    </div>
+                    <p className="mt-1 rounded-full bg-amber-100 px-2 py-1 text-xs font-bold text-amber-700">
+                      Aguardando pagamento Mercado Pago
+                    </p>
                   )}
                   {isMercadoPagoRefunded(order) && (
                     <p className="mt-1 rounded-full bg-red-100 px-2 py-1 text-xs font-bold text-red-700">

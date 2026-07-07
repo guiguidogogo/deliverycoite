@@ -3,7 +3,6 @@ import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { calculateDeliveryFee } from "../utils/delivery-fee.js";
 import { companyWhere } from "../utils/tenant.js";
-import { ensureCompanySettings, getCompanyDeliveryFeeTiers } from "../utils/settings.js";
 
 const quoteSchema = z.object({
   latitude: z.coerce.number().min(-90).max(90),
@@ -12,9 +11,11 @@ const quoteSchema = z.object({
 
 export async function quoteDelivery(req: Request, res: Response) {
   const coordinates = quoteSchema.parse(req.query);
-  const settings = await ensureCompanySettings(companyWhere(req).companyId);
-  const deliveryFeeTiers = await getCompanyDeliveryFeeTiers(settings.companyId);
-  const quote = calculateDeliveryFee({ ...settings, deliveryFeeTiers }, coordinates);
+  const settings = await prisma.setting.findFirstOrThrow({
+    where: companyWhere(req),
+    include: { deliveryFeeTiers: true }
+  });
+  const quote = calculateDeliveryFee(settings, coordinates);
 
   if (quote.fee === null) {
     return res.status(400).json({

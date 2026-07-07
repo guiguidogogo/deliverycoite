@@ -22,7 +22,6 @@ export type CompanyFormValue = {
   active: boolean;
   marketplaceVisible: boolean;
   featured: boolean;
-  businessType: "FOOD" | "EVENTS" | "BARBERSHOP" | "BEAUTY_SALON" | "PHARMACY" | "MARKET" | "CLINIC" | "SERVICES";
   category: string;
   city: string;
   isOpen: boolean;
@@ -60,7 +59,6 @@ const emptyCompany: CompanyFormValue = {
   active: true,
   marketplaceVisible: true,
   featured: false,
-  businessType: "FOOD",
   category: "Lanches",
   city: "Conceição do Coité",
   isOpen: true,
@@ -203,11 +201,11 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
           )}
         </div>
       </div>
-        <details className="mt-3">
-          <summary className="cursor-pointer text-xs font-semibold opacity-60">Ou informar URL manualmente</summary>
+      <details className="mt-3">
+        <summary className="cursor-pointer text-xs font-semibold opacity-60">Ou informar URL manualmente</summary>
         <input
           className="mt-2 w-full rounded-xl border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/20"
-          type="text"
+          type="url"
           placeholder="https://..."
           value={form[field]}
           onChange={(event) => setForm((value) => ({ ...value, [field]: event.target.value }))}
@@ -235,7 +233,7 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
   );
 
   return (
-    <form className="space-y-5" onSubmit={submit} noValidate>
+    <form className="space-y-5" onSubmit={submit}>
       <section className="rounded-2xl border border-black/10 bg-white/85 p-5 dark:border-white/10 dark:bg-slate-900/70">
         <h2 className="text-xl font-bold">Dados da empresa</h2>
         <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -280,30 +278,13 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
         <p className="text-sm opacity-70">Informações exibidas no catálogo público do HubRegional.</p>
         <div className="mt-4 grid gap-3 md:grid-cols-2">
           <label className="grid gap-1 text-sm">
-            <span className="font-semibold">Tipo de negocio</span>
-            <select
-              className="rounded-xl border border-black/15 bg-transparent px-3 py-2 dark:border-white/20"
-              value={form.businessType}
-              onChange={(event) => setForm((value) => ({ ...value, businessType: event.target.value as CompanyFormValue["businessType"] }))}
-            >
-              <option value="FOOD">Lanchonete / Restaurante / Delivery</option>
-              <option value="EVENTS">Shows e Eventos</option>
-              <option value="BARBERSHOP">Barbearia</option>
-              <option value="BEAUTY_SALON">Salao / Beleza</option>
-              <option value="PHARMACY">Farmacia</option>
-              <option value="MARKET">Mercado</option>
-              <option value="CLINIC">Clinica / Consultorio</option>
-              <option value="SERVICES">Servicos</option>
-            </select>
-          </label>
-          <label className="grid gap-1 text-sm">
             <span className="font-semibold">Categoria</span>
             <select
               className="rounded-xl border border-black/15 bg-transparent px-3 py-2 dark:border-white/20"
               value={form.category}
               onChange={(event) => setForm((value) => ({ ...value, category: event.target.value }))}
             >
-              {["Lanches", "Restaurante", "Pizzaria", "Açaí", "Marmitas", "Sushi", "Conveniência", "Farmácia", "Mercado", "Shows", "Eventos", "Barbearia", "Salao", "Clinica", "Servicos"].map((category) => (
+              {["Lanches", "Pizzaria", "Açaí", "Marmitas", "Sushi", "Conveniência", "Farmácia", "Mercado"].map((category) => (
                 <option key={category} value={category}>{category}</option>
               ))}
             </select>

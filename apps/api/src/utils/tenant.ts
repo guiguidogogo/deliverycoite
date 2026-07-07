@@ -103,10 +103,6 @@ function tenantNotFound(res: Response, subdomain: string) {
 }
 
 export function getCompanyId(req: Request) {
-  if (req.companyId && req.companyId !== DEFAULT_COMPANY_ID) {
-    return req.companyId;
-  }
-
   return req.user?.companyId ?? req.companyId ?? DEFAULT_COMPANY_ID;
 }
 

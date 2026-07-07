@@ -2,7 +2,6 @@ import type { Request, Response } from "express";
 import { FulfillmentType, OrderSource, OrderStatus, PaymentMethod, Prisma, TableSessionStatus } from "@prisma/client";
 import { z } from "zod";
 import { publishNewOrder } from "../services/realtime.js";
-import { dispatchN8nEvent } from "../services/n8n.js";
 import { printOrder } from "../services/thermal-printer.js";
 import { buildOrderStatusWhatsappMessage, buildWhatsappMessage, dispatchWhatsappMessage } from "../services/whatsapp.js";
 import { getMercadoPagoPayment, searchMercadoPagoPayments, type MercadoPagoPaymentResponse } from "../services/mercadopago.js";
@@ -14,7 +13,6 @@ import { companyWhere, getCompanyId } from "../utils/tenant.js";
 import { audit } from "../utils/audit.js";
 import { linkCustomerToCompany, normalizeEmail, normalizePhone, recordCompanyCustomerPurchase } from "../utils/customer-linking.js";
 import { restoreStockFromOrderItems, validateAndDecrementStock } from "../utils/stock.js";
-import { ensureCompanySettings } from "../utils/settings.js";
 
 function shouldSendStatusWhatsapp(
   settings: Awaited<ReturnType<typeof prisma.setting.findFirstOrThrow>>,
@@ -88,7 +86,7 @@ function chooseApprovedMercadoPagoPayment(payments: MercadoPagoPaymentResponse[]
   return payments.find((payment) => payment.status === "approved") ?? null;
 }
 
-export async function reconcileMercadoPagoPendingOrders(
+async function reconcileMercadoPagoPendingOrders(
   orders: Array<{
     id: string;
     paymentMethod: PaymentMethod;
@@ -137,27 +135,6 @@ export async function reconcileMercadoPagoPendingOrders(
   }));
 }
 
-export async function reconcileAllMercadoPagoPendingOrders() {
-  const reconciliationRows = await prisma.order.findMany({
-    where: {
-      paymentMethod: PaymentMethod.MERCADO_PAGO,
-      paidAt: null,
-      mercadoPagoStatus: { not: "refunded" }
-    },
-    select: {
-      id: true,
-      paymentMethod: true,
-      paidAt: true,
-      mercadoPagoStatus: true,
-      mercadoPagoPaymentId: true,
-      mercadoPagoPreferenceId: true,
-      company: { select: { mercadoPagoAccessToken: true } }
-    }
-  });
-
-  await reconcileMercadoPagoPendingOrders(reconciliationRows);
-}
-
 function toDecimal(value: number) {
   return new Prisma.Decimal(value.toFixed(2));
 }
@@ -187,7 +164,10 @@ export async function createOrder(req: Request, res: Response) {
   const companyId = getCompanyId(req);
   const tableOrder = body.source === OrderSource.TABLE || body.source === OrderSource.TABLE_QR;
 
-  const settings = await ensureCompanySettings(companyId);
+  const settings = await prisma.setting.findFirstOrThrow({
+    where: { companyId },
+    include: { deliveryFeeTiers: true }
+  });
 
   if (settings.ordersPaused) {
     return res.status(400).json({
@@ -588,21 +568,6 @@ export async function createOrder(req: Request, res: Response) {
     total: Number(updatedOrder.total)
   });
 
-  void dispatchN8nEvent(companyId, "order.created", {
-    orderId: updatedOrder.id,
-    orderNumber: updatedOrder.orderNumber,
-    customer: {
-      name: order.customer.name,
-      phone: order.customer.phone
-    },
-    paymentMethod: updatedOrder.paymentMethod,
-    total: Number(updatedOrder.total),
-    status: updatedOrder.status,
-    source: updatedOrder.source
-  }).catch((error) => {
-    console.error("Falha ao enviar evento n8n de pedido criado", error);
-  });
-
   return res.status(201).json({
     orderId: updatedOrder.id,
     whatsappUrl: sent.whatsappUrl ?? null,
@@ -773,19 +738,6 @@ export async function updateOrderStatus(req: Request, res: Response) {
     statusSendResult = await dispatchWhatsappMessage(settings, current.customer.phone, statusWhatsapp.message, current.customer.phone);
   }
 
-  void dispatchN8nEvent(getCompanyId(req), "order.status_changed", {
-    orderId: order.id,
-    orderNumber: order.orderNumber,
-    previousStatus: current.status,
-    nextStatus: body.status,
-    reason: body.reason ?? null,
-    paymentMethod: order.paymentMethod,
-    paidAt: order.paidAt,
-    total: Number(order.total)
-  }).catch((error) => {
-    console.error("Falha ao enviar evento n8n de status do pedido", error);
-  });
-
   return res.json({
     ...order,
     statusWhatsappUrl: statusSendResult?.whatsappUrl ?? null,
@@ -807,7 +759,7 @@ export async function markOrderViewed(req: Request, res: Response) {
 }
 
 export async function sendToDelivery(req: Request, res: Response) {
-  const settings = await ensureCompanySettings(getCompanyId(req));
+  const settings = await prisma.setting.findFirstOrThrow({ where: companyWhere(req) });
   
   if (!settings.deliveryPhoneNumber) {
     return res.status(400).json({ message: "Numero do motoboy nao configurado" });
@@ -960,17 +912,6 @@ export async function markOrderPaid(req: Request, res: Response) {
     }
   });
 
-  void dispatchN8nEvent(getCompanyId(req), "order.paid", {
-    orderId: updated.id,
-    orderNumber: updated.orderNumber,
-    paymentMethod: updated.paymentMethod,
-    paidMethodDetail: updated.paidMethodDetail,
-    total: Number(updated.total),
-    paymentDetail
-  }).catch((error) => {
-    console.error("Falha ao enviar evento n8n de pagamento manual", error);
-  });
-
   await recordCashPayments(session.id, getCompanyId(req), [{
         amount: toDecimal(Number(updated.total)),
         paymentMethod,
@@ -1020,7 +961,7 @@ export async function markOrderPaid(req: Request, res: Response) {
 
 export async function printOrderById(req: Request, res: Response) {
   const [settings, order] = await Promise.all([
-    ensureCompanySettings(getCompanyId(req)),
+    prisma.setting.findFirstOrThrow({ where: companyWhere(req) }),
     prisma.order.findFirst({
       where: { id: req.params.id, ...companyWhere(req) },
       include: { customer: true, items: { include: { product: true, complements: true } } }
@@ -1046,7 +987,7 @@ export async function printOrderById(req: Request, res: Response) {
 
 export async function getOrderPrintData(req: Request, res: Response) {
   const [settings, order] = await Promise.all([
-    ensureCompanySettings(getCompanyId(req)),
+    prisma.setting.findFirstOrThrow({ where: companyWhere(req) }),
     prisma.order.findFirst({
       where: { id: req.params.id, ...companyWhere(req) },
       include: { customer: true, items: { include: { product: true, complements: true } } }
