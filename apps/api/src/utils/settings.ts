@@ -2,12 +2,10 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "./prisma.js";
 
 export async function ensureCompanySettings(companyId: string) {
-  const include = { deliveryFeeTiers: { orderBy: { sortOrder: "asc" } } } as const;
   const safeCompanyId = companyId.trim();
 
-  const existing = await prisma.setting.findFirst({
-    where: { companyId: safeCompanyId },
-    include
+  const existing = await prisma.setting.findUnique({
+    where: { companyId: safeCompanyId }
   });
   if (existing) return existing;
 
@@ -21,15 +19,20 @@ export async function ensureCompanySettings(companyId: string) {
         openTime: "00:00",
         closeTime: "23:59",
         autoMessage: "Obrigado pelo pedido!"
-      },
-      include
+      }
     });
   } catch {
-    const fallback = await prisma.setting.findFirst({
-      where: { companyId: safeCompanyId },
-      include
+    const fallback = await prisma.setting.findUnique({
+      where: { companyId: safeCompanyId }
     });
     if (fallback) return fallback;
     throw new Error(`Nao foi possivel carregar as configuracoes da empresa ${safeCompanyId}`);
   }
+}
+
+export async function getCompanyDeliveryFeeTiers(companyId: string) {
+  return prisma.deliveryFeeTier.findMany({
+    where: { companyId: companyId.trim() },
+    orderBy: { sortOrder: "asc" }
+  });
 }

@@ -70,7 +70,7 @@ export default function SettingsManagePage() {
     void apiFetch(`/admin/settings`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store"
-    })
+    }, { skipSubdomain: true })
       .then((res) => res.json())
       .then((data) => {
         setForm({
@@ -127,7 +127,7 @@ export default function SettingsManagePage() {
     void apiFetch(`/admin/printer-agent`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store"
-    })
+    }, { skipSubdomain: true })
       .then((res) => res.ok ? res.json() : null)
       .then((data) => {
         if (data) {
@@ -158,7 +158,7 @@ export default function SettingsManagePage() {
             fee: Number(tier.fee)
           }))
       })
-    });
+    }, { skipSubdomain: true });
 
     if (!res.ok) {
       const payload = await res.json().catch(() => ({}));
@@ -211,7 +211,7 @@ export default function SettingsManagePage() {
     const res = await apiFetch(`/admin/integrations/menuia/test`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` }
-    });
+    }, { skipSubdomain: true });
 
     const payload = await res.json().catch(() => ({}));
     if (!res.ok || !payload.ok) {
@@ -229,7 +229,7 @@ export default function SettingsManagePage() {
     const res = await apiFetch(`/admin/integrations/n8n/test`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` }
-    });
+    }, { skipSubdomain: true });
 
     const payload = await res.json().catch(() => ({}));
     if (!res.ok || !payload.ok) {
@@ -283,7 +283,7 @@ export default function SettingsManagePage() {
       method: "PATCH",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ enabled })
-    });
+    }, { skipSubdomain: true });
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) {
       toast.error(payload.message ?? "Falha ao atualizar agente de impressao");
@@ -304,7 +304,7 @@ export default function SettingsManagePage() {
     const res = await apiFetch(`/admin/printer-agent/token`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` }
-    });
+    }, { skipSubdomain: true });
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) {
       toast.error(payload.message ?? "Falha ao gerar token");

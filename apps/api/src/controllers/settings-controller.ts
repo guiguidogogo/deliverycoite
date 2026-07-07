@@ -4,7 +4,7 @@ import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { getCompanyId } from "../utils/tenant.js";
 import { optionalImageUrl } from "../utils/image-url.js";
-import { ensureCompanySettings } from "../utils/settings.js";
+import { ensureCompanySettings, getCompanyDeliveryFeeTiers } from "../utils/settings.js";
 
 const optionalText = z.preprocess(
   (value) => typeof value === "string" && !value.trim() ? undefined : value,
@@ -79,6 +79,7 @@ async function ensureDefaultSettings(req: Request) {
 
 export async function getSettings(req: Request, res: Response) {
   const settings = await ensureDefaultSettings(req);
+  const deliveryFeeTiers = await getCompanyDeliveryFeeTiers(getCompanyId(req));
   const company = await prisma.company.findUnique({
     where: { id: getCompanyId(req) },
     select: {
@@ -95,6 +96,7 @@ export async function getSettings(req: Request, res: Response) {
   const isAdminRequest = Boolean(req.user);
   return res.json({
     ...settings,
+    deliveryFeeTiers,
     logoUrl: company?.logoUrl ?? null,
     faviconUrl: company?.faviconUrl ?? null,
     primaryColor: company?.primaryColor ?? null,
@@ -197,8 +199,11 @@ export async function updateSettings(req: Request, res: Response) {
     }
 
     const savedSettings = await transaction.setting.findUniqueOrThrow({
-      where: { id: updated.id },
-      include: { deliveryFeeTiers: { orderBy: { sortOrder: "asc" } } }
+      where: { id: updated.id }
+    });
+    const savedDeliveryFeeTiers = await transaction.deliveryFeeTier.findMany({
+      where: { settingId: updated.id },
+      orderBy: { sortOrder: "asc" }
     });
 
     const savedCompany = await transaction.company.findUnique({
@@ -212,6 +217,7 @@ export async function updateSettings(req: Request, res: Response) {
 
     return {
       ...savedSettings,
+      deliveryFeeTiers: savedDeliveryFeeTiers,
       mercadoPagoPublicKey: savedCompany?.mercadoPagoPublicKey ?? null,
       mercadoPagoAccessToken: savedCompany?.mercadoPagoAccessToken ?? null,
       mercadoPagoEnabled: savedCompany?.mercadoPagoEnabled ?? false,

@@ -9,7 +9,7 @@ type DeliverySettings = {
   deliveryFee: Prisma.Decimal;
   storeLatitude: number | null;
   storeLongitude: number | null;
-  deliveryFeeTiers: Array<{
+  deliveryFeeTiers?: Array<{
     maxDistanceKm: number;
     fee: Prisma.Decimal;
   }>;
@@ -37,7 +37,7 @@ export function calculateDeliveryFee(
   settings: DeliverySettings,
   destination?: Coordinates
 ) {
-  const tiers = [...settings.deliveryFeeTiers].sort(
+  const tiers = [...(settings.deliveryFeeTiers ?? [])].sort(
     (left, right) => left.maxDistanceKm - right.maxDistanceKm
   );
 
