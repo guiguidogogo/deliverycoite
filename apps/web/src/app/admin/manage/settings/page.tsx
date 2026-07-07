@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { API_URL, apiFetch } from "../../../../lib/api";
+import { API_URL, apiFetch, resolveAssetUrl } from "../../../../lib/api";
 import { LocationPicker } from "../../../../components/location-picker";
 import { printTestReceipt, testReceiptHtml } from "../../../../lib/browser-print";
 import { findLocalPrinters, printAgentInstallUrl, printHtmlWithAgent } from "../../../../lib/qz-print";
@@ -11,6 +11,10 @@ import { findLocalPrinters, printAgentInstallUrl, printHtmlWithAgent } from "../
 export default function SettingsManagePage() {
   const [form, setForm] = useState({
     companyName: "",
+    logoUrl: "",
+    faviconUrl: "",
+    primaryColor: "#e76f51",
+    secondaryColor: "#7ebc59",
     whatsappNumber: "",
     deliveryPhoneNumber: "",
     deliveryFee: "5",
@@ -62,6 +66,10 @@ export default function SettingsManagePage() {
       .then((data) => {
         setForm({
           companyName: data.companyName ?? "",
+          logoUrl: data.logoUrl ?? "",
+          faviconUrl: data.faviconUrl ?? "",
+          primaryColor: data.primaryColor ?? "#e76f51",
+          secondaryColor: data.secondaryColor ?? "#7ebc59",
           whatsappNumber: data.whatsappNumber ?? "",
           deliveryPhoneNumber: data.deliveryPhoneNumber ?? "",
           deliveryFee: String(Number(data.deliveryFee ?? 0)),
@@ -288,6 +296,41 @@ export default function SettingsManagePage() {
     }));
   }
 
+  async function uploadBrandImage(field: "logoUrl" | "faviconUrl", file?: File) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Selecione um arquivo de imagem");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("A imagem deve ter no máximo 5 MB");
+      return;
+    }
+
+    const token = localStorage.getItem("delivery:token");
+    if (!token) return;
+
+    try {
+      const data = new FormData();
+      data.append("image", file);
+      const response = await apiFetch(
+        "/admin/companies/upload",
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: data
+        },
+        { json: false, skipSubdomain: true }
+      );
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.message ?? "Falha ao enviar imagem");
+      setForm((value) => ({ ...value, [field]: result.url }));
+      toast.success(field === "logoUrl" ? "Logo enviada" : "Ícone enviado");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao enviar imagem");
+    }
+  }
+
   return (
     <main className="mx-auto max-w-3xl p-4">
       <div className="mb-3 flex items-center justify-between">
@@ -304,6 +347,14 @@ export default function SettingsManagePage() {
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="WhatsApp Loja" value={form.whatsappNumber} onChange={(e) => setForm((v) => ({ ...v, whatsappNumber: e.target.value }))} />
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="WhatsApp Motoboy" value={form.deliveryPhoneNumber} onChange={(e) => setForm((v) => ({ ...v, deliveryPhoneNumber: e.target.value }))} />
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Taxa de entrega" value={form.deliveryFee} onChange={(e) => setForm((v) => ({ ...v, deliveryFee: e.target.value }))} />
+          <label className="grid gap-1 text-sm">
+            <span className="font-semibold">Cor principal</span>
+            <input className="h-11 rounded-xl border border-black/10 bg-transparent px-2 py-2 dark:border-white/20" type="color" value={form.primaryColor} onChange={(e) => setForm((v) => ({ ...v, primaryColor: e.target.value }))} />
+          </label>
+          <label className="grid gap-1 text-sm">
+            <span className="font-semibold">Cor secundaria</span>
+            <input className="h-11 rounded-xl border border-black/10 bg-transparent px-2 py-2 dark:border-white/20" type="color" value={form.secondaryColor} onChange={(e) => setForm((v) => ({ ...v, secondaryColor: e.target.value }))} />
+          </label>
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Horario abertura" value={form.openTime} onChange={(e) => setForm((v) => ({ ...v, openTime: e.target.value }))} />
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Horario fechamento" value={form.closeTime} onChange={(e) => setForm((v) => ({ ...v, closeTime: e.target.value }))} />
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Chave PIX" value={form.pixKey} onChange={(e) => setForm((v) => ({ ...v, pixKey: e.target.value }))} />
@@ -311,6 +362,47 @@ export default function SettingsManagePage() {
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20 md:col-span-2" placeholder="Titulo do banner promocional" value={form.promoBannerTitle} onChange={(e) => setForm((v) => ({ ...v, promoBannerTitle: e.target.value }))} />
           <textarea className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20 md:col-span-2" placeholder="Texto do banner promocional" value={form.promoBannerText} onChange={(e) => setForm((v) => ({ ...v, promoBannerText: e.target.value }))} />
           <textarea className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20 md:col-span-2" placeholder="Mensagem automatica" value={form.autoMessage} onChange={(e) => setForm((v) => ({ ...v, autoMessage: e.target.value }))} />
+        </div>
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          <div className="rounded-2xl border border-black/10 p-4 dark:border-white/20">
+            <div className="flex items-center gap-4">
+              <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-2xl border bg-slate-50 text-xs text-slate-400">
+                {form.logoUrl ? <img src={resolveAssetUrl(form.logoUrl)} alt="Logo da empresa" className="h-full w-full object-contain p-1" /> : "Sem logo"}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold">Logo da empresa</p>
+                <p className="mt-1 text-xs opacity-60">A vitrine p?blica usa esta marca.</p>
+                <label className="mt-3 inline-flex cursor-pointer rounded-xl bg-ink px-4 py-2 text-sm font-semibold text-white dark:bg-ember">
+                  Escolher arquivo
+                  <input className="hidden" type="file" accept="image/*" onChange={(event) => { void uploadBrandImage("logoUrl", event.target.files?.[0]); event.target.value = ""; }} />
+                </label>
+              </div>
+            </div>
+            <details className="mt-3">
+              <summary className="cursor-pointer text-xs font-semibold opacity-60">Ou informar URL manualmente</summary>
+              <input className="mt-2 w-full rounded-xl border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/20" placeholder="https://..." value={form.logoUrl} onChange={(e) => setForm((v) => ({ ...v, logoUrl: e.target.value }))} />
+            </details>
+          </div>
+
+          <div className="rounded-2xl border border-black/10 p-4 dark:border-white/20">
+            <div className="flex items-center gap-4">
+              <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-full border bg-slate-50 text-xs text-slate-400">
+                {form.faviconUrl ? <img src={resolveAssetUrl(form.faviconUrl)} alt="?cone da loja" className="h-full w-full object-contain p-1" /> : "Sem ?cone"}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold">?cone / favicon</p>
+                <p className="mt-1 text-xs opacity-60">Aparece na aba do navegador e no acesso mobile.</p>
+                <label className="mt-3 inline-flex cursor-pointer rounded-xl bg-ink px-4 py-2 text-sm font-semibold text-white dark:bg-ember">
+                  Escolher arquivo
+                  <input className="hidden" type="file" accept="image/*" onChange={(event) => { void uploadBrandImage("faviconUrl", event.target.files?.[0]); event.target.value = ""; }} />
+                </label>
+              </div>
+            </div>
+            <details className="mt-3">
+              <summary className="cursor-pointer text-xs font-semibold opacity-60">Ou informar URL manualmente</summary>
+              <input className="mt-2 w-full rounded-xl border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/20" placeholder="https://..." value={form.faviconUrl} onChange={(e) => setForm((v) => ({ ...v, faviconUrl: e.target.value }))} />
+            </details>
+          </div>
         </div>
       </section>
 

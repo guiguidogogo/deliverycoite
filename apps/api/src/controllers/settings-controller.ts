@@ -19,6 +19,9 @@ const optionalMinText = (min: number) =>
 const settingsSchema = z.object({
   companyName: optionalMinText(2),
   logoUrl: optionalImageUrl(),
+  faviconUrl: optionalImageUrl(),
+  primaryColor: optionalText.pipe(z.string().regex(/^#[0-9a-fA-F]{6}$/).optional()),
+  secondaryColor: optionalText.pipe(z.string().regex(/^#[0-9a-fA-F]{6}$/).optional()),
   promoBannerImageUrl: optionalImageUrl(),
   promoBannerTitle: optionalText.pipe(z.string().max(80).optional()),
   promoBannerText: optionalText.pipe(z.string().max(200).optional()),
@@ -90,6 +93,10 @@ export async function getSettings(req: Request, res: Response) {
   const company = await prisma.company.findUnique({
     where: { id: getCompanyId(req) },
     select: {
+      logoUrl: true,
+      faviconUrl: true,
+      primaryColor: true,
+      secondaryColor: true,
       mercadoPagoPublicKey: true,
       mercadoPagoAccessToken: true,
       mercadoPagoEnabled: true
@@ -99,6 +106,10 @@ export async function getSettings(req: Request, res: Response) {
   const isAdminRequest = Boolean(req.user);
   return res.json({
     ...settings,
+    logoUrl: company?.logoUrl ?? null,
+    faviconUrl: company?.faviconUrl ?? null,
+    primaryColor: company?.primaryColor ?? null,
+    secondaryColor: company?.secondaryColor ?? null,
     mercadoPagoPublicKey: company?.mercadoPagoPublicKey ?? null,
     ...(isAdminRequest ? { mercadoPagoAccessToken: company?.mercadoPagoAccessToken ?? null } : {}),
     mercadoPagoEnabled: company?.mercadoPagoEnabled ?? false
@@ -123,6 +134,9 @@ export async function updateSettings(req: Request, res: Response) {
     if (
       settingsData.companyName !== undefined ||
       settingsData.logoUrl !== undefined ||
+      settingsData.faviconUrl !== undefined ||
+      settingsData.primaryColor !== undefined ||
+      settingsData.secondaryColor !== undefined ||
       settingsData.whatsappNumber !== undefined
     ) {
       await transaction.company.update({
@@ -132,6 +146,9 @@ export async function updateSettings(req: Request, res: Response) {
             ? { tradeName: settingsData.companyName }
             : {}),
           ...(settingsData.logoUrl !== undefined ? { logoUrl: settingsData.logoUrl } : {}),
+          ...(settingsData.faviconUrl !== undefined ? { faviconUrl: settingsData.faviconUrl } : {}),
+          ...(settingsData.primaryColor !== undefined ? { primaryColor: settingsData.primaryColor } : {}),
+          ...(settingsData.secondaryColor !== undefined ? { secondaryColor: settingsData.secondaryColor } : {}),
           ...(settingsData.whatsappNumber !== undefined
             ? { whatsapp: settingsData.whatsappNumber }
             : {})
