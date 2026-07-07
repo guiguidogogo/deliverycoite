@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { apiFetch, resolveAssetUrl } from "../../../lib/api";
@@ -81,6 +82,7 @@ function formatDate(value: string) {
 }
 
 export function EventsStorefront({ company }: { company: PublicCompany }) {
+  const router = useRouter();
   const [events, setEvents] = useState<EventItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState<EventItem | null>(null);
@@ -89,6 +91,8 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
   const [mercadoPagoType, setMercadoPagoType] = useState<"PIX" | "CARD">("PIX");
   const [lastOrder, setLastOrder] = useState<TicketOrder | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [accountLookup, setAccountLookup] = useState<{ exists: boolean; name?: string; phone?: string; email?: string; matchedBy?: string }>({ exists: false });
+  const [accountLookupLoading, setAccountLookupLoading] = useState(false);
 
   useEffect(() => {
     void apiFetch("/events", { cache: "no-store" })
@@ -99,6 +103,39 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
       .catch((error) => toast.error(error instanceof Error ? error.message : "Falha ao carregar eventos"))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    const draft = window.localStorage.getItem(`events:draft:${company.subdomain}`);
+    if (!draft) return;
+    try {
+      const parsed = JSON.parse(draft) as {
+        selectedEventId?: string;
+        quantities?: Record<string, number>;
+        customer?: { name?: string; phone?: string; email?: string };
+        mercadoPagoType?: "PIX" | "CARD";
+      };
+      if (parsed.quantities) setQuantities(parsed.quantities);
+      if (parsed.customer) {
+        setCustomer((current) => ({
+          ...current,
+          name: parsed.customer?.name ?? current.name,
+          phone: parsed.customer?.phone ?? current.phone,
+          email: parsed.customer?.email ?? current.email
+        }));
+      }
+      if (parsed.mercadoPagoType) setMercadoPagoType(parsed.mercadoPagoType);
+      if (parsed.selectedEventId) {
+        void apiFetch("/events", { cache: "no-store" }).then(async (response) => {
+          if (!response.ok) return;
+          const list = (await response.json()) as EventItem[];
+          const event = list.find((item) => item.id === parsed.selectedEventId);
+          if (event) setSelectedEvent(event);
+        }).catch(() => undefined);
+      }
+    } catch {
+      // ignore invalid draft
+    }
+  }, [company.subdomain]);
 
   useEffect(() => {
     const storedOrderId = window.localStorage.getItem(`events:lastOrder:${company.subdomain}`);
@@ -156,6 +193,39 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
     Boolean(customer.phone.trim()) &&
     Boolean(customer.email.trim()) &&
     customer.password.trim().length >= 6;
+
+  async function lookupExistingAccount() {
+    if (!customer.phone.trim() && !customer.email.trim()) {
+      setAccountLookup({ exists: false });
+      return;
+    }
+    setAccountLookupLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (customer.phone.trim()) params.set("phone", customer.phone.trim());
+      if (customer.email.trim()) params.set("email", customer.email.trim());
+      const response = await apiFetch(`/customer/account/lookup?${params.toString()}`, { cache: "no-store" });
+      if (!response.ok) throw new Error("Falha ao verificar conta");
+      setAccountLookup(await response.json());
+    } catch {
+      setAccountLookup({ exists: false });
+    } finally {
+      setAccountLookupLoading(false);
+    }
+  }
+
+  function saveDraftAndGoToAccount() {
+    window.localStorage.setItem(
+      `events:draft:${company.subdomain}`,
+      JSON.stringify({
+        selectedEventId: selectedEvent?.id ?? null,
+        quantities,
+        customer,
+        mercadoPagoType
+      })
+    );
+    router.push(`/account?returnTo=${encodeURIComponent(window.location.pathname)}`);
+  }
 
   async function reserveTickets(event: React.FormEvent) {
     event.preventDefault();
@@ -345,9 +415,36 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
 
             <div className="mt-5 grid gap-3 md:grid-cols-2">
               <input className="rounded-xl border px-3 py-3" placeholder="Nome completo" required value={customer.name} onChange={(event) => setCustomer((value) => ({ ...value, name: event.target.value }))} />
-              <input className="rounded-xl border px-3 py-3" placeholder="WhatsApp" required value={customer.phone} onChange={(event) => setCustomer((value) => ({ ...value, phone: event.target.value }))} />
-              <input className="rounded-xl border px-3 py-3" placeholder="Email" type="email" required value={customer.email} onChange={(event) => setCustomer((value) => ({ ...value, email: event.target.value }))} />
+              <input className="rounded-xl border px-3 py-3" placeholder="WhatsApp" required value={customer.phone} onChange={(event) => setCustomer((value) => ({ ...value, phone: event.target.value }))} onBlur={() => void lookupExistingAccount()} />
+              <input className="rounded-xl border px-3 py-3" placeholder="Email" type="email" required value={customer.email} onChange={(event) => setCustomer((value) => ({ ...value, email: event.target.value }))} onBlur={() => void lookupExistingAccount()} />
               <input className="rounded-xl border px-3 py-3" placeholder="Senha para acessar depois" type="password" required minLength={6} value={customer.password} onChange={(event) => setCustomer((value) => ({ ...value, password: event.target.value }))} />
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-black uppercase tracking-[0.25em] text-orange-600">Acesso</p>
+              {accountLookupLoading ? (
+                <p className="mt-2 text-sm text-slate-600">Verificando conta...</p>
+              ) : accountLookup.exists ? (
+                <div className="mt-2 space-y-3">
+                  <p className="text-sm text-slate-700">Encontramos uma conta vinculada a este e-mail ou telefone.</p>
+                  <button type="button" className="rounded-xl bg-slate-950 px-4 py-2 font-bold text-white" onClick={saveDraftAndGoToAccount}>
+                    Entrar na minha conta
+                  </button>
+                  <p className="text-xs text-slate-500">Ao entrar, sua compra continua do ponto em que parou.</p>
+                </div>
+              ) : (
+                <div className="mt-2 space-y-3">
+                  <p className="text-sm text-slate-700">Se você ainda não tem conta, o cadastro será criado e a compra continuará automaticamente.</p>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" className="rounded-xl border px-4 py-2 font-semibold" onClick={() => window.open("/account", "_self")}>
+                      Já tenho uma conta
+                    </button>
+                    <button type="button" className="rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white" onClick={saveDraftAndGoToAccount}>
+                      Criar nova conta
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">

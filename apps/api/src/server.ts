@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { app } from "./app.js";
+import { expirePendingTicketOrders } from "./controllers/events-controller.js";
 import { reconcileAllMercadoPagoPendingOrders } from "./controllers/orders-controller.js";
 import { attachRealtimeServer } from "./services/realtime.js";
 import { env } from "./utils/env.js";
@@ -39,6 +40,9 @@ async function bootstrap() {
   const reconcilePendingPayments = () => {
     void reconcileAllMercadoPagoPendingOrders().catch((error) => {
       console.error("Falha ao reconciliar pagamentos Mercado Pago", error);
+    });
+    void expirePendingTicketOrders().catch((error) => {
+      console.error("Falha ao expirar ingressos pendentes", error);
     });
   };
 

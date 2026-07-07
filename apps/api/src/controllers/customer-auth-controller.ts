@@ -25,6 +25,11 @@ const loginSchema = z.object({
   password: z.string().min(6)
 });
 
+const lookupSchema = z.object({
+  phone: z.string().min(8).optional(),
+  email: z.string().email().optional()
+});
+
 const addressSchema = z.object({
   label: z.string().min(1),
   address: z.string().min(3),
@@ -297,6 +302,46 @@ export async function changeCustomerPassword(req: Request, res: Response) {
   return res.json({ message: "Senha alterada" });
 }
 
+export async function lookupCustomerAccount(req: Request, res: Response) {
+  const body = lookupSchema.parse(req.query);
+  const phone = body.phone ? normalizePhone(body.phone) : null;
+  const email = normalizeEmail(body.email);
+
+  const [byPhone, byEmail, companyCustomer] = await Promise.all([
+    phone ? prisma.globalCustomer.findUnique({ where: { phone } }) : Promise.resolve(null),
+    email ? prisma.globalCustomer.findUnique({ where: { email } }) : Promise.resolve(null),
+    phone || email
+      ? prisma.customer.findFirst({
+          where: {
+            deletedAt: null,
+            ...companyWhere(req),
+            OR: [
+              ...(phone ? [{ phone }] : []),
+              ...(email ? [{ email }] : [])
+            ]
+          },
+          select: { id: true, name: true, phone: true, email: true }
+        })
+      : Promise.resolve(null)
+  ]);
+
+  const account = companyCustomer || byPhone || byEmail;
+  if (!account) {
+    return res.json({ exists: false });
+  }
+
+  return res.json({
+    exists: true,
+    matchedBy: companyCustomer ? "companyCustomer" : byEmail ? "email" : "phone",
+    account: {
+      id: "id" in account ? account.id : null,
+      name: account.name,
+      phone: account.phone,
+      email: account.email ?? null
+    }
+  });
+}
+
 export async function listCustomerTicketOrders(req: Request, res: Response) {
   const customerId = (req as any).customerId;
   const customer = await prisma.customer.findFirst({
@@ -311,7 +356,11 @@ export async function listCustomerTicketOrders(req: Request, res: Response) {
   const orders = await prisma.ticketOrder.findMany({
     where: {
       companyId: customer.companyId,
-      customerPhone: customer.phone
+      customerPhone: customer.phone,
+      OR: [
+        { paidAt: { not: null } },
+        { paymentStatus: "REFUNDED" }
+      ]
     },
     include: {
       event: true,

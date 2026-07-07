@@ -321,6 +321,51 @@ export async function createPublicTicketOrder(req: Request, res: Response) {
   }
 }
 
+export async function expirePendingTicketOrders(companyId?: string) {
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const orders = await prisma.ticketOrder.findMany({
+    where: {
+      ...(companyId ? { companyId } : {}),
+      paidAt: null,
+      status: { in: ["RESERVED", "PAID"] },
+      createdAt: { lt: cutoff },
+      mercadoPagoStatus: { not: "refunded" }
+    },
+    include: {
+      tickets: true,
+      event: true,
+      company: true
+    }
+  });
+
+  await Promise.all(orders.map(async (order) => {
+    await prisma.$transaction(async (tx) => {
+      await tx.ticketOrder.update({
+        where: { id: order.id },
+        data: {
+          status: "CANCELLED",
+          paymentStatus: "FAILED",
+          mercadoPagoStatus: order.mercadoPagoStatus ?? "expired",
+          mercadoPagoStatusDetail: order.mercadoPagoStatusDetail ?? "expired"
+        }
+      });
+
+      await tx.ticket.updateMany({
+        where: { ticketOrderId: order.id },
+        data: { status: "CANCELLED" }
+      });
+
+      for (const ticket of order.tickets) {
+        await tx.ticketType.update({
+          where: { id: ticket.ticketTypeId },
+          data: { quantitySold: { decrement: 1 } }
+        });
+      }
+    });
+  }));
+}
+
+
 export async function listAdminEvents(req: Request, res: Response) {
   const events = await prisma.event.findMany({
     where: companyWhere(req),
@@ -453,4 +498,5 @@ export async function validateTicket(req: Request, res: Response) {
     ticketOrder: { ...updated.ticketOrder, total: Number(updated.ticketOrder.total) }
   });
 }
-
+
+

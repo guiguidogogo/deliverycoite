@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { MapPin } from "lucide-react";
@@ -11,6 +11,7 @@ type Tab = "login" | "register";
 
 export default function CustomerAuthPage() {
   const router = useRouter();
+  const [returnTo, setReturnTo] = useState("/profile");
   const [tab, setTab] = useState<Tab>("login");
   const [loading, setLoading] = useState(false);
 
@@ -34,6 +35,16 @@ export default function CustomerAuthPage() {
   const [registerLng, setRegisterLng] = useState<number | undefined>();
   const [addressMode, setAddressMode] = useState<"MANUAL" | "LOCATION">("MANUAL");
 
+  function safeReturnTo() {
+    return returnTo.startsWith("/") ? returnTo : "/profile";
+  }
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const next = params.get("returnTo") || "/profile";
+    setReturnTo(next);
+  }, []);
+
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -51,7 +62,7 @@ export default function CustomerAuthPage() {
       localStorage.setItem("delivery:customer-token", response.token);
       localStorage.setItem("delivery:customer", JSON.stringify(response.customer));
       toast.success(`Bem-vindo, ${response.customer.name}!`);
-      router.push("/profile");
+      router.push(safeReturnTo() as never);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Erro ao fazer login");
     } finally {
@@ -84,7 +95,7 @@ export default function CustomerAuthPage() {
       localStorage.setItem("delivery:customer-token", response.token);
       localStorage.setItem("delivery:customer", JSON.stringify(response.customer));
       toast.success("Cadastro realizado com sucesso!");
-      router.push("/profile");
+      router.push(safeReturnTo() as never);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Erro ao criar conta");
     } finally {

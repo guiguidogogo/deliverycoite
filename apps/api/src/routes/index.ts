@@ -31,6 +31,7 @@ import {
 import {
   registerCustomer,
   loginCustomer,
+  lookupCustomerAccount,
   getCustomerProfile,
   listCustomerTicketOrders,
   updateCustomerProfile,
@@ -234,6 +235,7 @@ route.post("/auth/password/reset", resetStaffPassword);
 // Customer auth routes
 route.post("/customer/register", registerCustomer);
 route.post("/customer/login", loginCustomer);
+route.get("/customer/account/lookup", lookupCustomerAccount);
 route.post("/customer/password/request", requestCustomerPasswordReset);
 route.post("/customer/password/reset", resetCustomerPassword);
 route.get("/customer/profile", customerAuth, getCustomerProfile);
