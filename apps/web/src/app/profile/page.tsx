@@ -100,6 +100,43 @@ export default function ProfilePage() {
     loadProfile(token);
   }, [router]);
 
+  useEffect(() => {
+    if (!pendingOrder?.id) return;
+
+    let active = true;
+    const refreshPendingOrder = async () => {
+      const token = localStorage.getItem("delivery:customer-token");
+      if (!token) return;
+      try {
+        const status = await api<{
+          paid: boolean;
+          paidAt?: string | null;
+          paymentStatus?: string | null;
+        }>(`/events/orders/${pendingOrder.id}/mercadopago/status`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (!active) return;
+
+        if (status.paid || status.paymentStatus === "PAID") {
+          setPendingOrder(null);
+          localStorage.removeItem(`events:lastOrderData:${pendingOrder.id}`);
+          await loadProfile(token);
+          toast.success("Pagamento confirmado!");
+        }
+      } catch {
+        // mantém pendente e tenta novamente
+      }
+    };
+
+    void refreshPendingOrder();
+    const timer = window.setInterval(refreshPendingOrder, 8000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [pendingOrder?.id]);
+
   async function loadProfile(token: string) {
     try {
       const profile = await api<{ id: string; name: string; phone: string; email?: string; addresses: Address[] }>(
