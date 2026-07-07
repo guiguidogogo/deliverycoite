@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { MapPin, Plus, Trash2, Home, Briefcase } from "lucide-react";
@@ -76,6 +76,7 @@ export default function ProfilePage() {
   const [pendingOrder, setPendingOrder] = useState<CustomerTicket | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAddAddress, setShowAddAddress] = useState(false);
+  const confirmedPaymentRef = useRef<string | null>(null);
 
   // Novo endereço
   const [newLabel, setNewLabel] = useState("Casa");
@@ -102,6 +103,7 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!pendingOrder?.id) return;
+    if (confirmedPaymentRef.current === pendingOrder.id) return;
 
     let active = true;
     const refreshPendingOrder = async () => {
@@ -119,12 +121,15 @@ export default function ProfilePage() {
         if (!active) return;
 
         if (status.paid || status.paymentStatus === "PAID") {
+          if (confirmedPaymentRef.current !== pendingOrder.id) {
+            confirmedPaymentRef.current = pendingOrder.id;
+            toast.success("Pagamento confirmado!");
+          }
           setPendingOrder(null);
           Object.keys(localStorage)
             .filter((key) => key.startsWith("events:lastOrderData:"))
             .forEach((key) => localStorage.removeItem(key));
           await loadProfile(token);
-          toast.success("Pagamento confirmado!");
         }
       } catch {
         // mantém pendente e tenta novamente
@@ -175,6 +180,7 @@ export default function ProfilePage() {
           const matchingTicketOrder = ticketOrders.find((order) => order.id === storedPending.id);
           const alreadyPaid = Boolean(storedPending.paidAt || storedPending.paymentStatus === "PAID" || matchingTicketOrder?.paidAt || matchingTicketOrder?.paymentStatus === "PAID");
           if (alreadyPaid) {
+            confirmedPaymentRef.current = storedPending.id;
             setPendingOrder(null);
             Object.keys(localStorage)
               .filter((key) => key.startsWith("events:lastOrderData:"))
@@ -324,12 +330,13 @@ export default function ProfilePage() {
   }
 
   function handleLogout() {
-      localStorage.removeItem("delivery:customer-token");
-      localStorage.removeItem("delivery:customer");
-      Object.keys(localStorage)
-        .filter((key) => key.startsWith("events:lastOrderData:"))
-        .forEach((key) => localStorage.removeItem(key));
-      router.push("/");
+    localStorage.removeItem("delivery:customer-token");
+    localStorage.removeItem("delivery:customer");
+    Object.keys(localStorage)
+      .filter((key) => key.startsWith("events:lastOrderData:"))
+      .forEach((key) => localStorage.removeItem(key));
+    confirmedPaymentRef.current = null;
+    router.push("/");
   }
 
   async function changePassword() {
