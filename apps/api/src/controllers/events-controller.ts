@@ -41,7 +41,10 @@ const ticketOrderSchema = z.object({
   customerName: z.string().trim().min(2, "Informe seu nome"),
   customerPhone: z.string().trim().min(8, "Informe seu telefone"),
   customerEmail: z.string().trim().email("Email invalido"),
-  customerPassword: z.string().trim().min(6, "Crie uma senha para acessar depois").optional(),
+  customerPassword: z.preprocess(
+    (value) => typeof value === "string" && !value.trim() ? undefined : value,
+    z.string().trim().min(6, "Crie uma senha para acessar depois").optional()
+  ),
   paymentMethod: z.enum(["MERCADO_PAGO", "PIX", "CARD"]).default("MERCADO_PAGO"),
   mercadoPagoType: z.enum(["PIX", "CARD"]).default("PIX"),
   items: z.array(z.object({

@@ -53,7 +53,7 @@ export default function CustomerAuthPage() {
       const response = await api<{ token: string; customer: any }>("/customer/login", {
         method: "POST",
         body: JSON.stringify({
-          phone: loginPhone,
+          identifier: loginPhone,
           password: loginPassword,
           subdomain: getBrowserSubdomain() || undefined
         })
@@ -206,7 +206,7 @@ export default function CustomerAuthPage() {
           <form onSubmit={handleLogin} className="mt-4 space-y-3">
             <input
               className="w-full rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
-              placeholder="Telefone"
+              placeholder="Telefone ou e-mail"
               value={loginPhone}
               onChange={(e) => setLoginPhone(e.target.value)}
               required

@@ -32,6 +32,16 @@ type CustomerTicket = {
   total: number;
   paidAt?: string | null;
   paymentStatus?: string | null;
+  mercadoPago?: {
+    paymentId?: string | null;
+    preferenceId?: string | null;
+    status?: string | null;
+    statusDetail?: string | null;
+    qrCode?: string | null;
+    qrCodeBase64?: string | null;
+    ticketUrl?: string | null;
+    initPoint?: string | null;
+  };
   event: {
     title: string;
     eventDate: string;
@@ -63,6 +73,7 @@ export default function ProfilePage() {
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [tickets, setTickets] = useState<CustomerTicket[]>([]);
   const [activeTicket, setActiveTicket] = useState<CustomerTicket | null>(null);
+  const [pendingOrder, setPendingOrder] = useState<CustomerTicket | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAddAddress, setShowAddAddress] = useState(false);
 
@@ -114,6 +125,17 @@ export default function ProfilePage() {
         headers: { Authorization: `Bearer ${token}` }
       });
       setTickets(ticketOrders);
+      const storedPending = Object.keys(localStorage)
+        .filter((key) => key.startsWith("events:lastOrderData:"))
+        .map((key) => localStorage.getItem(key))
+        .find(Boolean);
+      if (storedPending) {
+        try {
+          setPendingOrder(JSON.parse(storedPending) as CustomerTicket);
+        } catch {
+          setPendingOrder(null);
+        }
+      }
     } catch (error) {
       toast.error("Erro ao carregar perfil");
       router.push("/account");
@@ -341,6 +363,63 @@ export default function ProfilePage() {
           <button className="rounded-xl bg-ink px-3 py-2 text-white md:col-span-2" onClick={() => void changePassword()}>
             Alterar senha
           </button>
+        </div>
+      </section>
+
+      <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
+        <h2 className="text-xl font-bold">Pagamentos pendentes</h2>
+        <p className="mt-1 text-sm opacity-70">Se você gerou um Pix e ainda não pagou, ele aparece aqui para concluir a compra.</p>
+        <div className="mt-4 space-y-3">
+          {pendingOrder?.mercadoPago?.qrCode ? (
+            <article className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 dark:bg-emerald-900/20">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold">{pendingOrder.event.title}</p>
+                  <p className="text-xs opacity-70">{new Date(pendingOrder.event.eventDate).toLocaleDateString("pt-BR")} • {pendingOrder.event.startTime} • {pendingOrder.event.location}</p>
+                  <p className="mt-1 text-sm font-bold text-emerald-700">Pagamento Pix pendente</p>
+                </div>
+                <span className="rounded-full bg-amber-500 px-3 py-1 text-xs font-bold text-white">{pendingOrder.paymentStatus || "PENDENTE"}</span>
+              </div>
+              <div className="mt-4 grid gap-4 md:grid-cols-[240px_1fr]">
+                <img
+                  src={pendingOrder.mercadoPago.qrCodeBase64 ? `data:image/png;base64,${pendingOrder.mercadoPago.qrCodeBase64}` : qrImage(pendingOrder.mercadoPago.qrCode)}
+                  alt="QR Code Pix pendente"
+                  className="mx-auto h-[240px] w-[240px] rounded-2xl border bg-white p-3"
+                />
+                <div className="space-y-3">
+                  <textarea
+                    readOnly
+                    value={pendingOrder.mercadoPago.qrCode ?? ""}
+                    className="h-32 w-full rounded-xl border bg-white p-3 text-xs break-all"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="rounded-xl bg-ink px-4 py-2 text-sm font-bold text-white"
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(pendingOrder.mercadoPago?.qrCode ?? "");
+                        toast.success("Código Pix copiado!");
+                      }}
+                    >
+                      Copiar código Pix
+                    </button>
+                    {pendingOrder.mercadoPago.ticketUrl && (
+                      <a
+                        href={pendingOrder.mercadoPago.ticketUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded-xl border border-emerald-300 px-4 py-2 text-sm font-bold text-emerald-800"
+                      >
+                        Abrir pagamento
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </article>
+          ) : (
+            <p className="rounded-xl bg-slate-50 p-3 text-sm opacity-70 dark:bg-slate-800">Nenhum pagamento pendente encontrado.</p>
+          )}
         </div>
       </section>
 

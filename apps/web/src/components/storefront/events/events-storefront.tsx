@@ -81,6 +81,14 @@ function formatDate(value: string) {
   });
 }
 
+function qrImage(value: string) {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(value)}`;
+}
+
+function isPixOrder(order: TicketOrder | null) {
+  return Boolean(order?.mercadoPago?.type === "PIX" && order.mercadoPago.qrCode);
+}
+
 export function EventsStorefront({ company }: { company: PublicCompany }) {
   const router = useRouter();
   const [events, setEvents] = useState<EventItem[]>([]);
@@ -90,6 +98,7 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
   const [customer, setCustomer] = useState({ name: "", phone: "", email: "", password: "" });
   const [mercadoPagoType, setMercadoPagoType] = useState<"PIX" | "CARD">("PIX");
   const [lastOrder, setLastOrder] = useState<TicketOrder | null>(null);
+  const [copiedPixCode, setCopiedPixCode] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [accountLookup, setAccountLookup] = useState<{ exists: boolean; name?: string; phone?: string; email?: string; matchedBy?: string }>({ exists: false });
   const [accountLookupLoading, setAccountLookupLoading] = useState(false);
@@ -288,7 +297,7 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
             customerName: customer.name,
             customerPhone: customer.phone,
             customerEmail: customer.email,
-            customerPassword: customer.password,
+            customerPassword: customerToken ? undefined : customer.password.trim() || undefined,
             paymentMethod: "MERCADO_PAGO",
             mercadoPagoType,
             items
@@ -298,6 +307,7 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
       if (!response.ok) throw new Error(payload.message ?? "Falha ao reservar ingresso");
       setLastOrder(payload);
       window.localStorage.setItem(`events:lastOrder:${company.subdomain}`, payload.id);
+      window.localStorage.setItem(`events:lastOrderData:${company.subdomain}`, JSON.stringify(payload));
       setQuantities({});
       if (payload?.mercadoPago?.type === "CHECKOUT" && payload?.mercadoPago?.initPoint) {
         toast.success("Abrindo checkout do Mercado Pago...");
@@ -305,11 +315,11 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
         return;
       }
       if (payload?.mercadoPago?.type === "PIX") {
-        toast.success("Pagamento Pix gerado. Finalize para confirmar o ingresso.");
+        toast.success("Pagamento Pix gerado. O QR Code apareceu na tela.");
       } else {
         toast.success("Reserva criada.");
+        setSelectedEvent(null);
       }
-      setSelectedEvent(null);
       setMercadoPagoType("PIX");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao reservar ingresso");
@@ -532,6 +542,53 @@ export function EventsStorefront({ company }: { company: PublicCompany }) {
                   ? "Ao confirmar, mostramos QR Code e copia e cola para pagamento imediato."
                   : "Ao confirmar, liberamos o formulário do Mercado Pago para cartão."}
               </div>
+
+              {isPixOrder(lastOrder) && (
+                <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-slate-900">
+                  <p className="text-xs font-black uppercase tracking-[0.2em] text-emerald-700">Pagamento Pix gerado</p>
+                  <div className="mt-3 grid gap-4 md:grid-cols-[260px_1fr]">
+                    <img
+                      src={lastOrder?.mercadoPago?.qrCodeBase64 ? `data:image/png;base64,${lastOrder.mercadoPago.qrCodeBase64}` : qrImage(lastOrder?.mercadoPago?.qrCode ?? lastOrder?.id ?? "")}
+                      alt="QR Code Pix"
+                      className="mx-auto h-[260px] w-[260px] rounded-2xl border bg-white p-3"
+                    />
+                    <div className="space-y-3">
+                      <div className="rounded-2xl bg-white p-4">
+                        <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">Copie e cole</p>
+                        <textarea
+                          readOnly
+                          value={lastOrder?.mercadoPago?.qrCode ?? ""}
+                          className="mt-2 h-28 w-full rounded-xl border bg-slate-50 p-3 text-xs break-all"
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="rounded-xl bg-slate-950 px-4 py-2 font-bold text-white"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(lastOrder?.mercadoPago?.qrCode ?? "");
+                              setCopiedPixCode(true);
+                              toast.success("Código Pix copiado!");
+                              window.setTimeout(() => setCopiedPixCode(false), 2000);
+                            } catch {
+                              toast.error("Não foi possível copiar o código");
+                            }
+                          }}
+                        >
+                          {copiedPixCode ? "Copiado" : "Copiar código Pix"}
+                        </button>
+                        <a className="rounded-xl border border-emerald-300 px-4 py-2 font-bold text-emerald-800" href="/profile">
+                          Ver na minha conta
+                        </a>
+                      </div>
+                      <p className="text-sm text-slate-600">
+                        Assim que o pagamento for aprovado, o ingresso aparece liberado na área do cliente.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-slate-100 p-4">

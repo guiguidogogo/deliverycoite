@@ -9,7 +9,7 @@ import { findExistingGlobalCustomer, linkCustomerToCompany, normalizeEmail, norm
 
 const registerSchema = z.object({
   name: z.string().min(2),
-  phone: z.string().min(8),
+  phone: z.string().min(6, "Informe um telefone com pelo menos 6 digitos"),
   email: z.string().email().optional(),
   password: z.string().min(6).optional(),
   address: z.string().min(3).optional(),
@@ -21,7 +21,7 @@ const registerSchema = z.object({
 });
 
 const loginSchema = z.object({
-  phone: z.string().min(8),
+  identifier: z.string().min(3, "Informe seu telefone ou e-mail"),
   password: z.string().min(6)
 });
 
@@ -136,51 +136,81 @@ export async function registerCustomer(req: Request, res: Response) {
 export async function loginCustomer(req: Request, res: Response) {
   const body = loginSchema.parse(req.body);
   const companyId = getCompanyId(req);
-  const phone = normalizePhone(body.phone);
 
-  const globalCustomer = await prisma.globalCustomer.findUnique({ where: { phone } });
-  const legacyCustomer = !globalCustomer
-    ? await prisma.customer.findFirst({ where: { phone, ...companyWhere(req) } })
-    : null;
-  const passwordHash = globalCustomer?.passwordHash ?? legacyCustomer?.passwordHash;
+  const isEmail = body.identifier.includes("@");
+  const phone = isEmail ? null : normalizePhone(body.identifier);
+  const email = isEmail ? normalizeEmail(body.identifier) : null;
 
-  if (!passwordHash) {
+  const [globalByPhone, globalByEmail, legacyCustomer] = await Promise.all([
+    phone ? prisma.globalCustomer.findUnique({ where: { phone } }) : Promise.resolve(null),
+    email ? prisma.globalCustomer.findUnique({ where: { email } }) : Promise.resolve(null),
+    prisma.customer.findFirst({
+      where: {
+        ...companyWhere(req),
+        OR: [
+          ...(phone ? [{ phone }] : []),
+          ...(email ? [{ email }] : [])
+        ]
+      }
+    })
+  ]);
+
+  const globalCandidates = [globalByPhone, globalByEmail].filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate));
+  const allCandidates = [...(legacyCustomer ? [legacyCustomer] : []), ...globalCandidates];
+
+  let credentialSource = allCandidates.find((candidate) => Boolean(candidate.passwordHash)) ?? null;
+  if (credentialSource) {
+    const validMatches = await Promise.all(allCandidates.map(async (candidate) => ({
+      candidate,
+      valid: Boolean(candidate.passwordHash) && await bcrypt.compare(body.password, candidate.passwordHash!)
+    })));
+    credentialSource = validMatches.find((entry) => entry.valid)?.candidate ?? null;
+  }
+
+  if (!credentialSource?.passwordHash) {
     return res.status(401).json({ message: "Credenciais invalidas" });
   }
 
-  const valid = await bcrypt.compare(body.password, passwordHash);
+  const valid = await bcrypt.compare(body.password, credentialSource.passwordHash);
   if (!valid) {
     return res.status(401).json({ message: "Credenciais invalidas" });
   }
 
+  const globalCustomer = globalCandidates.find((candidate) => candidate.id === credentialSource?.id) ?? null;
+  const legacyCustomerMatch = legacyCustomer?.id === credentialSource?.id ? legacyCustomer : null;
   const linked = await linkCustomerToCompany({
     companyId,
-    name: globalCustomer?.name ?? legacyCustomer!.name,
-    phone,
-    email: globalCustomer?.email ?? legacyCustomer?.email,
-    passwordHash
+    name: globalCustomer?.name ?? legacyCustomerMatch?.name ?? body.identifier,
+    phone: phone ?? legacyCustomerMatch?.phone ?? normalizePhone(body.identifier),
+    email: globalCustomer?.email ?? legacyCustomerMatch?.email ?? email,
+    passwordHash: credentialSource.passwordHash
   });
 
   const customer = await prisma.customer.upsert({
-    where: { companyId_phone: { companyId, phone } },
+    where: { companyId_phone: { companyId, phone: phone ?? legacyCustomerMatch?.phone ?? normalizePhone(body.identifier) } },
     create: {
       companyId,
       globalCustomerId: linked.globalCustomer.id,
       companyCustomerId: linked.companyCustomer.id,
       name: linked.globalCustomer.name,
-      phone,
+      phone: phone ?? legacyCustomerMatch?.phone ?? normalizePhone(body.identifier),
       email: linked.globalCustomer.email,
-      passwordHash,
-      address: legacyCustomer?.address ?? "",
-      number: legacyCustomer?.number ?? "",
-      district: legacyCustomer?.district ?? "",
-      complement: legacyCustomer?.complement ?? null
+      passwordHash: credentialSource.passwordHash,
+      address: legacyCustomerMatch?.address ?? "",
+      number: legacyCustomerMatch?.number ?? "",
+      district: legacyCustomerMatch?.district ?? "",
+      complement: legacyCustomerMatch?.complement ?? null
     },
     update: {
       globalCustomerId: linked.globalCustomer.id,
       companyCustomerId: linked.companyCustomer.id,
       name: linked.globalCustomer.name,
       email: linked.globalCustomer.email,
+      ...(legacyCustomerMatch?.address ? { address: legacyCustomerMatch.address } : {}),
+      ...(legacyCustomerMatch?.number ? { number: legacyCustomerMatch.number } : {}),
+      ...(legacyCustomerMatch?.district ? { district: legacyCustomerMatch.district } : {}),
+      ...(legacyCustomerMatch?.complement !== undefined ? { complement: legacyCustomerMatch.complement } : {}),
+      ...(credentialSource.passwordHash ? { passwordHash: credentialSource.passwordHash } : {}),
       deletedAt: null,
       deletedBy: null,
       deletionReason: null
@@ -356,11 +386,7 @@ export async function listCustomerTicketOrders(req: Request, res: Response) {
   const orders = await prisma.ticketOrder.findMany({
     where: {
       companyId: customer.companyId,
-      customerPhone: customer.phone,
-      OR: [
-        { paidAt: { not: null } },
-        { paymentStatus: "REFUNDED" }
-      ]
+      customerPhone: customer.phone
     },
     include: {
       event: true,
@@ -378,6 +404,12 @@ export async function listCustomerTicketOrders(req: Request, res: Response) {
     status: order.status,
     paymentStatus: order.paymentStatus,
     paidAt: order.paidAt,
+    mercadoPago: {
+      paymentId: order.mercadoPagoPaymentId,
+      preferenceId: order.mercadoPagoPreferenceId,
+      status: order.mercadoPagoStatus,
+      statusDetail: order.mercadoPagoStatusDetail
+    },
     event: {
       id: order.event.id,
       title: order.event.title,
