@@ -574,9 +574,16 @@ export function AdminPanel() {
                   </p>
                   <p className="text-xs opacity-60">{formatDateTime(order.createdAt)}</p>
                   {isMercadoPagoPending(order) && (
-                    <p className="mt-1 rounded-full bg-amber-100 px-2 py-1 text-xs font-bold text-amber-700">
-                      Aguardando pagamento Mercado Pago
-                    </p>
+                    <div className="mt-1 space-y-1">
+                      <p className="rounded-full bg-amber-100 px-2 py-1 text-xs font-bold text-amber-700">
+                        Aguardando pagamento Mercado Pago
+                      </p>
+                      <p className="rounded-full bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700">
+                        {order.mercadoPagoStatusDetail?.includes("qr")
+                          ? "QR Code emitido"
+                          : order.mercadoPagoStatusDetail || "QR gerado e aguardando leitura"}
+                      </p>
+                    </div>
                   )}
                   {isMercadoPagoRefunded(order) && (
                     <p className="mt-1 rounded-full bg-red-100 px-2 py-1 text-xs font-bold text-red-700">

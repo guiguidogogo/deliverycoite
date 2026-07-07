@@ -149,6 +149,7 @@ export function Storefront() {
     ticketUrl: string | null;
     paid?: boolean;
     status?: string | null;
+    statusDetail?: string | null;
   } | null>(null);
   const skipNextManualSearchRef = useRef(false);
   const {
@@ -485,11 +486,12 @@ export function Storefront() {
           paid: boolean;
           orderStatus: string;
           mercadoPagoStatus: string | null;
+          mercadoPagoStatusDetail: string | null;
         }>(`/orders/${mercadoPagoPix.orderId}/mercadopago/status`);
 
         setMercadoPagoPix((current) =>
           current && current.orderId === mercadoPagoPix.orderId
-            ? { ...current, paid: status.paid, status: status.mercadoPagoStatus }
+            ? { ...current, paid: status.paid, status: status.mercadoPagoStatus, statusDetail: status.mercadoPagoStatusDetail }
             : current
         );
 
@@ -978,6 +980,7 @@ export function Storefront() {
           qrCodeBase64: string | null;
           ticketUrl: string | null;
           status: string | null;
+          statusDetail: string | null;
         }>(`/orders/${response.orderId}/mercadopago/pix`, { method: "POST" });
         setMercadoPagoPix({
           orderId: response.orderId,
@@ -985,7 +988,8 @@ export function Storefront() {
           qrCodeBase64: pix.qrCodeBase64,
           ticketUrl: pix.ticketUrl,
           paid: false,
-          status: pix.status ?? null
+          status: pix.status ?? null,
+          statusDetail: pix.statusDetail ?? null
         });
         setCouponDiscount(0);
         setCouponMessage("");
@@ -1916,8 +1920,19 @@ export function Storefront() {
             </div>
 
             {!mercadoPagoPix.paid && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">
+                  QR Code {mercadoPagoPix.qrCode ? "gerado" : "indisponivel"}
+                </span>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+                  {mercadoPagoPix.statusDetail || "Aguardando leitura / pagamento"}
+                </span>
+              </div>
+            )}
+
+            {!mercadoPagoPix.paid && (
               <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm font-semibold text-amber-800">
-                Aguardando pagamento... Nao feche esta tela ate confirmar.
+                Aguardando pagamento. Se o QR foi escaneado, a tela atualiza automaticamente.
               </div>
             )}
 
