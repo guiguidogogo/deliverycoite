@@ -1,6 +1,6 @@
 export const env = {
   get port() {
-    return Number(process.env.API_PORT ?? process.env.PORT ?? 3333);
+    return Number(process.env.API_PORT ?? 3333);
   },
   get jwtSecret() {
     return process.env.JWT_SECRET ?? "change_me";
