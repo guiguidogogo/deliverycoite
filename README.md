@@ -196,6 +196,16 @@ Nao execute essa migration diretamente em producao. Antes da promocao:
 4. valide build, login, produtos, pedidos, complementos, cupons, caixa e configuracoes;
 5. aprove o merge da branch `feature/multiempresa`.
 
+### DEV isolado com clone da producao
+
+Para trabalhar com seguranca antes de publicar:
+
+1. mantenha a producao apontando para o banco real;
+2. restaure uma copia do banco real em um Postgres separado de DEV;
+3. aponte o `HubRegional Dev` apenas para esse banco;
+4. rode `npx prisma migrate deploy` e `npx prisma db seed` somente no DEV;
+5. siga o guia completo em `docs/dev-postgres-clone.md`.
+
 ## Banco de dados
 
 Tabelas no schema Prisma:
