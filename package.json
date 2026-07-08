@@ -20,6 +20,9 @@
     "printer:dist": "npm run build -w @delivery/printer-agent && node scripts/package-printer-agent.mjs",
     "lint": "npm run lint -w @delivery/api && npm run lint -w @delivery/web"
   },
+  "prisma": {
+    "seed": "npm run prisma:seed -w @delivery/api"
+  },
   "devDependencies": {
     "concurrently": "^9.0.1"
   }
