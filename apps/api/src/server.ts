@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import http from "node:http";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { app } from "./app.js";
 import { attachRealtimeServer } from "./services/realtime.js";
@@ -28,8 +29,22 @@ function loadEnvFile() {
   }
 }
 
+function runPackageScript(script: string) {
+  const npmExecutable = process.platform === "win32" ? "npm.cmd" : "npm";
+  execFileSync(npmExecutable, ["run", script, "-w", "@delivery/api"], {
+    stdio: "inherit",
+    env: process.env
+  });
+}
+
 async function bootstrap() {
   loadEnvFile();
+  const environment = (process.env.APP_ENV ?? process.env.NODE_ENV ?? "").toLowerCase();
+  if (environment !== "production") {
+    console.log("DEV detected: applying migrations and seed before starting the API.");
+    runPackageScript("migrate:multiempresa:test");
+    runPackageScript("prisma:seed");
+  }
   await prisma.$connect();
 
   const server = http.createServer(app);
