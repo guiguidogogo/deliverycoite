@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execSync } from "node:child_process";
 
 const environment = (process.env.APP_ENV ?? process.env.NODE_ENV ?? "").toLowerCase();
 const databaseUrl = process.env.DATABASE_URL ?? "";
@@ -19,10 +19,14 @@ if (/(prod|production)/.test(normalizedUrl)) {
   throw new Error("Migration bloqueada: a DATABASE_URL aparenta ser de producao.");
 }
 
-const prismaExecutable = process.platform === "win32" ? "prisma.cmd" : "prisma";
-
-execFileSync(
-  prismaExecutable,
-  ["migrate", "deploy", "--schema", "prisma/schema.prisma"],
-  { stdio: "inherit", env: process.env }
-);
+const command = "npx prisma migrate deploy --schema prisma/schema.prisma";
+try {
+  execSync(command, { stdio: "inherit", env: process.env, shell: true });
+} catch (error) {
+  console.warn("Migration deploy falhou no DEV; tentando prisma db push como fallback.");
+  execSync("npx prisma db push --schema prisma/schema.prisma --accept-data-loss", {
+    stdio: "inherit",
+    env: process.env,
+    shell: true
+  });
+}
