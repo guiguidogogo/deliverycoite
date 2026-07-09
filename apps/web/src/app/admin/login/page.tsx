@@ -3,9 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { apiFetch, normalizeSubdomain } from "../../../lib/api";
-
-const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? "hubregional.com.br";
+import { apiFetch, getBrowserRootDomain, normalizeSubdomain } from "../../../lib/api";
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -19,7 +17,8 @@ export default function AdminLoginPage() {
 
   useEffect(() => {
     const host = window.location.hostname.toLowerCase();
-    setMasterAccess(host === ROOT_DOMAIN || host === `www.${ROOT_DOMAIN}` || host === `admin.${ROOT_DOMAIN}`);
+    const rootDomain = getBrowserRootDomain();
+    setMasterAccess(host === rootDomain || host === `www.${rootDomain}` || host === `admin.${rootDomain}`);
   }, []);
 
   async function handleSubmit(event: React.FormEvent) {

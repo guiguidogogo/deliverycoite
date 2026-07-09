@@ -1,19 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { getBrowserRootDomain } from "../lib/api";
 import { MarketplaceHome } from "./marketplace-home";
 import { Storefront } from "./storefront";
-
-const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? "hubregional.com.br";
 
 function isStoreRequest() {
   const params = new URLSearchParams(window.location.search);
   if (params.get("subdomain")) return true;
 
   const host = window.location.hostname.toLowerCase();
+  const rootDomain = getBrowserRootDomain();
   if (host === "localhost" || host === "127.0.0.1" || host.endsWith(".onrender.com")) return false;
-  if (host === ROOT_DOMAIN || host === `www.${ROOT_DOMAIN}` || host === `admin.${ROOT_DOMAIN}`) return false;
-  return host.endsWith(`.${ROOT_DOMAIN}`);
+  if (host === rootDomain || host === `www.${rootDomain}` || host === `admin.${rootDomain}`) return false;
+  return host.endsWith(`.${rootDomain}`);
 }
 
 export function TenantHome() {

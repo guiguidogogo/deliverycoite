@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { API_URL, apiFetch } from "../lib/api";
+import { API_URL, apiFetch, getBrowserRootDomain } from "../lib/api";
 
 type Session = {
   name: string;
@@ -13,21 +13,15 @@ type Session = {
     subdomain: string;
   } | null;
 };
-const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? "hubregional.com.br";
-
 export function AdminSessionBar() {
   const pathname = usePathname();
   const router = useRouter();
   const [session, setSession] = useState<Session | null>(null);
+  const rootDomain = getBrowserRootDomain();
   const realCompanyUrl = session?.company
-    ? `https://${session.company.subdomain}.${ROOT_DOMAIN}`
+    ? `https://${session.company.subdomain}.${rootDomain}`
     : "#";
-  const companyUrl =
-    session?.company && typeof window !== "undefined" && window.location.hostname.endsWith(ROOT_DOMAIN)
-      ? realCompanyUrl
-      : session?.company
-        ? `/?subdomain=${encodeURIComponent(session.company.subdomain)}`
-        : "#";
+  const companyUrl = session?.company ? realCompanyUrl : "#";
 
   useEffect(() => {
     if (pathname === "/admin/login") return;
@@ -56,7 +50,7 @@ export function AdminSessionBar() {
         <strong>{session.role === "SUPER_ADMIN" ? "HubRegional • Painel Master" : session.company?.tradeName}</strong>
         {session.company && (
           <span className="ml-2 opacity-60">
-            {session.company.subdomain}.{ROOT_DOMAIN}
+            {session.company.subdomain}.{rootDomain}
           </span>
         )}
       </div>

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { adminApi, getAdminToken } from "../lib/admin-api";
-import { apiFetch, resolveAssetUrl } from "../lib/api";
+import { apiFetch, getBrowserRootDomain, resolveAssetUrl } from "../lib/api";
 
 export type CompanyFormValue = {
   companyName: string;
@@ -69,8 +69,6 @@ const emptyCompany: CompanyFormValue = {
   mercadoPagoPublicKey: "",
   mercadoPagoAccessToken: ""
 };
-const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? "hubregional.com.br";
-
 export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, onSubmit }: Props) {
   const [form, setForm] = useState<CompanyFormValue>({ ...emptyCompany, ...initialValue });
   const [admin, setAdmin] = useState({ name: "", email: "", phone: "", password: "" });
@@ -78,6 +76,7 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
   const [generating, setGenerating] = useState(false);
   const [subdomainEdited, setSubdomainEdited] = useState(false);
   const [uploading, setUploading] = useState<"logoUrl" | "faviconUrl" | null>(null);
+  const rootDomain = getBrowserRootDomain();
 
   useEffect(() => {
     setForm({ ...emptyCompany, ...initialValue });
@@ -348,7 +347,7 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
           onInput={() => setSubdomainEdited(true)}
         />
         <p className="mt-2 rounded-xl bg-slate-100 px-3 py-2 font-mono text-sm dark:bg-slate-800">
-          https://{form.subdomain || "subdominio"}.{ROOT_DOMAIN}
+          https://{form.subdomain || "subdominio"}.{rootDomain}
         </p>
       </section>
 
