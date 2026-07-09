@@ -2,10 +2,13 @@ import { existsSync, readFileSync } from "node:fs";
 import http from "node:http";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { app } from "./app.js";
 import { attachRealtimeServer } from "./services/realtime.js";
 import { env } from "./utils/env.js";
 import { prisma } from "./utils/prisma.js";
+
+const require = createRequire(import.meta.url);
 
 function loadEnvFile() {
   const envPath = path.resolve(process.cwd(), ".env");
@@ -31,7 +34,14 @@ function loadEnvFile() {
 
 function runPackageScript(script: string) {
   const npmExecutable = process.platform === "win32" ? "npm.cmd" : "npm";
-  execFileSync(npmExecutable, ["run", script, "-w", "@delivery/api"], {
+  const packageJsonPath = path.resolve(process.cwd(), "package.json");
+  const isApiWorkspaceRoot = existsSync(packageJsonPath)
+    && (require(packageJsonPath) as { name?: string }).name === "@delivery/api";
+  const args = isApiWorkspaceRoot
+    ? ["run", script]
+    : ["run", script, "-w", "@delivery/api"];
+
+  execFileSync(npmExecutable, args, {
     stdio: "inherit",
     env: process.env
   });
