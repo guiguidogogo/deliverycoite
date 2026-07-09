@@ -27,31 +27,33 @@ async function upsertCategory(companyId: string, name: string) {
   });
 }
 
-async function seedCompany() {
-  const companyName = process.env.SEED_COMPANY_NAME ?? "Yasmim Lanches";
-  const tradeName = process.env.SEED_COMPANY_TRADE_NAME ?? "Yasmim Lanches";
-  const companySubdomain = process.env.SEED_COMPANY_SUBDOMAIN ?? "yasmimlanches";
-  const companyPhone = process.env.WHATSAPP_NUMBER ?? "5575999999999";
-  const companyEmail = process.env.SEED_COMPANY_EMAIL ?? "contato@yasmimlanches.com.br";
-  const adminEmail = (process.env.SEED_ADMIN_EMAIL ?? "yasmimlanches@gmail.com").trim().toLowerCase();
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "123456";
-  const masterEmail = (process.env.SEED_MASTER_EMAIL ?? "admin@hubregional.com.br").trim().toLowerCase();
-  const masterPassword = process.env.SEED_MASTER_PASSWORD ?? "123456";
+type SeedTenantConfig = {
+  companyId: string;
+  companyName: string;
+  tradeName: string;
+  subdomain: string;
+  companyEmail: string;
+  companyPhone: string;
+  adminEmail: string;
+  adminPassword: string;
+  createMasterUser?: boolean;
+};
 
+async function seedTenantCompany(config: SeedTenantConfig) {
   const company = await prisma.company.upsert({
-    where: { id: DEFAULT_COMPANY_ID },
+    where: { id: config.companyId },
     update: {
-      companyName,
-      tradeName,
-      phone: companyPhone,
-      whatsapp: companyPhone,
-      email: companyEmail,
-      subdomain: companySubdomain,
+      companyName: config.companyName,
+      tradeName: config.tradeName,
+      phone: config.companyPhone,
+      whatsapp: config.companyPhone,
+      email: config.companyEmail,
+      subdomain: config.subdomain,
       active: true,
       marketplaceVisible: true,
       featured: false,
       category: "Lanches",
-      city: "Conceição do Coité",
+      city: "Concei??o do Coit?",
       isOpen: true,
       deliveryFee: 5,
       deliveryTimeMin: 35,
@@ -59,18 +61,18 @@ async function seedCompany() {
       plan: "basico"
     },
     create: {
-      id: DEFAULT_COMPANY_ID,
-      companyName,
-      tradeName,
-      phone: companyPhone,
-      whatsapp: companyPhone,
-      email: companyEmail,
-      subdomain: companySubdomain,
+      id: config.companyId,
+      companyName: config.companyName,
+      tradeName: config.tradeName,
+      phone: config.companyPhone,
+      whatsapp: config.companyPhone,
+      email: config.companyEmail,
+      subdomain: config.subdomain,
       active: true,
       marketplaceVisible: true,
       featured: false,
       category: "Lanches",
-      city: "Conceição do Coité",
+      city: "Concei??o do Coit?",
       isOpen: true,
       deliveryFee: 5,
       deliveryTimeMin: 35,
@@ -79,16 +81,12 @@ async function seedCompany() {
     }
   });
 
-  const [adminHash, masterHash] = await Promise.all([
-    bcrypt.hash(adminPassword, 10),
-    bcrypt.hash(masterPassword, 10)
-  ]);
-
+  const adminHash = await bcrypt.hash(config.adminPassword, 10);
   await prisma.user.upsert({
     where: {
       companyId_email: {
         companyId: company.id,
-        email: adminEmail
+        email: config.adminEmail
       }
     },
     update: {
@@ -99,7 +97,7 @@ async function seedCompany() {
     },
     create: {
       name: "Administrador",
-      email: adminEmail,
+      email: config.adminEmail,
       passwordHash: adminHash,
       role: UserRole.ADMIN,
       companyId: company.id,
@@ -107,28 +105,33 @@ async function seedCompany() {
     }
   });
 
-  await prisma.user.upsert({
-    where: {
-      companyId_email: {
+  if (config.createMasterUser) {
+    const masterEmail = (process.env.SEED_MASTER_EMAIL ?? "admin@hubregional.com.br").trim().toLowerCase();
+    const masterPassword = process.env.SEED_MASTER_PASSWORD ?? "123456";
+    const masterHash = await bcrypt.hash(masterPassword, 10);
+    await prisma.user.upsert({
+      where: {
+        companyId_email: {
+          companyId: company.id,
+          email: masterEmail
+        }
+      },
+      update: {
+        name: "Administrador Master",
+        passwordHash: masterHash,
+        role: UserRole.SUPER_ADMIN,
+        active: true
+      },
+      create: {
+        name: "Administrador Master",
+        email: masterEmail,
+        passwordHash: masterHash,
+        role: UserRole.SUPER_ADMIN,
         companyId: company.id,
-        email: masterEmail
+        active: true
       }
-    },
-    update: {
-      name: "Administrador Master",
-      passwordHash: masterHash,
-      role: UserRole.SUPER_ADMIN,
-      active: true
-    },
-    create: {
-      name: "Administrador Master",
-      email: masterEmail,
-      passwordHash: masterHash,
-      role: UserRole.SUPER_ADMIN,
-      companyId: company.id,
-      active: true
-    }
-  });
+    });
+  }
 
   const categories = ["Hamburgueres", "Pizzas", "Bebidas", "Combos", "Sobremesas"];
   for (const name of categories) {
@@ -203,8 +206,8 @@ async function seedCompany() {
     where: { id: `setting-${company.id}` },
     update: {
       companyId: company.id,
-      companyName: tradeName,
-      whatsappNumber: companyPhone,
+      companyName: config.tradeName,
+      whatsappNumber: config.companyPhone,
       deliveryFee: 5,
       openTime: "00:00",
       closeTime: "23:59",
@@ -216,8 +219,8 @@ async function seedCompany() {
     create: {
       id: `setting-${company.id}`,
       companyId: company.id,
-      companyName: tradeName,
-      whatsappNumber: companyPhone,
+      companyName: config.tradeName,
+      whatsappNumber: config.companyPhone,
       deliveryFee: 5,
       openTime: "00:00",
       closeTime: "23:59",
@@ -229,6 +232,7 @@ async function seedCompany() {
   });
 }
 
+
 async function main() {
   const environment = (process.env.APP_ENV ?? process.env.NODE_ENV ?? "").toLowerCase();
   if (environment === "production" && process.env.ALLOW_PRODUCTION_SEED !== "true") {
@@ -237,7 +241,35 @@ async function main() {
     );
   }
 
-  await seedCompany();
+  const companyPhone = process.env.WHATSAPP_NUMBER ?? "5575999999999";
+  const adminEmail = (process.env.SEED_ADMIN_EMAIL ?? "yasmimlanches@gmail.com").trim().toLowerCase();
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "123456";
+
+  await seedTenantCompany({
+    companyId: DEFAULT_COMPANY_ID,
+    companyName: process.env.SEED_COMPANY_NAME ?? "Yasmim Lanches",
+    tradeName: process.env.SEED_COMPANY_TRADE_NAME ?? "Yasmim Lanches",
+    subdomain: process.env.SEED_COMPANY_SUBDOMAIN ?? "yasmimlanches",
+    companyEmail: process.env.SEED_COMPANY_EMAIL ?? "contato@yasmimlanches.com.br",
+    companyPhone,
+    adminEmail,
+    adminPassword,
+    createMasterUser: true
+  });
+
+  if (environment !== "production") {
+    await seedTenantCompany({
+      companyId: "dev-test-company",
+      companyName: process.env.SEED_TEST_COMPANY_NAME ?? "Teste HubRegional",
+      tradeName: process.env.SEED_TEST_COMPANY_TRADE_NAME ?? "Teste",
+      subdomain: process.env.SEED_TEST_COMPANY_SUBDOMAIN ?? "teste",
+      companyEmail: process.env.SEED_TEST_COMPANY_EMAIL ?? "contato@teste.hubregional.com.br",
+      companyPhone: process.env.SEED_TEST_COMPANY_PHONE ?? companyPhone,
+      adminEmail: (process.env.SEED_TEST_ADMIN_EMAIL ?? adminEmail).trim().toLowerCase(),
+      adminPassword: process.env.SEED_TEST_ADMIN_PASSWORD ?? adminPassword,
+      createMasterUser: false
+    });
+  }
 }
 
 main()
