@@ -1,4 +1,5 @@
 import http from "node:http";
+import { execFileSync } from "node:child_process";
 import next from "next";
 import { app as apiApp } from "./apps/api/dist/src/app.js";
 import { attachRealtimeServer } from "./apps/api/dist/src/services/realtime.js";
@@ -16,6 +17,21 @@ const rootDomain = (process.env.ROOT_DOMAIN ?? "hubregional.com.br")
   .toLowerCase()
   .replace(/^\.+|\.+$/g, "");
 const tenantCache = new Map();
+const shouldBootstrapDevDatabase = (process.env.APP_ENV ?? process.env.NODE_ENV ?? "").toLowerCase() !== "production";
+
+function runPackageScript(script) {
+  const npmExecutable = process.platform === "win32" ? "npm.cmd" : "npm";
+  execFileSync(npmExecutable, ["run", script, "-w", "@delivery/api"], {
+    stdio: "inherit",
+    env: process.env
+  });
+}
+
+if (shouldBootstrapDevDatabase) {
+  console.log("DEV detected: applying migrations and seed before starting the server.");
+  runPackageScript("migrate:multiempresa:test");
+  runPackageScript("prisma:seed");
+}
 
 function requestHost(req) {
   return String(req.headers["x-forwarded-host"] ?? req.headers.host ?? "")

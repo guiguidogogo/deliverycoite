@@ -1,5 +1,4 @@
 import { execFileSync } from "node:child_process";
-import path from "node:path";
 
 const environment = (process.env.APP_ENV ?? process.env.NODE_ENV ?? "").toLowerCase();
 const databaseUrl = process.env.DATABASE_URL ?? "";
@@ -21,13 +20,9 @@ if (/(prod|production)/.test(normalizedUrl)) {
 }
 
 const prismaExecutable = process.platform === "win32" ? "prisma.cmd" : "prisma";
-const migrationFile = path.resolve(
-  process.cwd(),
-  "prisma/migrations/20260619160000_multiempresa_postgresql/migration.sql"
-);
 
 execFileSync(
   prismaExecutable,
-  ["db", "execute", "--schema", "prisma/schema.prisma", "--file", migrationFile],
+  ["migrate", "deploy", "--schema", "prisma/schema.prisma"],
   { stdio: "inherit", env: process.env }
 );
