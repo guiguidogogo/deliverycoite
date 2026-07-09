@@ -68,6 +68,9 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path?: s
   if (subdomain && !headers.has("x-company-subdomain")) {
     headers.set("x-company-subdomain", subdomain);
   }
+  if (subdomain && !targetUrl.searchParams.has("subdomain")) {
+    targetUrl.searchParams.set("subdomain", subdomain);
+  }
 
   const method = request.method.toUpperCase();
   const body = method === "GET" || method === "HEAD" ? undefined : await request.arrayBuffer();
