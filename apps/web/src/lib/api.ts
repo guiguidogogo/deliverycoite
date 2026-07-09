@@ -11,6 +11,19 @@ function normalizeHost(value?: string | null) {
     .replace(/\.$/, "");
 }
 
+function getCurrentHostSubdomain() {
+  if (typeof window === "undefined") return "";
+
+  const host = normalizeHost(window.location.hostname);
+  const rootDomain = getBrowserRootDomain();
+  if (host.endsWith(`.${rootDomain}`) && host !== rootDomain && host !== `www.${rootDomain}` && host !== `admin.${rootDomain}`) {
+    return normalizeSubdomain(host.slice(0, -(rootDomain.length + 1)));
+  }
+
+  const fromQuery = normalizeSubdomain(new URLSearchParams(window.location.search).get("subdomain"));
+  return fromQuery;
+}
+
 export function getBrowserRootDomain() {
   if (CONFIGURED_ROOT_DOMAIN) return CONFIGURED_ROOT_DOMAIN;
   if (typeof window === "undefined") return "hubregional.com.br";
@@ -38,28 +51,24 @@ export function normalizeSubdomain(value?: string | null) {
 export function getBrowserSubdomain() {
   if (typeof window === "undefined") return "";
 
-  const host = getBrowserHost();
-  const rootDomain = getBrowserRootDomain();
-  if (host.endsWith(`.${rootDomain}`) && host !== `www.${rootDomain}` && host !== `admin.${rootDomain}`) {
-    const subdomain = normalizeSubdomain(host.slice(0, -(rootDomain.length + 1)));
-    if (subdomain) {
-      localStorage.setItem("delivery:subdomain", subdomain);
-      return subdomain;
-    }
-  }
-
-  const fromQuery = normalizeSubdomain(new URLSearchParams(window.location.search).get("subdomain"));
-  if (fromQuery) {
-    localStorage.setItem("delivery:subdomain", fromQuery);
-    return fromQuery;
+  const currentHostSubdomain = getCurrentHostSubdomain();
+  if (currentHostSubdomain) {
+    localStorage.setItem("delivery:subdomain", currentHostSubdomain);
+    return currentHostSubdomain;
   }
 
   return normalizeSubdomain(localStorage.getItem("delivery:subdomain"));
 }
 
-function buildHeaders(headers?: HeadersInit, options?: { json?: boolean; subdomain?: string | null; skipSubdomain?: boolean }) {
+function buildHeaders(
+  headers?: HeadersInit,
+  options?: { json?: boolean; subdomain?: string | null; skipSubdomain?: boolean; preferCurrentHostSubdomain?: boolean }
+) {
   const nextHeaders = new Headers(headers);
-  const subdomain = options?.skipSubdomain ? "" : normalizeSubdomain(options?.subdomain) || getBrowserSubdomain();
+  const subdomain = options?.skipSubdomain
+    ? ""
+    : normalizeSubdomain(options?.subdomain)
+      || (options?.preferCurrentHostSubdomain ? getCurrentHostSubdomain() : getBrowserSubdomain());
 
   if (options?.json !== false && !nextHeaders.has("Content-Type")) {
     nextHeaders.set("Content-Type", "application/json");
@@ -77,7 +86,8 @@ export async function apiFetch(path: string, init?: RequestInit, options?: { jso
     ...init,
     headers: buildHeaders(init?.headers, {
       ...options,
-      skipSubdomain: options?.skipSubdomain || isAdminRequest
+      skipSubdomain: options?.skipSubdomain,
+      preferCurrentHostSubdomain: isAdminRequest
     }),
     cache: init?.cache ?? "no-store"
   });
