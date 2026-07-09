@@ -1,3 +1,5 @@
+import { env } from "../utils/env.js";
+
 const MP_API = "https://api.mercadopago.com";
 
 export type MercadoPagoPreferenceResponse = {
@@ -157,7 +159,7 @@ export async function createMercadoPagoPixPayment(params: {
         order_number: params.orderNumber
       },
       payer: {
-        email: params.payer.email || `cliente-${params.orderId}@hubregional.com.br`,
+        email: params.payer.email || `cliente-${params.orderId}@${env.rootDomain}`,
         first_name: params.payer.name,
         phone: params.payer.phone ? { number: params.payer.phone.replace(/\D/g, "") } : undefined
       }

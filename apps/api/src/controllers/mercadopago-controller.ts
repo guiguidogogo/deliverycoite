@@ -14,6 +14,7 @@ import { printOrder } from "../services/thermal-printer.js";
 import { buildWhatsappMessage, dispatchWhatsappMessage } from "../services/whatsapp.js";
 import { prisma } from "../utils/prisma.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
+import { env } from "../utils/env.js";
 import { formatOrderCode } from "../utils/order-code.js";
 import { audit } from "../utils/audit.js";
 
@@ -29,7 +30,7 @@ function appendQuery(url: string, params: Record<string, string>) {
 }
 
 function storeBaseUrl(req: Request, subdomain: string) {
-  const rootDomain = process.env.ROOT_DOMAIN || "hubregional.com.br";
+  const rootDomain = env.rootDomain;
   const proto = req.get("x-forwarded-proto")?.split(",")[0] || req.protocol || "https";
   const host = req.get("host") || "";
   if (host.includes("localhost") || host.includes("127.0.0.1") || host.includes("sslip.io")) {

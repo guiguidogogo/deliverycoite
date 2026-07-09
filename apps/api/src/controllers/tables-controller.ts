@@ -4,6 +4,7 @@ import { FulfillmentType, OrderSource, PaymentMethod, Prisma, TableSessionStatus
 import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
+import { env } from "../utils/env.js";
 import { recordCashPayments } from "../utils/cash-register.js";
 import { validateAndDecrementStock } from "../utils/stock.js";
 import { audit } from "../utils/audit.js";
@@ -98,14 +99,14 @@ const tableMoveSchema = z.object({
 });
 
 function publicTableUrl(req: Request, table: { number: number }, explicitSubdomain?: string | null) {
-  const rootDomain = process.env.ROOT_DOMAIN ?? "hubregional.com.br";
+  const rootDomain = env.rootDomain;
   const subdomain = explicitSubdomain || req.tenant?.subdomain;
   if (subdomain) return `https://${subdomain}.${rootDomain}/mesa/${table.number}`;
   return `https://${rootDomain}/mesa/${table.number}?subdomain=${encodeURIComponent(req.tenant?.subdomain ?? "")}`;
 }
 
 function publicTableSessionUrl(req: Request, token: string, explicitSubdomain?: string | null) {
-  const rootDomain = process.env.ROOT_DOMAIN ?? "hubregional.com.br";
+  const rootDomain = env.rootDomain;
   const subdomain = explicitSubdomain || req.tenant?.subdomain;
   if (subdomain) return `https://${subdomain}.${rootDomain}/mesa/sessao/${token}`;
   return `https://${rootDomain}/mesa/sessao/${token}?subdomain=${encodeURIComponent(req.tenant?.subdomain ?? "")}`;
