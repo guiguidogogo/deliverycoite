@@ -112,8 +112,12 @@ async function authApi<T>(path: string, token: string, init?: RequestInit): Prom
     throw new Error("Servidor indisponivel. Verifique se a API esta ligada.");
   }
 
+  const contentType = res.headers.get("content-type") ?? "";
+
   if (!res.ok) {
-    const payload = await res.json().catch(() => ({}));
+    const payload = contentType.includes("application/json")
+      ? await res.json().catch(() => ({}))
+      : {};
     const message = payload.message ?? "Erro na API";
 
     if (res.status === 401) {
@@ -127,6 +131,10 @@ async function authApi<T>(path: string, token: string, init?: RequestInit): Prom
   }
   if (res.status === 204) {
     return undefined as T;
+  }
+  if (!contentType.includes("application/json")) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text.trim() || "Resposta invalida da API");
   }
   return res.json();
 }

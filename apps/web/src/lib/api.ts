@@ -105,9 +105,18 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error("Servidor indisponivel. Aguarde alguns segundos e tente novamente.");
   }
 
+  const contentType = res.headers.get("content-type") ?? "";
+
   if (!res.ok) {
-    const payload = await res.json().catch(() => ({}));
+    const payload = contentType.includes("application/json")
+      ? await res.json().catch(() => ({}))
+      : {};
     throw new Error(payload.message ?? "Erro na requisicao");
+  }
+
+  if (!contentType.includes("application/json")) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text.trim() || "Resposta invalida da API");
   }
 
   return res.json();
