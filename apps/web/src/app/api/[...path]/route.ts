@@ -54,14 +54,29 @@ function subdomainFromRequest(request: NextRequest) {
   return normalizeSubdomain(host.slice(0, -(rootDomain.length + 1)));
 }
 
+const hopByHopRequestHeaders = [
+  "connection",
+  "content-length",
+  "expect",
+  "host",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade"
+];
+
 async function proxy(request: NextRequest, context: { params: Promise<{ path?: string[] }> }) {
   const { path = [] } = await context.params;
   const targetUrl = new URL(`${apiServerUrl}/api/${path.map(encodeURIComponent).join("/")}`);
   request.nextUrl.searchParams.forEach((value, key) => targetUrl.searchParams.append(key, value));
 
   const headers = new Headers(request.headers);
-  headers.delete("host");
-  headers.delete("content-length");
+  for (const header of hopByHopRequestHeaders) {
+    headers.delete(header);
+  }
   headers.set("x-forwarded-host", normalizeHost(request.headers.get("x-forwarded-host") ?? request.headers.get("host")));
 
   const subdomain = subdomainFromRequest(request);

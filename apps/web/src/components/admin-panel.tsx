@@ -96,6 +96,16 @@ function orderSourceTone(order: Order) {
   return order.fulfillmentType === "PICKUP" ? "text-violet-600" : "text-blue-600";
 }
 
+class AdminApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "AdminApiError";
+    this.status = status;
+  }
+}
+
 async function authApi<T>(path: string, token: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
@@ -127,7 +137,7 @@ async function authApi<T>(path: string, token: string, init?: RequestInit): Prom
       }
     }
 
-    throw new Error(message);
+    throw new AdminApiError(message, res.status);
   }
   if (res.status === 204) {
     return undefined as T;
@@ -319,7 +329,7 @@ export function AdminPanel() {
       initializedOrdersRef.current = true;
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
-      if (/401|403|token|expir/i.test(message)) {
+      if (error instanceof AdminApiError && error.status === 401) {
         localStorage.removeItem("delivery:token");
         router.replace("/admin/login");
         return;
