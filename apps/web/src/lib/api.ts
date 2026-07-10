@@ -119,7 +119,9 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(text.trim() || "Resposta invalida da API");
   }
 
-  return res.json();
+  return res.json().catch(() => {
+    throw new Error("Resposta invalida da API");
+  });
 }
 
 export function resolveAssetUrl(value?: string | null) {

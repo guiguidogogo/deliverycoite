@@ -35,7 +35,9 @@ export async function adminApi<T>(path: string, init?: RequestInit): Promise<T> 
     const text = await response.text().catch(() => "");
     throw new Error(text.trim() || "Resposta invalida da API");
   }
-  return response.json();
+  return response.json().catch(() => {
+    throw new Error("Resposta invalida da API");
+  });
 }
 
 export async function requireMaster() {

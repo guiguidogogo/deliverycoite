@@ -146,7 +146,9 @@ async function authApi<T>(path: string, token: string, init?: RequestInit): Prom
     const text = await res.text().catch(() => "");
     throw new Error(text.trim() || "Resposta invalida da API");
   }
-  return res.json();
+  return res.json().catch(() => {
+    throw new Error("Resposta invalida da API");
+  });
 }
 
 function beep(audio: AudioContext) {
@@ -395,16 +397,15 @@ export function AdminPanel() {
 
   useEffect(() => {
     if (!token) return;
+    if (!API_URL.startsWith("http://") && !API_URL.startsWith("https://")) {
+      setConnected(true);
+      return;
+    }
 
     const wsUrl = (() => {
-      if (API_URL.startsWith("http://") || API_URL.startsWith("https://")) {
-        const apiBase = new URL(API_URL);
-        const wsProtocol = apiBase.protocol === "https:" ? "wss:" : "ws:";
-        return `${wsProtocol}//${apiBase.host}/ws-admin?token=${token}`;
-      }
-
-      const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      return `${wsProtocol}//${window.location.host}/ws-admin?token=${token}`;
+      const apiBase = new URL(API_URL);
+      const wsProtocol = apiBase.protocol === "https:" ? "wss:" : "ws:";
+      return `${wsProtocol}//${apiBase.host}/ws-admin?token=${token}`;
     })();
 
     let socket: WebSocket | null = null;
@@ -416,7 +417,15 @@ export function AdminPanel() {
       socket = new WebSocket(wsUrl);
       socket.onopen = () => setConnected(true);
       socket.onmessage = (event) => {
-        const payload = JSON.parse(event.data);
+        if (typeof event.data !== "string") return;
+        const text = event.data.trim();
+        if (!text.startsWith("{") && !text.startsWith("[")) return;
+        let payload: any;
+        try {
+          payload = JSON.parse(text);
+        } catch {
+          return;
+        }
         if (payload.type === "new-order") {
           void refreshPanel(true);
           if (payload.payload?.orderId) void autoPrintOrder(payload.payload.orderId);
