@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { API_URL, apiFetch } from "../../../../lib/api";
+import { apiFetch, readApiJson } from "../../../../lib/api";
 
 type Customer = {
   id: string;
@@ -39,7 +39,7 @@ export default function CustomersManagePage() {
       return;
     }
 
-    setCustomers(await res.json());
+    setCustomers(await readApiJson<Customer[]>(res));
   }
 
   useEffect(() => {
@@ -66,7 +66,7 @@ export default function CustomersManagePage() {
     });
 
     if (!res.ok) {
-      const payload = await res.json().catch(() => ({}));
+      const payload = await readApiJson<any>(res).catch(() => ({}));
       toast.error(payload.message ?? "Falha ao atualizar cliente");
       return;
     }
@@ -92,7 +92,7 @@ export default function CustomersManagePage() {
     });
 
     if (!res.ok) {
-      const payload = await res.json().catch(() => ({}));
+      const payload = await readApiJson<any>(res).catch(() => ({}));
       toast.error(payload.message ?? "Falha ao apagar cliente");
       return;
     }

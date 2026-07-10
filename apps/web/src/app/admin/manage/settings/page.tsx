@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { API_URL, apiFetch } from "../../../../lib/api";
+import { API_URL, apiFetch, readApiJson } from "../../../../lib/api";
 import { LocationPicker } from "../../../../components/location-picker";
 import { printTestReceipt, testReceiptHtml } from "../../../../lib/browser-print";
 import { findLocalPrinters, printAgentInstallUrl, printHtmlWithAgent } from "../../../../lib/qz-print";
@@ -56,7 +56,7 @@ export default function SettingsManagePage() {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store"
     })
-      .then((res) => res.json())
+      .then((res) => readApiJson<any>(res))
       .then((data) => {
         setForm({
           companyName: data.companyName ?? "",
@@ -98,7 +98,7 @@ export default function SettingsManagePage() {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store"
     })
-      .then((res) => res.ok ? res.json() : null)
+      .then((res) => res.ok ? readApiJson<any>(res) : null)
       .then((data) => {
         if (data) {
           setPrinterAgent({
@@ -131,7 +131,7 @@ export default function SettingsManagePage() {
     });
 
     if (!res.ok) {
-      const payload = await res.json().catch(() => ({}));
+      const payload = await readApiJson<any>(res).catch(() => ({}));
       const firstIssue = Array.isArray(payload.issues) ? payload.issues[0] : null;
       const field = Array.isArray(firstIssue?.path) ? firstIssue.path.join(".") : "";
       toast.error(firstIssue?.message ? `${field ? `${field}: ` : ""}${firstIssue.message}` : payload.message ?? "Falha ao salvar configuracoes");
@@ -183,7 +183,7 @@ export default function SettingsManagePage() {
       headers: { Authorization: `Bearer ${token}` }
     });
 
-    const payload = await res.json().catch(() => ({}));
+    const payload = await readApiJson<any>(res).catch(() => ({}));
     if (!res.ok || !payload.ok) {
       toast.error(payload.message ?? "Teste Menuia falhou");
       return;
@@ -236,7 +236,7 @@ export default function SettingsManagePage() {
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ enabled })
     });
-    const payload = await res.json().catch(() => ({}));
+    const payload = await readApiJson<any>(res).catch(() => ({}));
     if (!res.ok) {
       toast.error(payload.message ?? "Falha ao atualizar agente de impressao");
       return;
@@ -257,7 +257,7 @@ export default function SettingsManagePage() {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` }
     });
-    const payload = await res.json().catch(() => ({}));
+    const payload = await readApiJson<any>(res).catch(() => ({}));
     if (!res.ok) {
       toast.error(payload.message ?? "Falha ao gerar token");
       return;

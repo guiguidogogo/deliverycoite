@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { apiFetch, resolveAssetUrl } from "../../../../lib/api";
+import { apiFetch, readApiJson, resolveAssetUrl } from "../../../../lib/api";
 
 type Complement = {
   id: string;
@@ -30,7 +30,7 @@ const emptyForm = {
 };
 
 async function responseJson(res: Response) {
-  const payload = await res.json().catch(() => ({}));
+  const payload = await readApiJson<any>(res).catch(() => ({}));
   if (!res.ok) {
     const issue = Array.isArray(payload.issues) ? payload.issues[0] : null;
     throw new Error(issue?.message ?? payload.message ?? "Erro na requisicao");

@@ -93,6 +93,27 @@ export async function apiFetch(path: string, init?: RequestInit, options?: { jso
   });
 }
 
+export async function readApiJson<T = unknown>(
+  response: Response,
+  fallbackMessage = "Resposta invalida da API"
+): Promise<T> {
+  if (response.status === 204) return undefined as T;
+
+  const contentType = response.headers.get("content-type") ?? "";
+  const text = await response.text().catch(() => "");
+
+  if (!contentType.includes("application/json")) {
+    const cleanText = text.trim();
+    throw new Error(cleanText && cleanText.length < 180 ? cleanText : fallbackMessage);
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(fallbackMessage);
+  }
+}
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
@@ -108,20 +129,13 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const contentType = res.headers.get("content-type") ?? "";
 
   if (!res.ok) {
-    const payload = contentType.includes("application/json")
-      ? await res.json().catch(() => ({}))
+    const payload: { message?: string } = contentType.includes("application/json")
+      ? await readApiJson<{ message?: string }>(res).catch(() => ({}))
       : {};
     throw new Error(payload.message ?? "Erro na requisicao");
   }
 
-  if (!contentType.includes("application/json")) {
-    const text = await res.text().catch(() => "");
-    throw new Error(text.trim() || "Resposta invalida da API");
-  }
-
-  return res.json().catch(() => {
-    throw new Error("Resposta invalida da API");
-  });
+  return readApiJson<T>(res);
 }
 
 export function resolveAssetUrl(value?: string | null) {

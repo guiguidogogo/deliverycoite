@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { apiFetch } from "../../../../lib/api";
+import { apiFetch, readApiJson } from "../../../../lib/api";
 import { printHtmlWithAgent } from "../../../../lib/qz-print";
 
 type TableStatus = "FREE" | "OCCUPIED" | "WAITING_PAYMENT" | "RESERVED" | "CLEANING";
@@ -508,7 +508,7 @@ export default function PdvPage() {
         ...(init?.headers ?? {})
       }
     });
-    const payload = response.status === 204 ? null : await response.json().catch(() => ({}));
+    const payload = response.status === 204 ? null : await readApiJson<any>(response).catch(() => ({}));
     if (!response.ok) throw new Error(payload?.message ?? "Falha na requisicao");
     return payload;
   }

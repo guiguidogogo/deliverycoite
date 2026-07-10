@@ -1,4 +1,4 @@
-import { apiFetch } from "./api";
+import { apiFetch, readApiJson } from "./api";
 
 export type AdminUser = {
   id: string;
@@ -25,19 +25,13 @@ export async function adminApi<T>(path: string, init?: RequestInit): Promise<T> 
   }, { skipSubdomain: true });
   const contentType = response.headers.get("content-type") ?? "";
   if (!response.ok) {
-    const payload = contentType.includes("application/json")
-      ? await response.json().catch(() => ({}))
+    const payload: { message?: string } = contentType.includes("application/json")
+      ? await readApiJson<{ message?: string }>(response).catch(() => ({}))
       : {};
     throw new Error(payload.message ?? "Erro na requisicao");
   }
   if (response.status === 204) return undefined as T;
-  if (!contentType.includes("application/json")) {
-    const text = await response.text().catch(() => "");
-    throw new Error(text.trim() || "Resposta invalida da API");
-  }
-  return response.json().catch(() => {
-    throw new Error("Resposta invalida da API");
-  });
+  return readApiJson<T>(response);
 }
 
 export async function requireMaster() {

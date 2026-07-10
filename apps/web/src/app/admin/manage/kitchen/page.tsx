@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { apiFetch } from "../../../../lib/api";
+import { apiFetch, readApiJson } from "../../../../lib/api";
 
 type OrderStatus = "RECEIVED" | "PREPARING" | "OUT_FOR_DELIVERY" | "DELIVERED" | "FINISHED" | "CANCELED";
 type OrderSource = "DELIVERY" | "TABLE" | "COUNTER" | "WAITER";
@@ -158,11 +158,11 @@ export default function KitchenPage() {
         localStorage.removeItem("delivery:token");
         router.replace("/admin/login");
       }
-      const payload = await response.json().catch(() => ({}));
+      const payload = await readApiJson<any>(response).catch(() => ({}));
       throw new Error(payload.message ?? "Falha na API");
     }
     if (response.status === 204) return undefined as T;
-    return response.json();
+    return readApiJson<T>(response);
   }, [router, token]);
 
   function playSound() {

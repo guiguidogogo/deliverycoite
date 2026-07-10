@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { API_URL, apiFetch } from "../lib/api";
+import { API_URL, apiFetch, readApiJson } from "../lib/api";
 import { orderReceiptHtml, printOrderInBrowser, type ReceiptOrder } from "../lib/browser-print";
 import { printHtmlWithAgent } from "../lib/qz-print";
 
@@ -125,8 +125,8 @@ async function authApi<T>(path: string, token: string, init?: RequestInit): Prom
   const contentType = res.headers.get("content-type") ?? "";
 
   if (!res.ok) {
-    const payload = contentType.includes("application/json")
-      ? await res.json().catch(() => ({}))
+    const payload: { message?: string } = contentType.includes("application/json")
+      ? await readApiJson<{ message?: string }>(res).catch(() => ({}))
       : {};
     const message = payload.message ?? "Erro na API";
 
@@ -142,13 +142,7 @@ async function authApi<T>(path: string, token: string, init?: RequestInit): Prom
   if (res.status === 204) {
     return undefined as T;
   }
-  if (!contentType.includes("application/json")) {
-    const text = await res.text().catch(() => "");
-    throw new Error(text.trim() || "Resposta invalida da API");
-  }
-  return res.json().catch(() => {
-    throw new Error("Resposta invalida da API");
-  });
+  return readApiJson<T>(res);
 }
 
 function beep(audio: AudioContext) {
@@ -247,7 +241,7 @@ export function AdminPanel() {
           headers: { Authorization: `Bearer ${storedToken}` },
           cache: "no-store"
         })
-          .then((response) => response.json())
+          .then((response) => readApiJson<any>(response))
           .then((settings) => {
             setOrdersPaused(Boolean(settings.ordersPaused));
             setPrintSettings({

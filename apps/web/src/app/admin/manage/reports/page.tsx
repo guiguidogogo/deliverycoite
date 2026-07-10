@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { API_URL, apiFetch } from "../../../../lib/api";
+import { API_URL, apiFetch, readApiJson } from "../../../../lib/api";
 
 type Order = {
   id: string;
@@ -42,7 +42,7 @@ export default function ReportsManagePage() {
       toast.error("Nao foi possivel carregar os relatorios");
       return;
     }
-    setOrders(await res.json());
+    setOrders(await readApiJson<Order[]>(res));
   }
 
   useEffect(() => {

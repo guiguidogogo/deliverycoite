@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { API_URL, apiFetch } from "../../../../lib/api";
+import { API_URL, apiFetch, readApiJson } from "../../../../lib/api";
 
 const permissionOptions = [
   ["ORDERS", "Pedidos"],
@@ -53,7 +53,7 @@ export default function UsersManagePage() {
         ...(init?.headers ?? {})
       }
     });
-    const payload = response.status === 204 ? null : await response.json().catch(() => ({}));
+    const payload = response.status === 204 ? null : await readApiJson<any>(response).catch(() => ({}));
     if (!response.ok) throw new Error(payload?.message ?? "Falha na requisicao");
     return payload;
   }

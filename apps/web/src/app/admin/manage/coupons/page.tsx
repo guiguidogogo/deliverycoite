@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { apiFetch, resolveAssetUrl } from "../../../../lib/api";
+import { apiFetch, readApiJson, resolveAssetUrl } from "../../../../lib/api";
 
 type Coupon = {
   id: string;
@@ -52,13 +52,13 @@ export default function CouponsManagePage() {
       return;
     }
 
-    setCoupons(await res.json());
+    setCoupons(await readApiJson<Coupon[]>(res));
   }
 
   useEffect(() => {
     void load();
     void apiFetch(`/settings`)
-      .then((response) => response.json())
+      .then((response) => readApiJson<any>(response))
       .then((settings) =>
         setBanner({
           imageUrl: settings.promoBannerImageUrl ?? "",
@@ -82,7 +82,7 @@ export default function CouponsManagePage() {
           headers: { Authorization: `Bearer ${token}` },
           body: data
         }, { json: false });
-        const uploadPayload = await upload.json().catch(() => ({}));
+        const uploadPayload = await readApiJson<any>(upload).catch(() => ({}));
         if (!upload.ok) {
           throw new Error(uploadPayload.message ?? "Falha ao enviar imagem");
         }
@@ -101,7 +101,7 @@ export default function CouponsManagePage() {
           promoBannerText: banner.text.trim()
         })
       });
-      const payload = await response.json().catch(() => ({}));
+      const payload = await readApiJson<any>(response).catch(() => ({}));
       if (!response.ok) {
         throw new Error(payload.message ?? "Falha ao salvar banner");
       }
@@ -138,7 +138,7 @@ export default function CouponsManagePage() {
     });
 
     if (!res.ok) {
-      const payload = await res.json().catch(() => ({}));
+      const payload = await readApiJson<any>(res).catch(() => ({}));
       toast.error(payload.message ?? "Falha ao criar cupom");
       return;
     }

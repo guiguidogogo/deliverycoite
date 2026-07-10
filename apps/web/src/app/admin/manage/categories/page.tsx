@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { API_URL, apiFetch } from "../../../../lib/api";
+import { apiFetch, readApiJson } from "../../../../lib/api";
 
 type Category = { id: string; name: string; description?: string; active: boolean };
 
@@ -37,7 +37,7 @@ export default function CategoriesManagePage() {
       return;
     }
 
-    setItems(await res.json());
+    setItems(await readApiJson<Category[]>(res));
   }
 
   useEffect(() => {
@@ -63,7 +63,7 @@ export default function CategoriesManagePage() {
         window.location.href = "/admin/login";
         return;
       }
-      const payload = await res.json().catch(() => ({}));
+      const payload = await readApiJson<any>(res).catch(() => ({}));
       toast.error(payload.message ?? "Falha ao criar categoria");
       return;
     }
@@ -98,7 +98,7 @@ export default function CategoriesManagePage() {
         window.location.href = "/admin/login";
         return;
       }
-      const payload = await res.json().catch(() => ({}));
+      const payload = await readApiJson<any>(res).catch(() => ({}));
       toast.error(payload.message ?? "Falha ao atualizar categoria");
       return;
     }
@@ -129,7 +129,7 @@ export default function CategoriesManagePage() {
         window.location.href = "/admin/login";
         return;
       }
-      const payload = await res.json().catch(() => ({}));
+      const payload = await readApiJson<any>(res).catch(() => ({}));
       toast.error(payload.message ?? "Falha ao excluir categoria");
       return;
     }

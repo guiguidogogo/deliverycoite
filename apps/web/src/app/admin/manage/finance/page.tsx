@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { API_URL, apiFetch } from "../../../../lib/api";
+import { API_URL, apiFetch, readApiJson } from "../../../../lib/api";
 
 type Tab = "dashboard" | "cash" | "tables" | "payables" | "receivables" | "history" | "audit";
 type Summary = {
@@ -87,10 +87,10 @@ export default function FinanceManagePage() {
       cache: "no-store"
     });
     if (!response.ok) {
-      const payload = await response.json().catch(() => ({}));
+      const payload = await readApiJson<any>(response).catch(() => ({}));
       throw new Error(payload.message ?? "Falha na operação");
     }
-    return response.status === 204 ? undefined as T : response.json();
+    return readApiJson<T>(response);
   }
 
   async function load() {
