@@ -30,7 +30,8 @@ function looksLikeCoolifyGeneratedHost(value: string) {
 
 function getStoredSubdomain() {
   if (typeof window === "undefined") return "";
-  return normalizeSubdomain(localStorage.getItem("delivery:subdomain"));
+  const storedSubdomain = normalizeSubdomain(localStorage.getItem("delivery:subdomain"));
+  return looksLikeCoolifyGeneratedHost(storedSubdomain) ? "" : storedSubdomain;
 }
 
 export function getBrowserRootDomain() {
