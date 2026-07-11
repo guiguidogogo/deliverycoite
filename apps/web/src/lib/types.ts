@@ -47,6 +47,8 @@ export type Settings = {
   deliveryFee: number;
   ordersPaused?: boolean;
   ordersPausedReason?: string | null;
+  timezone?: string | null;
+  closedOrderPolicy?: "BLOCK_WHEN_CLOSED" | "ALLOW_WHEN_CLOSED" | "SCHEDULE_ONLY_WHEN_CLOSED";
   storeLatitude?: number | null;
   storeLongitude?: number | null;
   deliveryFeeTiers?: Array<{
@@ -59,6 +61,27 @@ export type Settings = {
   mercadoPagoEnabled?: boolean;
   mercadoPagoPublicKey?: string | null;
   darkModeEnabled: boolean;
+};
+
+export type OpenStatus = {
+  isOpen: boolean;
+  status:
+    | "open"
+    | "closed_today"
+    | "closed_between_periods"
+    | "closed_before_opening"
+    | "closed_after_hours"
+    | "no_schedule_configured"
+    | "orders_paused"
+    | "company_inactive";
+  message: string;
+  nextOpening: string | null;
+  closesAt: string | null;
+  currentPeriod: {
+    openingTime: string;
+    closingTime: string;
+  } | null;
+  timezone: string;
 };
 
 export type PublicCompany = {
@@ -79,6 +102,7 @@ export type PublicCompany = {
   deliveryFee: number;
   deliveryTimeMin: number;
   rating: number;
+  openStatus?: OpenStatus;
 };
 
 export type CartItem = {

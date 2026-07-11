@@ -14,6 +14,7 @@
     "prisma:migrate": "prisma migrate dev",
     "migrate:multiempresa:test": "tsx scripts/run-multiempresa-test-migration.ts",
     "prisma:seed": "tsx prisma/seed.ts",
+    "test:business-hours": "tsx src/services/business-hours.test.ts",
     "lint": "eslint ."
   },
   "prisma": {

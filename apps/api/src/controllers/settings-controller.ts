@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { Prisma } from "@prisma/client";
+import { ClosedOrderPolicy, Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { getCompanyId } from "../utils/tenant.js";
@@ -35,6 +35,8 @@ const settingsSchema = z.object({
   })).max(20).optional(),
   openTime: optionalText,
   closeTime: optionalText,
+  timezone: optionalText,
+  closedOrderPolicy: z.nativeEnum(ClosedOrderPolicy).optional(),
   autoMessage: optionalText,
   pixKey: optionalText,
   pixQrCodeUrl: optionalText,
@@ -79,6 +81,8 @@ async function ensureDefaultSettings(req: Request) {
       deliveryFee: new Prisma.Decimal(5),
       openTime: "00:00",
       closeTime: "23:59",
+      timezone: "America/Bahia",
+      closedOrderPolicy: ClosedOrderPolicy.BLOCK_WHEN_CLOSED,
       autoMessage: "Obrigado pelo pedido!"
     },
     include: { deliveryFeeTiers: { orderBy: { sortOrder: "asc" } } }

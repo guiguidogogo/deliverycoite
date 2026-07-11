@@ -30,6 +30,12 @@ enum PaymentMethod {
   MERCADO_PAGO
 }
 
+enum ClosedOrderPolicy {
+  BLOCK_WHEN_CLOSED
+  ALLOW_WHEN_CLOSED
+  SCHEDULE_ONLY_WHEN_CLOSED
+}
+
 enum FulfillmentType {
   DELIVERY
   PICKUP
@@ -170,10 +176,37 @@ model Company {
   driverDeviceTokens     DriverDeviceToken[]
   diningAreas            DiningArea[]
   restaurantTables       RestaurantTable[]
+  businessHours          CompanyBusinessHour[]
   printerJobs            PrinterJob[]
   auditLogs              AuditLog[]
   payables               AccountPayable[]
   receivables            AccountReceivable[]
+}
+
+model CompanyBusinessHour {
+  id        String                      @id @default(cuid())
+  companyId String
+  company   Company                     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  dayOfWeek Int
+  isOpen    Boolean                     @default(false)
+  periods   CompanyBusinessHourPeriod[]
+  createdAt DateTime                    @default(now())
+  updatedAt DateTime                    @updatedAt
+
+  @@unique([companyId, dayOfWeek])
+  @@index([companyId])
+}
+
+model CompanyBusinessHourPeriod {
+  id             String              @id @default(cuid())
+  businessHourId String
+  businessHour   CompanyBusinessHour @relation(fields: [businessHourId], references: [id], onDelete: Cascade)
+  openingTime    String
+  closingTime    String
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([businessHourId])
 }
 
 model StaffRole {
@@ -558,6 +591,7 @@ model Order {
   mercadoPagoPaymentId    String?
   mercadoPagoStatus       String?
   mercadoPagoStatusDetail String?
+  scheduledFor        DateTime?
   notes              String?
   whatsappLink       String?
   printerQueuedAt    DateTime?
@@ -833,6 +867,8 @@ model Setting {
   storeLongitude             Float?
   openTime                   String            @default("18:00")
   closeTime                  String            @default("23:59")
+  timezone                   String            @default("America/Bahia")
+  closedOrderPolicy          ClosedOrderPolicy @default(BLOCK_WHEN_CLOSED)
   autoMessage                String            @default("Obrigado pelo pedido!")
   pixKey                     String?
   pixQrCodeUrl               String?

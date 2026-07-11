@@ -10,7 +10,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { api, resolveAssetUrl } from "../lib/api";
 import { money } from "../lib/format";
-import type { CartItem, Category, Product, PublicCompany, SelectedComplement, Settings } from "../lib/types";
+import type { CartItem, Category, OpenStatus, Product, PublicCompany, SelectedComplement, Settings } from "../lib/types";
 import { LocationPicker } from "./location-picker";
 import { findAddressCoordinates, findAddressFromCoordinates } from "../lib/geocoding";
 
@@ -110,6 +110,7 @@ export function Storefront() {
   const [products, setProducts] = useState<Product[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [company, setCompany] = useState<PublicCompany | null>(null);
+  const [openStatus, setOpenStatus] = useState<OpenStatus | null>(null);
   const [tableContext, setTableContext] = useState<{ id: string; number: number; name?: string | null; area?: { name: string } | null } | null>(null);
   const [tableSession, setTableSession] = useState<any>(null);
   const [tableSessionCode, setTableSessionCode] = useState("");
@@ -193,6 +194,7 @@ export function Storefront() {
         const tenantCompany = await api<PublicCompany>("/company");
         if (canceled) return;
         setCompany(tenantCompany);
+        setOpenStatus(tenantCompany.openStatus ?? null);
         if (tableSessionToken) {
           const session = await api<any>(`/table-sessions/${tableSessionToken}`);
           if (canceled) return;
@@ -345,6 +347,10 @@ export function Storefront() {
       .catch(() => {
         setSettings(null);
       });
+
+    api<OpenStatus>("/business-hours/status")
+      .then((status) => setOpenStatus(status))
+      .catch(() => undefined);
 
     const stored = localStorage.getItem("delivery:favorites");
     if (stored) {
@@ -619,7 +625,12 @@ export function Storefront() {
   const selectedCategoryName = selectedCategory === "all"
     ? "Todos os produtos"
     : categories.find((category) => category.id === selectedCategory)?.name ?? "Categoria";
-  const storeOpen = Boolean(company?.isOpen) && !settings?.ordersPaused;
+  const storeOpen = Boolean(openStatus?.isOpen ?? company?.isOpen) && !settings?.ordersPaused;
+  const orderBlockedByHours =
+    !isTableMode
+    && settings?.closedOrderPolicy !== "ALLOW_WHEN_CLOSED"
+    && settings?.closedOrderPolicy !== "SCHEDULE_ONLY_WHEN_CLOSED"
+    && !storeOpen;
   const productModalExtras = configuringProduct
     ? configuringProduct.complements
         .filter((link) => (complementQuantities[link.complementId] ?? 0) > 0)
@@ -907,6 +918,14 @@ export function Storefront() {
         return;
       }
     }
+    if (!isTableMode && settings.closedOrderPolicy === "BLOCK_WHEN_CLOSED" && !storeOpen) {
+      toast.error(openStatus?.message ? `Loja fechada. ${openStatus.message}.` : "Loja fechada no momento.");
+      return;
+    }
+    if (!isTableMode && settings.closedOrderPolicy === "SCHEDULE_ONLY_WHEN_CLOSED" && !storeOpen) {
+      toast.error(openStatus?.message ? `Loja fechada. Agendamento sera liberado para: ${openStatus.message}.` : "Loja fechada no momento.");
+      return;
+    }
     if (tableOrderingBlocked) {
       toast.error(tableSession?.status === "CLOSING_REQUESTED" ? "Conta solicitada. Peca ao garcom para reabrir a conta antes de fazer novos pedidos." : "Atendimento encerrado");
       return;
@@ -1169,6 +1188,11 @@ export function Storefront() {
                   <span className={`rounded-full px-3 py-1 text-xs font-black ${storeOpen ? "bg-emerald-400 text-emerald-950" : "bg-red-400 text-red-950"}`}>
                     {storeOpen ? "Aberto agora" : "Fechado"}
                   </span>
+                  {openStatus?.message && (
+                    <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold">
+                      {openStatus.message}
+                    </span>
+                  )}
                   {company?.category && <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold">{company.category}</span>}
                 </div>
                 <h1 className="font-display text-4xl leading-none tracking-wide md:text-6xl">
@@ -1264,6 +1288,11 @@ export function Storefront() {
         {settings?.ordersPaused && (
           <div className="bg-red-600 p-3 text-center font-semibold text-white">
             {settings.ordersPausedReason || "Loja temporariamente pausada para novos pedidos"}
+          </div>
+        )}
+        {orderBlockedByHours && (
+          <div className="bg-amber-500 p-3 text-center font-semibold text-amber-950">
+            Esta loja esta fechada no momento. {openStatus?.message ?? "Consulte o proximo horario de funcionamento."}
           </div>
         )}
         {tableContext && (
@@ -1886,10 +1915,16 @@ export function Storefront() {
 
             <button
               className="mt-4 w-full rounded-2xl bg-ember px-4 py-4 text-lg font-black text-white shadow-xl shadow-orange-500/25 disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={isSubmitting || settings?.ordersPaused}
+              disabled={isSubmitting || settings?.ordersPaused || orderBlockedByHours}
               onClick={submitCheckout}
             >
-              {settings?.ordersPaused ? "Loja pausada" : isSubmitting ? "Enviando pedido..." : "Confirmar Pedido"}
+              {settings?.ordersPaused
+                ? "Loja pausada"
+                : orderBlockedByHours
+                  ? "Loja fechada"
+                  : isSubmitting
+                    ? "Enviando pedido..."
+                    : "Confirmar Pedido"}
             </button>
           </div>
         </section>

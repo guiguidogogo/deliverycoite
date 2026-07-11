@@ -1,27 +1,7 @@
 import type { Request, Response } from "express";
+import { getCompanyOpenStatus } from "../services/business-hours.js";
 import { prisma } from "../utils/prisma.js";
 import { env } from "../utils/env.js";
-
-function storeIsOpen(companyOpen: boolean, settings?: {
-  ordersPaused: boolean;
-  openTime: string;
-  closeTime: string;
-} | null) {
-  if (!companyOpen || settings?.ordersPaused) return false;
-  if (!settings?.openTime || !settings.closeTime) return companyOpen;
-
-  const formatter = new Intl.DateTimeFormat("pt-BR", {
-    timeZone: "America/Sao_Paulo",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
-  });
-  const now = formatter.format(new Date());
-  const { openTime, closeTime } = settings;
-  return openTime <= closeTime
-    ? now >= openTime && now <= closeTime
-    : now >= openTime || now <= closeTime;
-}
 
 export async function listMarketplaceCompanies(req: Request, res: Response) {
   const search = req.query.search?.toString().trim();
@@ -89,8 +69,9 @@ export async function listMarketplaceCompanies(req: Request, res: Response) {
     ]
   });
 
-  return res.json(companies.map((company) => {
+  const items = await Promise.all(companies.map(async (company) => {
     const settings = company.settings[0] ?? null;
+    const openStatus = await getCompanyOpenStatus(company.id);
     return {
       id: company.id,
       name: company.tradeName,
@@ -100,7 +81,8 @@ export async function listMarketplaceCompanies(req: Request, res: Response) {
       secondaryColor: company.secondaryColor,
       category: company.category,
       city: company.city,
-      isOpen: storeIsOpen(company.isOpen, settings),
+      isOpen: openStatus.isOpen,
+      openStatus,
       deliveryFee: Number(company.deliveryFee),
       deliveryTime: company.deliveryTimeMin,
       rating: Number(company.rating),
@@ -116,6 +98,8 @@ export async function listMarketplaceCompanies(req: Request, res: Response) {
       publicUrl: `https://${company.subdomain}.${env.rootDomain}`
     };
   }));
+
+  return res.json(items);
 }
 
 export async function marketplaceSummary(_req: Request, res: Response) {

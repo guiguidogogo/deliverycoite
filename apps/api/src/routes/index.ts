@@ -1,5 +1,10 @@
 import { Router, type RequestHandler } from "express";
 import { login } from "../controllers/auth-controller.js";
+import {
+  getAdminBusinessHours,
+  getOpenStatus,
+  updateAdminBusinessHours
+} from "../controllers/business-hours-controller.js";
 import { getPublicCompany } from "../controllers/company-controller.js";
 import {
   createCompany,
@@ -184,6 +189,9 @@ const route = {
   post(path: string, ...handlers: RequestHandler[]) {
     return router.post(path, ...handlers.map(asyncHandler));
   },
+  put(path: string, ...handlers: RequestHandler[]) {
+    return router.put(path, ...handlers.map(asyncHandler));
+  },
   patch(path: string, ...handlers: RequestHandler[]) {
     return router.patch(path, ...handlers.map(asyncHandler));
   },
@@ -224,6 +232,7 @@ route.delete("/customer/addresses/:id", customerAuth, deleteCustomerAddress);
 
 
 route.get("/settings", getSettings);
+route.get("/business-hours/status", getOpenStatus);
 route.get("/delivery/quote", quoteDelivery);
 route.get("/customers/lookup", lookupCustomer);
 route.get("/categories", listCategories);
@@ -261,6 +270,8 @@ route.get("/admin/companies/:id", requireSuperAdmin, getCompany);
 route.patch("/admin/companies/:id", requireSuperAdmin, updateCompany);
 route.patch("/admin/companies/:id/status", requireSuperAdmin, updateCompanyStatus);
 route.get("/admin/settings", requirePermission("SETTINGS"), getSettings);
+route.get("/admin/business-hours", requirePermission("SETTINGS"), getAdminBusinessHours);
+route.put("/admin/business-hours", requirePermission("SETTINGS"), updateAdminBusinessHours);
 route.patch("/admin/me", updateCurrentStaff);
 route.patch("/admin/password", changeStaffPassword);
 route.get("/admin/orders", requirePermission("ORDERS"), listOrders);

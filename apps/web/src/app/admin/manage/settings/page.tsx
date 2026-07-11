@@ -8,6 +8,68 @@ import { LocationPicker } from "../../../../components/location-picker";
 import { printTestReceipt, testReceiptHtml } from "../../../../lib/browser-print";
 import { findLocalPrinters, printAgentInstallUrl, printHtmlWithAgent } from "../../../../lib/qz-print";
 
+type ClosedOrderPolicy = "BLOCK_WHEN_CLOSED" | "ALLOW_WHEN_CLOSED" | "SCHEDULE_ONLY_WHEN_CLOSED";
+
+type BusinessHourPeriod = {
+  openingTime: string;
+  closingTime: string;
+};
+
+type BusinessHourDay = {
+  dayOfWeek: number;
+  isOpen: boolean;
+  periods: BusinessHourPeriod[];
+};
+
+const weekDays = [
+  { dayOfWeek: 1, label: "Segunda-feira" },
+  { dayOfWeek: 2, label: "Terca-feira" },
+  { dayOfWeek: 3, label: "Quarta-feira" },
+  { dayOfWeek: 4, label: "Quinta-feira" },
+  { dayOfWeek: 5, label: "Sexta-feira" },
+  { dayOfWeek: 6, label: "Sabado" },
+  { dayOfWeek: 0, label: "Domingo" }
+];
+
+function defaultBusinessHours(): BusinessHourDay[] {
+  return weekDays.map(({ dayOfWeek }) => ({
+    dayOfWeek,
+    isOpen: dayOfWeek !== 0,
+    periods: dayOfWeek === 0 ? [] : [{ openingTime: "08:00", closingTime: "18:00" }]
+  }));
+}
+
+const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+function timeToMinutes(value: string) {
+  const [hour, minute] = value.split(":").map(Number);
+  return hour * 60 + minute;
+}
+
+function validateBusinessHours(days: BusinessHourDay[]) {
+  for (const dayInfo of weekDays) {
+    const day = days.find((item) => item.dayOfWeek === dayInfo.dayOfWeek);
+    if (!day || !day.isOpen) continue;
+    if (!day.periods.length) {
+      return `${dayInfo.label}: informe ao menos um horario ou marque como fechado.`;
+    }
+    const periods = [...day.periods].sort((left, right) => timeToMinutes(left.openingTime) - timeToMinutes(right.openingTime));
+    for (const [index, period] of periods.entries()) {
+      if (!timePattern.test(period.openingTime) || !timePattern.test(period.closingTime)) {
+        return `${dayInfo.label}: use horarios validos no formato 24h, como 08:00.`;
+      }
+      if (timeToMinutes(period.openingTime) >= timeToMinutes(period.closingTime)) {
+        return `${dayInfo.label}: abertura deve ser anterior ao fechamento.`;
+      }
+      const previous = periods[index - 1];
+      if (previous && timeToMinutes(period.openingTime) < timeToMinutes(previous.closingTime)) {
+        return `${dayInfo.label}: o periodo das ${period.openingTime} as ${period.closingTime} entra em conflito com ${previous.openingTime} as ${previous.closingTime}.`;
+      }
+    }
+  }
+  return null;
+}
+
 export default function SettingsManagePage() {
   const [form, setForm] = useState({
     companyName: "",
@@ -38,8 +100,11 @@ export default function SettingsManagePage() {
     printerEnabled: false,
     printerName: "",
     printerPaperWidth: 58,
-    printerAutoPrint: false
+    printerAutoPrint: false,
+    timezone: "America/Bahia",
+    closedOrderPolicy: "BLOCK_WHEN_CLOSED" as ClosedOrderPolicy
   });
+  const [businessHours, setBusinessHours] = useState<BusinessHourDay[]>(defaultBusinessHours);
   const [printers, setPrinters] = useState<string[]>([]);
   const [agentStatus, setAgentStatus] = useState<"idle" | "connecting" | "connected" | "error">("idle");
   const [printerAgent, setPrinterAgent] = useState({
@@ -90,8 +155,34 @@ export default function SettingsManagePage() {
           printerEnabled: data.printerEnabled ?? false,
           printerName: data.printerName ?? "",
           printerPaperWidth: data.printerPaperWidth === 80 ? 80 : 58,
-          printerAutoPrint: data.printerAutoPrint ?? false
+          printerAutoPrint: data.printerAutoPrint ?? false,
+          timezone: data.timezone ?? "America/Bahia",
+          closedOrderPolicy: data.closedOrderPolicy ?? "BLOCK_WHEN_CLOSED"
         });
+      });
+
+    void apiFetch(`/admin/business-hours`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store"
+    })
+      .then((res) => res.ok ? readApiJson<any>(res) : null)
+      .then((data) => {
+        if (!data?.days) return;
+        setBusinessHours(
+          weekDays.map(({ dayOfWeek }) => {
+            const day = data.days.find((item: BusinessHourDay) => item.dayOfWeek === dayOfWeek);
+            return {
+              dayOfWeek,
+              isOpen: Boolean(day?.isOpen),
+              periods: Array.isArray(day?.periods) ? day.periods : []
+            };
+          })
+        );
+        setForm((current) => ({
+          ...current,
+          timezone: data.timezone ?? current.timezone,
+          closedOrderPolicy: data.closedOrderPolicy ?? current.closedOrderPolicy
+        }));
       });
 
     void apiFetch(`/admin/printer-agent`, {
@@ -115,6 +206,12 @@ export default function SettingsManagePage() {
     const token = localStorage.getItem("delivery:token");
     if (!token) return;
 
+    const businessHoursError = validateBusinessHours(businessHours);
+    if (businessHoursError) {
+      toast.error(businessHoursError);
+      return;
+    }
+
     const res = await apiFetch(`/admin/settings`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -135,6 +232,28 @@ export default function SettingsManagePage() {
       const firstIssue = Array.isArray(payload.issues) ? payload.issues[0] : null;
       const field = Array.isArray(firstIssue?.path) ? firstIssue.path.join(".") : "";
       toast.error(firstIssue?.message ? `${field ? `${field}: ` : ""}${firstIssue.message}` : payload.message ?? "Falha ao salvar configuracoes");
+      return;
+    }
+
+    const hoursRes = await apiFetch(`/admin/business-hours`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        timezone: form.timezone,
+        closedOrderPolicy: form.closedOrderPolicy,
+        days: businessHours.map((day) => ({
+          dayOfWeek: day.dayOfWeek,
+          isOpen: day.isOpen,
+          periods: day.isOpen
+            ? [...day.periods].sort((left, right) => timeToMinutes(left.openingTime) - timeToMinutes(right.openingTime))
+            : []
+        }))
+      })
+    });
+
+    if (!hoursRes.ok) {
+      const payload = await readApiJson<any>(hoursRes).catch(() => ({}));
+      toast.error(payload.message ?? "Falha ao salvar horarios de funcionamento");
       return;
     }
 
@@ -284,6 +403,68 @@ export default function SettingsManagePage() {
     }));
   }
 
+  function updateBusinessDay(dayOfWeek: number, updater: (day: BusinessHourDay) => BusinessHourDay) {
+    setBusinessHours((current) =>
+      current.map((day) => day.dayOfWeek === dayOfWeek ? updater(day) : day)
+    );
+  }
+
+  function addBusinessPeriod(dayOfWeek: number) {
+    updateBusinessDay(dayOfWeek, (day) => ({
+      ...day,
+      isOpen: true,
+      periods: [...day.periods, { openingTime: "08:00", closingTime: "18:00" }]
+    }));
+  }
+
+  function removeBusinessPeriod(dayOfWeek: number, periodIndex: number) {
+    updateBusinessDay(dayOfWeek, (day) => ({
+      ...day,
+      periods: day.periods.filter((_, index) => index !== periodIndex)
+    }));
+  }
+
+  function updateBusinessPeriod(
+    dayOfWeek: number,
+    periodIndex: number,
+    field: keyof BusinessHourPeriod,
+    value: string
+  ) {
+    updateBusinessDay(dayOfWeek, (day) => ({
+      ...day,
+      periods: day.periods.map((period, index) =>
+        index === periodIndex ? { ...period, [field]: value } : period
+      )
+    }));
+  }
+
+  function copyMondayToWeekdays() {
+    const monday = businessHours.find((day) => day.dayOfWeek === 1);
+    if (!monday) return;
+    if (!window.confirm("Aplicar os horarios de segunda-feira para terca a sexta? Os horarios atuais desses dias serao substituidos.")) return;
+    setBusinessHours((current) =>
+      current.map((day) =>
+        day.dayOfWeek >= 2 && day.dayOfWeek <= 5
+          ? { ...day, isOpen: monday.isOpen, periods: monday.periods.map((period) => ({ ...period })) }
+          : day
+      )
+    );
+  }
+
+  function copyDayToAll(dayOfWeek: number) {
+    const source = businessHours.find((day) => day.dayOfWeek === dayOfWeek);
+    if (!source) return;
+    const label = weekDays.find((day) => day.dayOfWeek === dayOfWeek)?.label ?? "dia selecionado";
+    if (!window.confirm(`Copiar os horarios de ${label} para todos os outros dias? Os horarios atuais serao substituidos.`)) return;
+    setBusinessHours((current) =>
+      current.map((day) =>
+        day.dayOfWeek === dayOfWeek
+          ? day
+          : { ...day, isOpen: source.isOpen, periods: source.periods.map((period) => ({ ...period })) }
+      )
+    );
+  }
+
   return (
     <main className="mx-auto max-w-3xl p-4">
       <div className="mb-3 flex items-center justify-between">
@@ -300,11 +481,117 @@ export default function SettingsManagePage() {
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="WhatsApp Loja" value={form.whatsappNumber} onChange={(e) => setForm((v) => ({ ...v, whatsappNumber: e.target.value }))} />
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="WhatsApp Motoboy" value={form.deliveryPhoneNumber} onChange={(e) => setForm((v) => ({ ...v, deliveryPhoneNumber: e.target.value }))} />
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Taxa de entrega" value={form.deliveryFee} onChange={(e) => setForm((v) => ({ ...v, deliveryFee: e.target.value }))} />
-          <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Horario abertura" value={form.openTime} onChange={(e) => setForm((v) => ({ ...v, openTime: e.target.value }))} />
-          <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Horario fechamento" value={form.closeTime} onChange={(e) => setForm((v) => ({ ...v, closeTime: e.target.value }))} />
+          <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Fuso horario" value={form.timezone} onChange={(e) => setForm((v) => ({ ...v, timezone: e.target.value }))} />
+          <select className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" value={form.closedOrderPolicy} onChange={(e) => setForm((v) => ({ ...v, closedOrderPolicy: e.target.value as ClosedOrderPolicy }))}>
+            <option value="BLOCK_WHEN_CLOSED">Bloquear pedidos quando fechado</option>
+            <option value="ALLOW_WHEN_CLOSED">Aceitar pedidos mesmo fechado</option>
+            <option value="SCHEDULE_ONLY_WHEN_CLOSED">Somente agendamento quando fechado</option>
+          </select>
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Chave PIX" value={form.pixKey} onChange={(e) => setForm((v) => ({ ...v, pixKey: e.target.value }))} />
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20 md:col-span-2" placeholder="URL QR Code PIX" value={form.pixQrCodeUrl} onChange={(e) => setForm((v) => ({ ...v, pixQrCodeUrl: e.target.value }))} />
           <textarea className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20 md:col-span-2" placeholder="Mensagem automatica" value={form.autoMessage} onChange={(e) => setForm((v) => ({ ...v, autoMessage: e.target.value }))} />
+        </div>
+      </section>
+
+      <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
+        <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
+          <div>
+            <h2 className="text-xl font-bold">Horarios de funcionamento</h2>
+            <p className="mt-1 text-sm opacity-70">
+              Configure dias abertos, fechados e varios periodos no mesmo dia. O checkout usa estes horarios para aceitar ou bloquear pedidos.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="rounded-xl border border-black/10 px-3 py-2 text-sm font-semibold dark:border-white/20"
+              onClick={copyMondayToWeekdays}
+            >
+              Aplicar segunda a sexta
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {weekDays.map((dayInfo) => {
+            const day = businessHours.find((item) => item.dayOfWeek === dayInfo.dayOfWeek) ?? {
+              dayOfWeek: dayInfo.dayOfWeek,
+              isOpen: false,
+              periods: []
+            };
+            return (
+              <article key={dayInfo.dayOfWeek} className="rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-slate-950/60">
+                <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+                  <div>
+                    <h3 className="font-black">{dayInfo.label}</h3>
+                    <p className="text-xs opacity-65">{day.isOpen ? `${day.periods.length} periodo(s)` : "Fechado"}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <label className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm font-semibold dark:bg-white/10">
+                      <input
+                        type="checkbox"
+                        checked={day.isOpen}
+                        onChange={(event) =>
+                          updateBusinessDay(dayInfo.dayOfWeek, (current) => ({
+                            ...current,
+                            isOpen: event.target.checked,
+                            periods: event.target.checked && !current.periods.length
+                              ? [{ openingTime: "08:00", closingTime: "18:00" }]
+                              : current.periods
+                          }))
+                        }
+                      />
+                      Aberto
+                    </label>
+                    <button
+                      type="button"
+                      className="rounded-xl border border-black/10 px-3 py-2 text-sm dark:border-white/20"
+                      onClick={() => copyDayToAll(dayInfo.dayOfWeek)}
+                    >
+                      Copiar para todos
+                    </button>
+                  </div>
+                </div>
+
+                {day.isOpen && (
+                  <div className="mt-3 space-y-2">
+                    {day.periods.map((period, index) => (
+                      <div key={`${dayInfo.dayOfWeek}-${index}`} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                        <input
+                          className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
+                          type="time"
+                          step="60"
+                          value={period.openingTime}
+                          onChange={(event) => updateBusinessPeriod(dayInfo.dayOfWeek, index, "openingTime", event.target.value)}
+                        />
+                        <input
+                          className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
+                          type="time"
+                          step="60"
+                          value={period.closingTime}
+                          onChange={(event) => updateBusinessPeriod(dayInfo.dayOfWeek, index, "closingTime", event.target.value)}
+                        />
+                        <button
+                          type="button"
+                          className="rounded-xl border border-red-200 px-3 py-2 text-sm font-semibold text-red-700"
+                          onClick={() => removeBusinessPeriod(dayInfo.dayOfWeek, index)}
+                        >
+                          Excluir
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="rounded-xl bg-ink px-3 py-2 text-sm font-semibold text-white"
+                      onClick={() => addBusinessPeriod(dayInfo.dayOfWeek)}
+                    >
+                      + Adicionar horario
+                    </button>
+                  </div>
+                )}
+              </article>
+            );
+          })}
         </div>
       </section>
 

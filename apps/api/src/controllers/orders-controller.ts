@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { FulfillmentType, OrderSource, OrderStatus, PaymentMethod, Prisma, TableSessionStatus } from "@prisma/client";
+import { ClosedOrderPolicy, FulfillmentType, OrderSource, OrderStatus, PaymentMethod, Prisma, TableSessionStatus } from "@prisma/client";
 import { z } from "zod";
 import { publishNewOrder } from "../services/realtime.js";
 import { printOrder } from "../services/thermal-printer.js";
@@ -13,6 +13,7 @@ import { companyWhere, getCompanyId } from "../utils/tenant.js";
 import { audit } from "../utils/audit.js";
 import { linkCustomerToCompany, normalizeEmail, normalizePhone, recordCompanyCustomerPurchase } from "../utils/customer-linking.js";
 import { restoreStockFromOrderItems, validateAndDecrementStock } from "../utils/stock.js";
+import { getCompanyOpenStatus } from "../services/business-hours.js";
 
 function shouldSendStatusWhatsapp(
   settings: Awaited<ReturnType<typeof prisma.setting.findFirstOrThrow>>,
@@ -48,6 +49,7 @@ const checkoutSchema = z
     tableId: z.string().optional(),
     tableSessionToken: z.string().optional(),
     paymentMethod: z.nativeEnum(PaymentMethod),
+    scheduledFor: z.coerce.date().optional(),
     changeFor: z.coerce.number().optional(),
     couponCode: z.string().optional(),
     notes: z.string().optional(),
@@ -139,26 +141,6 @@ function toDecimal(value: number) {
   return new Prisma.Decimal(value.toFixed(2));
 }
 
-function parseTimeToMinutes(value: string) {
-  if (!value) return 0;
-  const [h, m] = value.split(":").map((part) => Number(part));
-  return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
-}
-
-function isStoreOpen(openTime: string | null | undefined, closeTime: string | null | undefined, now = new Date()) {
-  const safeOpen = openTime || "00:00";
-  const safeClose = closeTime || "23:59";
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
-  const openMinutes = parseTimeToMinutes(safeOpen);
-  const closeMinutes = parseTimeToMinutes(safeClose);
-
-  if (openMinutes <= closeMinutes) {
-    return nowMinutes >= openMinutes && nowMinutes <= closeMinutes;
-  }
-
-  return nowMinutes >= openMinutes || nowMinutes <= closeMinutes;
-}
-
 export async function createOrder(req: Request, res: Response) {
   const body = checkoutSchema.parse(req.body);
   const companyId = getCompanyId(req);
@@ -189,10 +171,21 @@ export async function createOrder(req: Request, res: Response) {
     }
   }
 
-  if (!isStoreOpen(settings.openTime ?? "00:00", settings.closeTime ?? "23:59")) {
-    return res.status(400).json({
-      message: `Loja fechada no momento. Funcionamento: ${settings.openTime} ate ${settings.closeTime}`
-    });
+  const openStatus = await getCompanyOpenStatus(companyId);
+  if (!tableOrder && !openStatus.isOpen) {
+    if (settings.closedOrderPolicy === ClosedOrderPolicy.BLOCK_WHEN_CLOSED) {
+      return res.status(400).json({
+        message: `Esta loja esta fechada no momento. ${openStatus.message}.`,
+        openStatus
+      });
+    }
+
+    if (settings.closedOrderPolicy === ClosedOrderPolicy.SCHEDULE_ONLY_WHEN_CLOSED && !body.scheduledFor) {
+      return res.status(400).json({
+        message: `Esta loja esta fechada no momento. Agende para o proximo horario disponivel. ${openStatus.message}.`,
+        openStatus
+      });
+    }
   }
 
   const productIds = [...new Set(body.items.map((item) => item.productId))];
@@ -456,6 +449,7 @@ export async function createOrder(req: Request, res: Response) {
         waiterId: body.source === OrderSource.WAITER ? req.user?.sub ?? null : null,
         paymentMethod: body.paymentMethod,
         fulfillmentType: tableOrder ? FulfillmentType.PICKUP : body.fulfillmentType,
+        scheduledFor: body.scheduledFor ?? null,
         changeFor: body.changeFor ? toDecimal(body.changeFor) : null,
         subtotal,
         deliveryFee,

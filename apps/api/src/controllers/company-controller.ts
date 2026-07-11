@@ -1,10 +1,12 @@
 import type { Request, Response } from "express";
+import { getCompanyOpenStatus } from "../services/business-hours.js";
 import { prisma } from "../utils/prisma.js";
 import { getCompanyId } from "../utils/tenant.js";
 
 export async function getPublicCompany(req: Request, res: Response) {
+  const companyId = getCompanyId(req);
   const company = await prisma.company.findFirst({
-    where: { id: getCompanyId(req), active: true },
+    where: { id: companyId, active: true },
     select: {
       id: true,
       tradeName: true,
@@ -30,5 +32,11 @@ export async function getPublicCompany(req: Request, res: Response) {
     return res.status(404).json({ message: "Empresa nao encontrada" });
   }
 
-  return res.json(company);
+  const openStatus = await getCompanyOpenStatus(companyId);
+
+  return res.json({
+    ...company,
+    isOpen: openStatus.isOpen,
+    openStatus
+  });
 }
