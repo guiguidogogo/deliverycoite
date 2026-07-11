@@ -24,6 +24,15 @@ function getCurrentHostSubdomain() {
   return fromQuery;
 }
 
+function looksLikeCoolifyGeneratedHost(value: string) {
+  return /^[a-z0-9]{16,}$/i.test(value);
+}
+
+function getStoredSubdomain() {
+  if (typeof window === "undefined") return "";
+  return normalizeSubdomain(localStorage.getItem("delivery:subdomain"));
+}
+
 export function getBrowserRootDomain() {
   if (typeof window === "undefined") return "hubregional.com.br";
 
@@ -54,11 +63,14 @@ export function getBrowserSubdomain() {
 
   const currentHostSubdomain = getCurrentHostSubdomain();
   if (currentHostSubdomain) {
+    if (looksLikeCoolifyGeneratedHost(currentHostSubdomain)) {
+      return getStoredSubdomain();
+    }
     localStorage.setItem("delivery:subdomain", currentHostSubdomain);
     return currentHostSubdomain;
   }
 
-  return normalizeSubdomain(localStorage.getItem("delivery:subdomain"));
+  return getStoredSubdomain();
 }
 
 function buildHeaders(
@@ -66,10 +78,20 @@ function buildHeaders(
   options?: { json?: boolean; subdomain?: string | null; skipSubdomain?: boolean; preferCurrentHostSubdomain?: boolean }
 ) {
   const nextHeaders = new Headers(headers);
+  const currentHostSubdomain = getCurrentHostSubdomain();
+  const storedSubdomain = getStoredSubdomain();
   const subdomain = options?.skipSubdomain
     ? ""
     : normalizeSubdomain(options?.subdomain)
-      || (options?.preferCurrentHostSubdomain ? getCurrentHostSubdomain() : getBrowserSubdomain());
+      || (
+        options?.preferCurrentHostSubdomain
+          ? (
+            currentHostSubdomain && !looksLikeCoolifyGeneratedHost(currentHostSubdomain)
+              ? currentHostSubdomain
+              : storedSubdomain || currentHostSubdomain
+          )
+          : getBrowserSubdomain()
+      );
 
   if (options?.json !== false && !nextHeaders.has("Content-Type")) {
     nextHeaders.set("Content-Type", "application/json");
