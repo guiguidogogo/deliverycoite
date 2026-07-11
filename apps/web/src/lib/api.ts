@@ -25,7 +25,6 @@ function getCurrentHostSubdomain() {
 }
 
 export function getBrowserRootDomain() {
-  if (CONFIGURED_ROOT_DOMAIN) return CONFIGURED_ROOT_DOMAIN;
   if (typeof window === "undefined") return "hubregional.com.br";
 
   const host = normalizeHost(window.location.hostname);
@@ -35,6 +34,8 @@ export function getBrowserRootDomain() {
       return parts.slice(1).join(".");
     }
   }
+
+  if (CONFIGURED_ROOT_DOMAIN) return CONFIGURED_ROOT_DOMAIN;
 
   return "hubregional.com.br";
 }

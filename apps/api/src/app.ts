@@ -29,10 +29,22 @@ app.use(cors({
       hostname === env.rootDomain
       || hostname === `www.${env.rootDomain}`
       || hostname.endsWith(`.${env.rootDomain}`);
+    const sslipDevelopmentOrigin =
+      hostname.endsWith(".sslip.io")
+      && (
+        env.rootDomain.endsWith(".sslip.io")
+        || env.corsOrigins.some((allowedOrigin) => {
+          try {
+            return new URL(allowedOrigin).hostname.endsWith(".sslip.io");
+          } catch {
+            return false;
+          }
+        })
+      );
     const localDevelopment =
       process.env.NODE_ENV !== "production"
       && (hostname === "localhost" || hostname === "127.0.0.1");
-    if (!explicitlyAllowed && !tenantOrigin && !localDevelopment) {
+    if (!explicitlyAllowed && !tenantOrigin && !sslipDevelopmentOrigin && !localDevelopment) {
       return callback(new Error("Origem CORS nao permitida"));
     }
     return callback(null, true);

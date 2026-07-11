@@ -33,11 +33,11 @@ function normalizeSubdomain(value?: string | null) {
 }
 
 function rootDomainFromHost(host: string) {
-  if (configuredRootDomain) return configuredRootDomain;
   if (host.endsWith(".sslip.io")) {
     const parts = host.split(".");
     if (parts.length > 2) return parts.slice(1).join(".");
   }
+  if (configuredRootDomain) return configuredRootDomain;
   return "hubregional.com.br";
 }
 
@@ -90,13 +90,21 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path?: s
   const method = request.method.toUpperCase();
   const body = method === "GET" || method === "HEAD" ? undefined : await request.arrayBuffer();
 
-  const response = await fetch(targetUrl, {
-    method,
-    headers,
-    body,
-    redirect: "manual",
-    cache: "no-store"
-  });
+  let response: Response;
+  try {
+    response = await fetch(targetUrl, {
+      method,
+      headers,
+      body,
+      redirect: "manual",
+      cache: "no-store"
+    });
+  } catch {
+    return Response.json(
+      { message: "API indisponivel no ambiente DEV. Verifique o servico da API no Coolify." },
+      { status: 502 }
+    );
+  }
 
   const responseHeaders = new Headers(response.headers);
   responseHeaders.delete("content-encoding");
