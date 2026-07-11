@@ -32,6 +32,10 @@ function normalizeSubdomain(value?: string | null) {
   return (value ?? "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
 }
 
+function looksLikeCoolifyGeneratedHost(value: string) {
+  return /^[a-z0-9]{16,}$/i.test(value);
+}
+
 function rootDomainFromHost(host: string) {
   if (host.endsWith(".sslip.io")) {
     const parts = host.split(".");
@@ -51,7 +55,8 @@ function subdomainFromRequest(request: NextRequest) {
   if (host === rootDomain || host === `www.${rootDomain}` || host === `admin.${rootDomain}`) return "";
   if (!host.endsWith(`.${rootDomain}`)) return "";
 
-  return normalizeSubdomain(host.slice(0, -(rootDomain.length + 1)));
+  const subdomain = normalizeSubdomain(host.slice(0, -(rootDomain.length + 1)));
+  return looksLikeCoolifyGeneratedHost(subdomain) ? "" : subdomain;
 }
 
 const hopByHopRequestHeaders = [
