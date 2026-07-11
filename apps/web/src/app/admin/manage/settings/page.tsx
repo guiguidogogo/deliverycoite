@@ -466,12 +466,21 @@ export default function SettingsManagePage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl p-4">
+    <main className="mx-auto max-w-3xl p-4 pb-28">
       <div className="mb-3 flex items-center justify-between">
         <h1 className="font-display text-4xl">Configuracoes</h1>
-        <Link className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin">
-          Voltar
-        </Link>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-bold text-white shadow-sm"
+            onClick={() => void save()}
+          >
+            Salvar
+          </button>
+          <Link className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin">
+            Voltar
+          </Link>
+        </div>
       </div>
 
       <section className="rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
@@ -949,6 +958,20 @@ export default function SettingsManagePage() {
       <button className="mt-4 w-full rounded-xl bg-ember px-4 py-3 text-white" onClick={() => void save()}>
         Salvar Configurações
       </button>
+      <div className="fixed inset-x-0 bottom-0 z-50 border-t border-black/10 bg-white/95 p-3 shadow-2xl backdrop-blur dark:border-white/10 dark:bg-slate-950/95">
+        <div className="mx-auto flex max-w-3xl gap-2">
+          <button
+            type="button"
+            className="flex-1 rounded-xl bg-emerald-700 px-4 py-3 text-base font-black text-white"
+            onClick={() => void save()}
+          >
+            Salvar configurações
+          </button>
+          <Link className="rounded-xl bg-ink px-4 py-3 text-center font-bold text-white" href="/admin">
+            Voltar
+          </Link>
+        </div>
+      </div>
     </main>
   );
 }
