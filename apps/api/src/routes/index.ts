@@ -258,6 +258,7 @@ route.post("/mercadopago/webhook", mercadoPagoWebhook);
 route.get("/mercadopago/webhook", mercadoPagoWebhook);
 route.get("/printer-agent/orders", listPrinterAgentOrders);
 route.post("/printer-agent/orders/:id/printed", markPrinterAgentOrderPrinted);
+route.get("/printer-agent/test", getPrinterAgentTestReceipt);
 route.post("/printer-agent/test", getPrinterAgentTestReceipt);
 
 router.use(auth());

@@ -255,11 +255,17 @@ async function apiRequest<T>(pathName: string, options: RequestInit = {}): Promi
     ...options,
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${config.token}`,
+      Authorization: `Bearer ${config.token.trim()}`,
       ...(options.headers ?? {})
     }
   });
-  const payload = await response.json().catch(() => ({}));
+  const responseText = await response.text();
+  let payload: any = {};
+  try {
+    payload = responseText ? JSON.parse(responseText) : {};
+  } catch {
+    payload = { message: responseText.slice(0, 180) };
+  }
   if (!response.ok) throw new Error(payload.message ?? `Erro HTTP ${response.status}`);
   return payload as T;
 }
@@ -375,6 +381,7 @@ ipcMain.handle("save-config", (_event, config: Config) => {
     ...defaultConfig,
     ...config,
     apiUrl: normalizeApiUrl(config.apiUrl),
+    token: config.token.trim(),
     printCopies: Math.min(5, Math.max(1, Number(config.printCopies || 1))),
     paperWidth: config.paperWidth === 80 ? 80 : 58,
     printMode: ["raw-text", "raw-escpos", "windows"].includes(config.printMode) ? config.printMode : "windows",
@@ -388,7 +395,7 @@ ipcMain.handle("list-printers", async () => listPrinters());
 ipcMain.handle("test-print", async () => {
   const config = readConfig();
   const payload = config.token
-    ? await apiRequest<{ receipt: string }>(`/printer-agent/test?paperWidth=${config.paperWidth || 58}`).catch(() => null)
+    ? await apiRequest<{ receipt: string }>(`/printer-agent/test?paperWidth=${config.paperWidth || 58}`, { method: "POST" }).catch(() => null)
     : null;
   await printText(config.printerName, payload?.receipt ?? "HUBREGIONAL\r\nTESTE DE IMPRESSAO\r\n\r\n", config.printMode || "windows");
   addLog("Teste de impressao enviado");
