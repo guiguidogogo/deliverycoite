@@ -616,13 +616,21 @@ export function AdminPanel() {
                     className="rounded-lg border border-black/15 px-2 py-1 text-xs dark:border-white/20"
                     disabled={isMercadoPagoPending(order) || isMercadoPagoRefunded(order) || (order.status === "FINISHED" && status !== "FINISHED")}
                     onClick={() => {
+                      let reason: string | undefined;
+                      if (status === "CANCELED" && order.status !== "CANCELED") {
+                        reason = window.prompt(`Motivo do cancelamento do pedido #${String(order.orderNumber).padStart(5, "0")}:`)?.trim();
+                        if (!reason) {
+                          toast.error("Informe o motivo para cancelar");
+                          return;
+                        }
+                      }
                       void authApi<{
                         status: Order["status"];
                         statusWhatsappUrl?: string | null;
                         statusWhatsappSent?: boolean;
                       }>(`/admin/orders/${order.id}/status`, token, {
                         method: "PATCH",
-                        body: JSON.stringify({ status })
+                        body: JSON.stringify({ status, reason })
                       }).then(async (payload) => {
                         setOrders((prev) =>
                           payload.status === "FINISHED" && filterStatus !== "FINISHED"
