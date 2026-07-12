@@ -203,9 +203,17 @@ export default function KitchenPage() {
 
   async function updateStatus(order: KitchenOrder, status: OrderStatus) {
     try {
+      let reason: string | undefined;
+      if (status === "CANCELED" && order.status !== "CANCELED") {
+        reason = window.prompt(`Motivo do cancelamento do pedido ${orderCode(order)}:`)?.trim();
+        if (!reason) {
+          toast.error("Informe o motivo para cancelar");
+          return;
+        }
+      }
       const updated = await request<{ status: OrderStatus }>(`/admin/orders/${order.id}/status`, {
         method: "PATCH",
-        body: JSON.stringify({ status })
+        body: JSON.stringify({ status, reason })
       });
       setOrders((current) => current
         .map((item) => item.id === order.id ? { ...item, status: updated.status } : item)
