@@ -172,7 +172,7 @@ export async function listPrinterAgentOrders(req: Request, res: Response) {
   if (!company) return res.status(401).json({ message: "Token de impressao invalido ou desativado" });
   const sinceParam = req.query.since?.toString();
   const since = sinceParam ? new Date(sinceParam) : undefined;
-  const paperWidth = req.query.paperWidth?.toString() === "80" ? 80 : 58;
+  const requestedPaperWidth = req.query.paperWidth?.toString() === "80" ? 80 : 58;
 
   const [settings, orders, jobs] = await Promise.all([
     prisma.setting.findUnique({ where: { companyId: company.id } }),
@@ -180,12 +180,13 @@ export async function listPrinterAgentOrders(req: Request, res: Response) {
     findPrintableJobs(company.id, since)
   ]);
 
+  const configuredPaperWidth = settings?.printerPaperWidth === 80 ? 80 : settings?.printerPaperWidth === 58 ? 58 : requestedPaperWidth;
   const safeSettings = {
     ...(settings ?? {
-    companyName: company.tradeName,
-    printerPaperWidth: 58
+      companyName: company.tradeName,
+      printerPaperWidth: configuredPaperWidth
     }),
-    printerPaperWidth: paperWidth
+    printerPaperWidth: configuredPaperWidth
   };
 
   await prisma.company.update({
@@ -303,3 +304,4 @@ export async function getPrinterAgentTestReceipt(req: Request, res: Response) {
     ].join("\r\n")
   });
 }
+

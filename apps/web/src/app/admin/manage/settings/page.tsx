@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { API_URL, apiFetch, readApiJson } from "../../../../lib/api";
 import { LocationPicker } from "../../../../components/location-picker";
 import { printTestReceipt, testReceiptHtml } from "../../../../lib/browser-print";
-import { findLocalPrinters, printAgentInstallUrl, printHtmlWithAgent } from "../../../../lib/qz-print";
+import { findLocalPrinters, printHtmlWithAgent } from "../../../../lib/qz-print";
 
 type ClosedOrderPolicy = "BLOCK_WHEN_CLOSED" | "ALLOW_WHEN_CLOSED" | "SCHEDULE_ONLY_WHEN_CLOSED";
 
@@ -272,7 +272,7 @@ export default function SettingsManagePage() {
       toast.success(`${found.length} impressora(s) encontrada(s)`);
     } catch {
       setAgentStatus("error");
-      toast.error("QZ Tray não está instalado ou não está aberto");
+      toast.error("HubRegional Printer Agent nao esta instalado ou nao esta aberto");
     }
   }
 
@@ -884,11 +884,8 @@ export default function SettingsManagePage() {
       <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
         <h2 className="mb-3 text-xl font-bold">Impressora termica</h2>
         <div className="mb-3 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
-          Para impressao automatica, instale e mantenha o QZ Tray aberto no computador da loja.
-          Ele permite ao painel localizar e usar as impressoras instaladas no Windows.
-          <a className="ml-1 font-semibold underline" href={printAgentInstallUrl()} target="_blank" rel="noreferrer">
-            Baixar QZ Tray
-          </a>
+          Para impressao automatica, use somente o HubRegional Printer Agent instalado no computador da loja.
+          Ele recebe os pedidos do sistema e imprime na impressora configurada.
         </div>
         <label className="mb-3 flex items-center gap-2">
           <input
