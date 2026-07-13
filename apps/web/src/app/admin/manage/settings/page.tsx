@@ -8,6 +8,28 @@ import { LocationPicker } from "../../../../components/location-picker";
 import { printTestReceipt, testReceiptHtml } from "../../../../lib/browser-print";
 import { findLocalPrinters, printHtmlWithAgent } from "../../../../lib/qz-print";
 
+type BusinessPeriod = { openingTime: string; closingTime: string };
+type BusinessDay = { dayOfWeek: number; isOpen: boolean; periods: BusinessPeriod[] };
+type BusinessHours = {
+  timezone: string;
+  orderModeWhenClosed: "BLOCK_WHEN_CLOSED" | "ALLOW_WHEN_CLOSED";
+  days: BusinessDay[];
+};
+
+const DAY_LABELS = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
+
+function defaultBusinessHours(openTime = "18:00", closeTime = "23:59"): BusinessHours {
+  return {
+    timezone: "America/Bahia",
+    orderModeWhenClosed: "BLOCK_WHEN_CLOSED",
+    days: [0, 1, 2, 3, 4, 5, 6].map((dayOfWeek) => ({
+      dayOfWeek,
+      isOpen: true,
+      periods: [{ openingTime: openTime || "00:00", closingTime: closeTime || "23:59" }]
+    }))
+  };
+}
+
 export default function SettingsManagePage() {
   const [form, setForm] = useState({
     companyName: "",
@@ -19,6 +41,7 @@ export default function SettingsManagePage() {
     deliveryFeeTiers: [] as Array<{ maxDistanceKm: string; fee: string }>,
     openTime: "18:00",
     closeTime: "23:59",
+    businessHours: defaultBusinessHours(),
     autoMessage: "",
     pixKey: "",
     pixQrCodeUrl: "",
@@ -71,6 +94,7 @@ export default function SettingsManagePage() {
           })),
           openTime: data.openTime ?? "18:00",
           closeTime: data.closeTime ?? "23:59",
+          businessHours: data.businessHours ?? defaultBusinessHours(data.openTime ?? "18:00", data.closeTime ?? "23:59"),
           autoMessage: data.autoMessage ?? "",
           pixKey: data.pixKey ?? "",
           pixQrCodeUrl: data.pixQrCodeUrl ?? "",
@@ -284,6 +308,57 @@ export default function SettingsManagePage() {
     }));
   }
 
+  function updateBusinessDay(dayOfWeek: number, updater: (day: BusinessDay) => BusinessDay) {
+    setForm((value) => ({
+      ...value,
+      businessHours: {
+        ...value.businessHours,
+        days: value.businessHours.days.map((day) => day.dayOfWeek === dayOfWeek ? updater(day) : day)
+      }
+    }));
+  }
+
+  function updatePeriod(dayOfWeek: number, index: number, field: keyof BusinessPeriod, nextValue: string) {
+    updateBusinessDay(dayOfWeek, (day) => ({
+      ...day,
+      periods: day.periods.map((period, periodIndex) =>
+        periodIndex === index ? { ...period, [field]: nextValue } : period
+      )
+    }));
+  }
+
+  function addPeriod(dayOfWeek: number) {
+    updateBusinessDay(dayOfWeek, (day) => ({
+      ...day,
+      isOpen: true,
+      periods: [...day.periods, { openingTime: "18:00", closingTime: "23:59" }]
+    }));
+  }
+
+  function removePeriod(dayOfWeek: number, index: number) {
+    updateBusinessDay(dayOfWeek, (day) => ({
+      ...day,
+      periods: day.periods.filter((_, periodIndex) => periodIndex !== index)
+    }));
+  }
+
+  function applyWeekdaysFromMonday() {
+    const monday = form.businessHours.days.find((day) => day.dayOfWeek === 1);
+    if (!monday) return;
+    setForm((value) => ({
+      ...value,
+      businessHours: {
+        ...value.businessHours,
+        days: value.businessHours.days.map((day) =>
+          day.dayOfWeek >= 1 && day.dayOfWeek <= 5
+            ? { ...monday, dayOfWeek: day.dayOfWeek, periods: monday.periods.map((period) => ({ ...period })) }
+            : day
+        )
+      }
+    }));
+    toast.success("Horários de segunda a sexta copiados");
+  }
+
   return (
     <main className="mx-auto max-w-3xl p-4">
       <div className="mb-3 flex items-center justify-between">
@@ -305,6 +380,92 @@ export default function SettingsManagePage() {
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Chave PIX" value={form.pixKey} onChange={(e) => setForm((v) => ({ ...v, pixKey: e.target.value }))} />
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20 md:col-span-2" placeholder="URL QR Code PIX" value={form.pixQrCodeUrl} onChange={(e) => setForm((v) => ({ ...v, pixQrCodeUrl: e.target.value }))} />
           <textarea className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20 md:col-span-2" placeholder="Mensagem automatica" value={form.autoMessage} onChange={(e) => setForm((v) => ({ ...v, autoMessage: e.target.value }))} />
+        </div>
+      </section>
+
+      <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.25em] text-emerald-700">Funcionamento</p>
+            <h2 className="text-xl font-bold">Horários de funcionamento</h2>
+            <p className="text-sm opacity-70">Configure dias abertos, fechados e intervalos da loja.</p>
+          </div>
+          <button type="button" className="rounded-xl bg-ink px-4 py-2 text-sm font-bold text-white" onClick={applyWeekdaysFromMonday}>
+            Aplicar segunda a sexta
+          </button>
+        </div>
+
+        <label className="mt-4 flex flex-col gap-1 text-sm font-semibold">
+          Pedidos com a loja fechada
+          <select
+            className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
+            value={form.businessHours.orderModeWhenClosed}
+            onChange={(event) => setForm((value) => ({
+              ...value,
+              businessHours: {
+                ...value.businessHours,
+                orderModeWhenClosed: event.target.value as BusinessHours["orderModeWhenClosed"]
+              }
+            }))}
+          >
+            <option value="BLOCK_WHEN_CLOSED">Bloquear pedidos quando fechado</option>
+            <option value="ALLOW_WHEN_CLOSED">Permitir pedidos mesmo fechado</option>
+          </select>
+        </label>
+
+        <div className="mt-4 space-y-3">
+          {form.businessHours.days.slice().sort((a, b) => a.dayOfWeek - b.dayOfWeek).map((day) => (
+            <div key={day.dayOfWeek} className="rounded-2xl border border-black/10 bg-white/70 p-3 dark:border-white/10 dark:bg-slate-950/30">
+              <div className="flex items-center justify-between gap-2">
+                <strong>{DAY_LABELS[day.dayOfWeek]}</strong>
+                <label className="flex items-center gap-2 text-sm font-semibold">
+                  <input
+                    type="checkbox"
+                    checked={day.isOpen}
+                    onChange={(event) => updateBusinessDay(day.dayOfWeek, (current) => ({
+                      ...current,
+                      isOpen: event.target.checked,
+                      periods: current.periods.length ? current.periods : [{ openingTime: "18:00", closingTime: "23:59" }]
+                    }))}
+                  />
+                  Aberto
+                </label>
+              </div>
+
+              {day.isOpen ? (
+                <div className="mt-3 space-y-2">
+                  {day.periods.map((period, index) => (
+                    <div key={index} className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                      <input
+                        type="time"
+                        className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
+                        value={period.openingTime}
+                        onChange={(event) => updatePeriod(day.dayOfWeek, index, "openingTime", event.target.value)}
+                      />
+                      <input
+                        type="time"
+                        className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20"
+                        value={period.closingTime}
+                        onChange={(event) => updatePeriod(day.dayOfWeek, index, "closingTime", event.target.value)}
+                      />
+                      <button
+                        type="button"
+                        className="rounded-xl border border-red-200 px-3 py-2 text-sm font-bold text-red-600"
+                        onClick={() => removePeriod(day.dayOfWeek, index)}
+                      >
+                        Excluir
+                      </button>
+                    </div>
+                  ))}
+                  <button type="button" className="rounded-xl border border-black/10 px-3 py-2 text-sm font-bold dark:border-white/20" onClick={() => addPeriod(day.dayOfWeek)}>
+                    + Adicionar horário
+                  </button>
+                </div>
+              ) : (
+                <p className="mt-2 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">Fechado neste dia</p>
+              )}
+            </div>
+          ))}
         </div>
       </section>
 

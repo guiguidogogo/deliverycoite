@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "../utils/prisma.js";
 import { getCompanyId } from "../utils/tenant.js";
 import { optionalImageUrl } from "../utils/image-url.js";
+import { businessHoursSchema, normalizeBusinessHours } from "../utils/business-hours.js";
 
 const optionalText = z.preprocess(
   (value) => typeof value === "string" && !value.trim() ? undefined : value,
@@ -35,6 +36,7 @@ const settingsSchema = z.object({
   })).max(20).optional(),
   openTime: optionalText,
   closeTime: optionalText,
+  businessHours: businessHoursSchema.optional(),
   autoMessage: optionalText,
   pixKey: optionalText,
   pixQrCodeUrl: optionalText,
@@ -97,8 +99,10 @@ export async function getSettings(req: Request, res: Response) {
   });
 
   const isAdminRequest = Boolean(req.user);
+  const businessHours = normalizeBusinessHours(settings.businessHours, settings.openTime, settings.closeTime);
   return res.json({
     ...settings,
+    businessHours,
     mercadoPagoPublicKey: company?.mercadoPagoPublicKey ?? null,
     ...(isAdminRequest ? { mercadoPagoAccessToken: company?.mercadoPagoAccessToken ?? null } : {}),
     mercadoPagoEnabled: company?.mercadoPagoEnabled ?? false
@@ -115,6 +119,7 @@ export async function updateSettings(req: Request, res: Response) {
       where: { id: current.id },
       data: {
         ...settingsData,
+        ...(body.businessHours !== undefined ? { businessHours: body.businessHours } : {}),
         ...(body.printerName !== undefined ? { printerName: body.printerName.trim() || null } : {}),
         ...(body.deliveryFee !== undefined ? { deliveryFee: new Prisma.Decimal(body.deliveryFee) } : {})
       }

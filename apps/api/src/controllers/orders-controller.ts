@@ -13,6 +13,7 @@ import { companyWhere, getCompanyId } from "../utils/tenant.js";
 import { audit } from "../utils/audit.js";
 import { linkCustomerToCompany, normalizeEmail, normalizePhone, recordCompanyCustomerPurchase } from "../utils/customer-linking.js";
 import { restoreStockFromOrderItems, validateAndDecrementStock } from "../utils/stock.js";
+import { getStoreOpenStatus } from "../utils/business-hours.js";
 
 function shouldSendStatusWhatsapp(
   settings: Awaited<ReturnType<typeof prisma.setting.findFirstOrThrow>>,
@@ -139,26 +140,6 @@ function toDecimal(value: number) {
   return new Prisma.Decimal(value.toFixed(2));
 }
 
-function parseTimeToMinutes(value: string) {
-  if (!value) return 0;
-  const [h, m] = value.split(":").map((part) => Number(part));
-  return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
-}
-
-function isStoreOpen(openTime: string | null | undefined, closeTime: string | null | undefined, now = new Date()) {
-  const safeOpen = openTime || "00:00";
-  const safeClose = closeTime || "23:59";
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
-  const openMinutes = parseTimeToMinutes(safeOpen);
-  const closeMinutes = parseTimeToMinutes(safeClose);
-
-  if (openMinutes <= closeMinutes) {
-    return nowMinutes >= openMinutes && nowMinutes <= closeMinutes;
-  }
-
-  return nowMinutes >= openMinutes || nowMinutes <= closeMinutes;
-}
-
 export async function createOrder(req: Request, res: Response) {
   const body = checkoutSchema.parse(req.body);
   const companyId = getCompanyId(req);
@@ -189,9 +170,16 @@ export async function createOrder(req: Request, res: Response) {
     }
   }
 
-  if (!isStoreOpen(settings.openTime ?? "00:00", settings.closeTime ?? "23:59")) {
+  const openStatus = getStoreOpenStatus({
+    ordersPaused: false,
+    businessHours: settings.businessHours,
+    openTime: settings.openTime,
+    closeTime: settings.closeTime
+  });
+  const schedule = openStatus.businessHours;
+  if (!openStatus.isOpen && schedule?.orderModeWhenClosed !== "ALLOW_WHEN_CLOSED") {
     return res.status(400).json({
-      message: `Loja fechada no momento. Funcionamento: ${settings.openTime} ate ${settings.closeTime}`
+      message: `Loja fechada no momento. ${openStatus.message}`
     });
   }
 

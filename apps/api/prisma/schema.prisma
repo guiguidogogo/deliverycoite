@@ -833,6 +833,7 @@ model Setting {
   storeLongitude             Float?
   openTime                   String            @default("18:00")
   closeTime                  String            @default("23:59")
+  businessHours              Json?
   autoMessage                String            @default("Obrigado pelo pedido!")
   pixKey                     String?
   pixQrCodeUrl               String?
