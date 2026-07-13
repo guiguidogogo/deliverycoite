@@ -135,6 +135,16 @@ import { listPrinters } from "../controllers/printer-controller.js";
 import { getSettings, updateSettings } from "../controllers/settings-controller.js";
 import { listMarketplaceCompanies, marketplaceSummary } from "../controllers/marketplace-controller.js";
 import {
+  createAdminRaffle,
+  getAdminRaffle,
+  getPublicRaffle,
+  listAdminRaffles,
+  listPublicRaffleNumbers,
+  listPublicRaffles,
+  updateAdminRaffle,
+  updateAdminRaffleStatus
+} from "../controllers/raffles-controller.js";
+import {
   createDiningArea,
   acknowledgeWaiterCall,
   approveTableSession,
@@ -196,6 +206,9 @@ route.post("/auth/login", login);
 route.get("/marketplace/assets/:id", getPersistentImage);
 route.get("/marketplace/companies", listMarketplaceCompanies);
 route.get("/marketplace/summary", marketplaceSummary);
+route.get("/public/raffles", listPublicRaffles);
+route.get("/public/raffles/:slug", getPublicRaffle);
+route.get("/public/raffles/:id/numbers", listPublicRaffleNumbers);
 route.get("/company", getPublicCompany);
 route.post("/driver/auth/login", driverLogin);
 route.get("/driver/me", driverAuth, getDriverProfile);
@@ -262,6 +275,11 @@ route.get("/admin/companies/:id", requireSuperAdmin, getCompany);
 route.patch("/admin/companies/:id", requireSuperAdmin, updateCompany);
 route.patch("/admin/companies/:id/status", requireSuperAdmin, updateCompanyStatus);
 route.get("/admin/settings", requirePermission("SETTINGS"), getSettings);
+route.get("/admin/raffles", requireAnyPermission(["CATALOG", "REPORTS"]), listAdminRaffles);
+route.post("/admin/raffles", requirePermission("CATALOG"), createAdminRaffle);
+route.get("/admin/raffles/:id", requireAnyPermission(["CATALOG", "REPORTS"]), getAdminRaffle);
+route.patch("/admin/raffles/:id", requirePermission("CATALOG"), updateAdminRaffle);
+route.patch("/admin/raffles/:id/status", requirePermission("CATALOG"), updateAdminRaffleStatus);
 route.patch("/admin/me", updateCurrentStaff);
 route.patch("/admin/password", changeStaffPassword);
 route.get("/admin/orders", requirePermission("ORDERS"), listOrders);

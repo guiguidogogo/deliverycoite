@@ -6,6 +6,18 @@ import { prisma } from "../utils/prisma.js";
 import { env } from "../utils/env.js";
 import { optionalImageUrl } from "../utils/image-url.js";
 
+const businessTypes = [
+  "FOOD",
+  "EVENTS",
+  "BARBERSHOP",
+  "BEAUTY_SALON",
+  "PHARMACY",
+  "MARKET",
+  "CLINIC",
+  "SERVICES",
+  "RAFFLE"
+] as const;
+
 const optionalText = z.preprocess(
   (value) => typeof value === "string" && !value.trim() ? null : value,
   z.string().trim().nullable().optional()
@@ -37,6 +49,7 @@ const companySchema = z.object({
   active: z.boolean().default(true),
   marketplaceVisible: z.boolean().default(true),
   featured: z.boolean().default(false),
+  businessType: z.enum(businessTypes).default("FOOD"),
   category: z.string().trim().min(2).max(50).default("Lanches"),
   city: z.string().trim().min(2).max(80).default("Conceição do Coité"),
   isOpen: z.boolean().default(true),
@@ -255,6 +268,7 @@ export async function createCompany(req: Request, res: Response) {
           active: data.active,
           marketplaceVisible: data.marketplaceVisible,
           featured: data.featured,
+          businessType: data.businessType,
           category: data.category,
           city: data.city,
           isOpen: data.isOpen,
@@ -331,6 +345,7 @@ export async function updateCompany(req: Request, res: Response) {
     active: body.active ?? existing.active,
     marketplaceVisible: body.marketplaceVisible ?? existing.marketplaceVisible,
     featured: body.featured ?? existing.featured,
+    businessType: body.businessType ?? existing.businessType,
     category: body.category ?? existing.category,
     city: body.city ?? existing.city,
     isOpen: body.isOpen ?? existing.isOpen,
