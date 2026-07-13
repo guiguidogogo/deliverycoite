@@ -500,9 +500,6 @@ export function AdminPanel() {
         {can("CATALOG") && <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/complements">
           Complementos
         </a>}
-        {can("CATALOG") && <a className="rounded-lg bg-purple-700 px-3 py-2 text-sm text-white" href="/admin/manage/raffles">
-          Rifas
-        </a>}
         {can("SETTINGS") && <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/settings">
           Configuracoes
         </a>}

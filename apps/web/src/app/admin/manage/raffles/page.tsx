@@ -86,7 +86,9 @@ export default function AdminRafflesPage() {
       setForm(initialForm);
       await load();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Falha ao criar rifa");
+      const message = error instanceof Error ? error.message : "Falha ao criar rifa";
+      toast.error(message);
+      console.error("Erro ao criar rifa", error);
     } finally {
       setSaving(false);
     }
