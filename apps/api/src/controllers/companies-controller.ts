@@ -170,8 +170,18 @@ function conflictMessage(error: unknown) {
   return "Ja existe um cadastro com estes dados";
 }
 
+function isCoolifySslipRoot(rootDomain: string) {
+  const parts = rootDomain.split(".");
+  const firstLabel = parts[0] ?? "";
+  return rootDomain.endsWith(".sslip.io") && /^[a-z0-9]{12,}$/i.test(firstLabel);
+}
+
 function publicCompanyUrl(subdomain: string) {
-  return `https://${subdomain}.${env.rootDomain}`;
+  if (isCoolifySslipRoot(env.rootDomain)) {
+    return `http://${env.rootDomain}?subdomain=${encodeURIComponent(subdomain)}`;
+  }
+  const protocol = env.rootDomain.endsWith(".sslip.io") ? "http" : "https";
+  return `${protocol}://${subdomain}.${env.rootDomain}`;
 }
 
 export async function generateCompanySubdomain(req: Request, res: Response) {

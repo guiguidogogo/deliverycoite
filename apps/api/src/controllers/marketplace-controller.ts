@@ -3,6 +3,20 @@ import { getCompanyOpenStatus } from "../services/business-hours.js";
 import { prisma } from "../utils/prisma.js";
 import { env } from "../utils/env.js";
 
+function isCoolifySslipRoot(rootDomain: string) {
+  const parts = rootDomain.split(".");
+  const firstLabel = parts[0] ?? "";
+  return rootDomain.endsWith(".sslip.io") && /^[a-z0-9]{12,}$/i.test(firstLabel);
+}
+
+function publicCompanyUrl(subdomain: string) {
+  if (isCoolifySslipRoot(env.rootDomain)) {
+    return `http://${env.rootDomain}?subdomain=${encodeURIComponent(subdomain)}`;
+  }
+  const protocol = env.rootDomain.endsWith(".sslip.io") ? "http" : "https";
+  return `${protocol}://${subdomain}.${env.rootDomain}`;
+}
+
 export async function listMarketplaceCompanies(req: Request, res: Response) {
   const search = req.query.search?.toString().trim();
   const category = req.query.category?.toString().trim();
@@ -98,7 +112,7 @@ export async function listMarketplaceCompanies(req: Request, res: Response) {
       })),
       promoBannerImageUrl: settings?.promoBannerImageUrl ?? null,
       promoBannerTitle: settings?.promoBannerTitle ?? null,
-      publicUrl: `https://${company.subdomain}.${env.rootDomain}`
+      publicUrl: publicCompanyUrl(company.subdomain)
     };
   }));
 
