@@ -206,8 +206,8 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
         <summary className="cursor-pointer text-xs font-semibold opacity-60">Ou informar URL manualmente</summary>
         <input
           className="mt-2 w-full rounded-xl border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/20"
-          type="url"
-          placeholder="https://..."
+          type="text"
+          placeholder="https://... ou /api/marketplace/assets/..."
           value={form[field]}
           onChange={(event) => setForm((value) => ({ ...value, [field]: event.target.value }))}
         />
@@ -234,7 +234,7 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
   );
 
   return (
-    <form className="space-y-5" onSubmit={submit}>
+    <form className="space-y-5" onSubmit={submit} noValidate>
       <section className="rounded-2xl border border-black/10 bg-white/85 p-5 dark:border-white/10 dark:bg-slate-900/70">
         <h2 className="text-xl font-bold">Dados da empresa</h2>
         <div className="mt-4 grid gap-3 md:grid-cols-2">
