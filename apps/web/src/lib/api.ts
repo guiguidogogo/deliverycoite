@@ -177,7 +177,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(payload.message ?? "Erro na requisicao");
   }
 
-  return readApiJson<T>(res);
+  return readApiJson<T>(res, `Resposta invalida da API em ${path}`);
 }
 
 export function resolveAssetUrl(value?: string | null) {

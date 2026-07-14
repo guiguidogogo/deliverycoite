@@ -65,20 +65,28 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
   const [numbersLoading, setNumbersLoading] = useState(false);
 
   useEffect(() => {
-    api<Raffle[]>("/public/raffles")
-      .then((payload) => {
-        setRaffles(payload);
-        if (!initialSlug) return;
-        const raffle = payload.find((item) => item.slug === initialSlug);
-        if (raffle) {
-          setSelected(raffle);
-          return;
+    const load = async () => {
+      if (initialSlug) {
+        try {
+          const directRaffle = await api<Raffle>(`/public/raffles/${initialSlug}`);
+          setSelected(directRaffle);
+        } catch {
+          toast.error("Rifa nao encontrada ou indisponivel");
         }
-        api<Raffle>(`/public/raffles/${initialSlug}`)
-          .then(setSelected)
-          .catch(() => toast.error("Rifa nao encontrada ou indisponivel"));
+      }
+
+      const payload = await api<Raffle[]>("/public/raffles");
+      setRaffles(payload);
+      if (!initialSlug && payload[0]) {
+        setSelected(payload[0]);
+      }
+    };
+
+    load()
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : "Falha ao carregar rifas";
+        toast.error(message);
       })
-      .catch((error) => toast.error(error instanceof Error ? error.message : "Falha ao carregar rifas"))
       .finally(() => setLoading(false));
   }, [initialSlug]);
 
