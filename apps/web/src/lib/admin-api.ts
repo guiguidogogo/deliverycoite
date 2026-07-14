@@ -7,6 +7,13 @@ export type AdminUser = {
   role: "SUPER_ADMIN" | "ADMIN" | "MANAGER" | "ATTENDANT";
   scope: "GLOBAL" | "COMPANY";
   permissions: string[];
+  company?: {
+    id: string;
+    tradeName: string;
+    subdomain: string;
+    active: boolean;
+    businessType?: string;
+  } | null;
 };
 
 export function getAdminToken() {

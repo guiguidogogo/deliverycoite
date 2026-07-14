@@ -22,6 +22,7 @@ export type CompanyFormValue = {
   active: boolean;
   marketplaceVisible: boolean;
   featured: boolean;
+  businessType: "FOOD" | "EVENTS" | "BARBERSHOP" | "BEAUTY_SALON" | "PHARMACY" | "MARKET" | "CLINIC" | "SERVICES" | "RAFFLE";
   category: string;
   city: string;
   isOpen: boolean;
@@ -59,6 +60,7 @@ const emptyCompany: CompanyFormValue = {
   active: true,
   marketplaceVisible: true,
   featured: false,
+  businessType: "FOOD",
   category: "Lanches",
   city: "Conceição do Coité",
   isOpen: true,
@@ -281,11 +283,37 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
             <select
               className="rounded-xl border border-black/15 bg-transparent px-3 py-2 dark:border-white/20"
               value={form.category}
-              onChange={(event) => setForm((value) => ({ ...value, category: event.target.value }))}
+              onChange={(event) => setForm((value) => ({
+                ...value,
+                category: event.target.value,
+                businessType: event.target.value === "Rifas" ? "RAFFLE" : value.businessType
+              }))}
             >
-              {["Lanches", "Pizzaria", "Açaí", "Marmitas", "Sushi", "Conveniência", "Farmácia", "Mercado"].map((category) => (
+              {["Lanches", "Pizzaria", "Açaí", "Marmitas", "Sushi", "Conveniência", "Farmácia", "Mercado", "Rifas"].map((category) => (
                 <option key={category} value={category}>{category}</option>
               ))}
+            </select>
+          </label>
+          <label className="grid gap-1 text-sm">
+            <span className="font-semibold">Tipo de negocio</span>
+            <select
+              className="rounded-xl border border-black/15 bg-transparent px-3 py-2 dark:border-white/20"
+              value={form.businessType}
+              onChange={(event) => setForm((value) => ({
+                ...value,
+                businessType: event.target.value as CompanyFormValue["businessType"],
+                category: event.target.value === "RAFFLE" ? "Rifas" : value.category
+              }))}
+            >
+              <option value="FOOD">Delivery / Restaurante</option>
+              <option value="EVENTS">Shows e Eventos</option>
+              <option value="RAFFLE">Rifas</option>
+              <option value="BARBERSHOP">Barbearia</option>
+              <option value="BEAUTY_SALON">Salao de beleza</option>
+              <option value="PHARMACY">Farmacia</option>
+              <option value="MARKET">Mercado</option>
+              <option value="CLINIC">Clinica</option>
+              <option value="SERVICES">Servicos</option>
             </select>
           </label>
           {input("city", "Cidade", { required: true })}

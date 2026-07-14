@@ -80,6 +80,61 @@ enum DeliveryRouteStatus {
   CANCELED
 }
 
+enum BusinessType {
+  FOOD
+  EVENTS
+  BARBERSHOP
+  BEAUTY_SALON
+  PHARMACY
+  MARKET
+  CLINIC
+  SERVICES
+  RAFFLE
+}
+
+enum RaffleStatus {
+  DRAFT
+  SCHEDULED
+  ACTIVE
+  PAUSED
+  ENDED
+  CANCELLED
+  FINISHED
+}
+
+enum RaffleNumberStatus {
+  AVAILABLE
+  RESERVED
+  PENDING_PAYMENT
+  PAID
+  BLOCKED
+  CANCELLED
+}
+
+enum RaffleOrderStatus {
+  RESERVED
+  PENDING_PAYMENT
+  PAID
+  CANCELLED
+  EXPIRED
+  REFUNDED
+}
+
+enum RafflePaymentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  REFUNDED
+}
+
+enum RaffleMediaType {
+  IMAGE
+  VIDEO
+  THUMBNAIL
+  SHARE_BANNER
+}
+
 model User {
   id             String          @id @default(cuid())
   name           String
@@ -129,6 +184,7 @@ model Company {
   active                 Boolean               @default(true)
   marketplaceVisible     Boolean               @default(true)
   featured               Boolean               @default(false)
+  businessType           BusinessType          @default(FOOD)
   category               String                @default("Lanches")
   city                   String                @default("Conceição do Coité")
   isOpen                 Boolean               @default(true)
@@ -181,6 +237,12 @@ model Company {
   auditLogs              AuditLog[]
   payables               AccountPayable[]
   receivables            AccountReceivable[]
+  raffles                Raffle[]
+  raffleParticipants     RaffleParticipant[]
+  raffleNumbers          RaffleNumber[]
+  raffleOrders           RaffleOrder[]
+  rafflePayments         RafflePayment[]
+  raffleAuditLogs        RaffleAuditLog[]
 }
 
 model CompanyBusinessHour {
@@ -514,6 +576,220 @@ model AccountReceivable {
   updatedAt   DateTime @updatedAt
 
   @@index([companyId, dueDate, status])
+}
+
+model Raffle {
+  id                 String              @id @default(cuid())
+  companyId          String
+  company            Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  slug               String
+  title              String
+  description        String?
+  regulation         String?
+  prize              String?
+  status             RaffleStatus        @default(DRAFT)
+  startsAt           DateTime?
+  endsAt             DateTime?
+  numberStart        Int                 @default(0)
+  numberEnd          Int
+  numberDigits       Int                 @default(2)
+  totalNumbers       Int
+  pricePerNumber     Decimal             @db.Decimal(10, 2)
+  minimumQuantity    Int                 @default(1)
+  maximumQuantity    Int                 @default(10)
+  participantLimit   Int?
+  featuredImageUrl   String?
+  videoUrl           String?
+  publishedAt        DateTime?
+  finishedAt         DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  numbers            RaffleNumber[]
+  participants       RaffleParticipant[] @relation("RaffleParticipants")
+  orders             RaffleOrder[]
+  payments           RafflePayment[]
+  media              RaffleMedia[]
+  winners            RaffleWinner[]
+  auditLogs          RaffleAuditLog[]
+
+  @@unique([companyId, slug])
+  @@index([companyId, status])
+  @@index([companyId, startsAt, endsAt])
+}
+
+model RaffleNumber {
+  id                       String              @id @default(cuid())
+  companyId                String
+  company                  Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  raffleId                 String
+  raffle                   Raffle              @relation(fields: [raffleId], references: [id], onDelete: Cascade)
+  number                   Int
+  formattedNumber          String
+  status                   RaffleNumberStatus  @default(AVAILABLE)
+  reservedByParticipantId  String?
+  reservedByParticipant    RaffleParticipant?  @relation(fields: [reservedByParticipantId], references: [id], onDelete: SetNull)
+  reservedUntil            DateTime?
+  orderId                  String?
+  order                    RaffleOrder?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  paidAt                   DateTime?
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
+
+  @@unique([raffleId, number])
+  @@index([companyId, status])
+  @@index([raffleId, status])
+  @@index([reservedUntil])
+}
+
+model RaffleParticipant {
+  id             String          @id @default(cuid())
+  companyId      String
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  raffleId       String?
+  raffle         Raffle?         @relation("RaffleParticipants", fields: [raffleId], references: [id], onDelete: SetNull)
+  name           String
+  birthDate      DateTime?
+  phone          String
+  email          String?
+  cpf            String?
+  passwordHash   String?
+  acceptedTermsAt DateTime?
+  lastAccessAt   DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  numbers        RaffleNumber[]
+  orders         RaffleOrder[]
+
+  @@unique([companyId, phone])
+  @@index([companyId, email])
+  @@index([companyId, cpf])
+}
+
+model RaffleOrder {
+  id                     String              @id @default(cuid())
+  companyId              String
+  company                Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  raffleId               String
+  raffle                 Raffle              @relation(fields: [raffleId], references: [id], onDelete: Cascade)
+  participantId          String
+  participant            RaffleParticipant   @relation(fields: [participantId], references: [id], onDelete: Restrict)
+  status                 RaffleOrderStatus   @default(RESERVED)
+  paymentMethod          String?
+  paymentStatus          RafflePaymentStatus @default(PENDING)
+  subtotal               Decimal             @db.Decimal(10, 2)
+  cardFee                Decimal             @default(0) @db.Decimal(10, 2)
+  total                  Decimal             @db.Decimal(10, 2)
+  mercadoPagoPaymentId   String?
+  mercadoPagoPreferenceId String?
+  pixQrCode              String?
+  pixCopiaCola           String?
+  reservationExpiresAt   DateTime?
+  paidAt                 DateTime?
+  cancelledAt            DateTime?
+  cancelReason           String?
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+  numbers                RaffleNumber[]
+  items                  RaffleOrderItem[]
+  payments               RafflePayment[]
+
+  @@index([companyId, status])
+  @@index([raffleId, status])
+  @@index([participantId])
+  @@index([reservationExpiresAt])
+  @@index([mercadoPagoPaymentId])
+}
+
+model RaffleOrderItem {
+  id              String        @id @default(cuid())
+  companyId       String
+  orderId         String
+  order           RaffleOrder   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  raffleNumberId  String
+  number          Int
+  formattedNumber String
+  price           Decimal       @db.Decimal(10, 2)
+  createdAt       DateTime      @default(now())
+
+  @@unique([orderId, raffleNumberId])
+  @@index([companyId])
+}
+
+model RafflePayment {
+  id                   String              @id @default(cuid())
+  companyId            String
+  company              Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  raffleId             String
+  raffle               Raffle              @relation(fields: [raffleId], references: [id], onDelete: Cascade)
+  orderId              String
+  order                RaffleOrder         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  provider             String              @default("MERCADO_PAGO")
+  providerPaymentId    String?
+  providerEventId      String?
+  method               String?
+  status               RafflePaymentStatus @default(PENDING)
+  amount               Decimal             @db.Decimal(10, 2)
+  payload              Json?
+  processedAt          DateTime?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  @@unique([provider, providerEventId])
+  @@index([companyId, status])
+  @@index([providerPaymentId])
+}
+
+model RaffleMedia {
+  id        String          @id @default(cuid())
+  companyId String
+  raffleId  String
+  raffle    Raffle          @relation(fields: [raffleId], references: [id], onDelete: Cascade)
+  type      RaffleMediaType @default(IMAGE)
+  url       String
+  title     String?
+  sortOrder Int             @default(0)
+  createdAt DateTime        @default(now())
+
+  @@index([companyId, raffleId])
+}
+
+model RaffleWinner {
+  id                  String             @id @default(cuid())
+  companyId           String
+  raffleId            String
+  raffle              Raffle             @relation(fields: [raffleId], references: [id], onDelete: Cascade)
+  raffleNumberId      String?
+  number              Int
+  formattedNumber     String
+  participantName     String?
+  participantPhone    String?
+  drawMethod          String?
+  proofUrl            String?
+  notes               String?
+  published           Boolean            @default(false)
+  drawnAt             DateTime           @default(now())
+  createdAt           DateTime           @default(now())
+
+  @@index([companyId, raffleId])
+}
+
+model RaffleAuditLog {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  raffleId    String?
+  raffle      Raffle?  @relation(fields: [raffleId], references: [id], onDelete: SetNull)
+  userId      String?
+  userName    String?
+  action      String
+  entity      String
+  entityId    String?
+  oldValue    Json?
+  newValue    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([companyId, createdAt])
+  @@index([companyId, raffleId])
 }
 
 model CustomerAddress {

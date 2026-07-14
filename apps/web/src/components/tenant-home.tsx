@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getBrowserRootDomain } from "../lib/api";
+import { api, getBrowserRootDomain } from "../lib/api";
+import type { PublicCompany } from "../lib/types";
 import { MarketplaceHome } from "./marketplace-home";
+import { RaffleStorefront } from "./raffle-storefront";
 import { Storefront } from "./storefront";
 
 function isStoreRequest() {
@@ -18,13 +20,28 @@ function isStoreRequest() {
 
 export function TenantHome() {
   const [mode, setMode] = useState<"loading" | "marketplace" | "store">("loading");
+  const [company, setCompany] = useState<PublicCompany | null>(null);
 
   useEffect(() => {
-    setMode(isStoreRequest() ? "store" : "marketplace");
+    const storeRequest = isStoreRequest();
+    if (!storeRequest) {
+      setMode("marketplace");
+      return;
+    }
+    api<PublicCompany>("/company")
+      .then((payload) => {
+        setCompany(payload);
+        setMode("store");
+      })
+      .catch(() => setMode("store"));
   }, []);
 
   if (mode === "loading") {
     return <main className="min-h-screen bg-[#fffaf5]" aria-busy="true" />;
+  }
+
+  if (mode === "store" && company?.businessType === "RAFFLE") {
+    return <RaffleStorefront company={company} />;
   }
 
   return mode === "store" ? <Storefront /> : <MarketplaceHome />;

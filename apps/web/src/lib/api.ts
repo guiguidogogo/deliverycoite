@@ -34,16 +34,34 @@ function getStoredSubdomain() {
   return looksLikeCoolifyGeneratedHost(storedSubdomain) ? "" : storedSubdomain;
 }
 
+function sslipRootDomainFromHost(host: string) {
+  if (!host.endsWith(".sslip.io")) return "";
+
+  const parts = host.split(".");
+  const sslipIndex = parts.length - 2;
+  const ipIndex = sslipIndex - 4;
+  const ipParts = parts.slice(ipIndex, sslipIndex);
+  const hasEmbeddedIpv4 = ipIndex >= 0 && ipParts.every((part) => /^\d{1,3}$/.test(part));
+
+  if (!hasEmbeddedIpv4) {
+    return parts.length > 2 ? parts.slice(1).join(".") : host;
+  }
+
+  const prefix = parts.slice(0, ipIndex);
+  const ipRoot = parts.slice(ipIndex).join(".");
+  if (prefix.length >= 2) return [...prefix.slice(1), ...parts.slice(ipIndex)].join(".");
+
+  const onlyPrefix = prefix[0] ?? "";
+  const looksLikeCoolifySlug = /^[a-z0-9]{12,}$/i.test(onlyPrefix);
+  return looksLikeCoolifySlug ? host : ipRoot;
+}
+
 export function getBrowserRootDomain() {
   if (typeof window === "undefined") return "hubregional.com.br";
 
   const host = normalizeHost(window.location.hostname);
-  if (host.endsWith(".sslip.io")) {
-    const parts = host.split(".");
-    if (parts.length > 2) {
-      return parts.slice(1).join(".");
-    }
-  }
+  const sslipRoot = sslipRootDomainFromHost(host);
+  if (sslipRoot) return sslipRoot;
 
   if (CONFIGURED_ROOT_DOMAIN) return CONFIGURED_ROOT_DOMAIN;
 
