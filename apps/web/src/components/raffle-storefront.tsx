@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
@@ -29,7 +30,7 @@ type RaffleNumber = {
 
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
-export function RaffleStorefront({ company }: { company: PublicCompany }) {
+export function RaffleStorefront({ company, initialSlug }: { company: PublicCompany; initialSlug?: string }) {
   const [raffles, setRaffles] = useState<Raffle[]>([]);
   const [selected, setSelected] = useState<Raffle | null>(null);
   const [numbers, setNumbers] = useState<RaffleNumber[]>([]);
@@ -38,10 +39,21 @@ export function RaffleStorefront({ company }: { company: PublicCompany }) {
 
   useEffect(() => {
     api<Raffle[]>("/public/raffles")
-      .then(setRaffles)
+      .then((payload) => {
+        setRaffles(payload);
+        if (!initialSlug) return;
+        const raffle = payload.find((item) => item.slug === initialSlug);
+        if (raffle) {
+          setSelected(raffle);
+          return;
+        }
+        api<Raffle>(`/public/raffles/${initialSlug}`)
+          .then(setSelected)
+          .catch(() => toast.error("Rifa nao encontrada ou indisponivel"));
+      })
       .catch((error) => toast.error(error instanceof Error ? error.message : "Falha ao carregar rifas"))
       .finally(() => setLoading(false));
-  }, []);
+  }, [initialSlug]);
 
   useEffect(() => {
     if (!selected) return;
@@ -59,6 +71,21 @@ export function RaffleStorefront({ company }: { company: PublicCompany }) {
       ? current.filter((id) => id !== number.id)
       : [...current, number.id]
     );
+  }
+
+  function raffleUrl(raffle: Raffle) {
+    if (typeof window === "undefined") return `/rifas/${raffle.slug}`;
+    return `${window.location.origin}/rifas/${raffle.slug}`;
+  }
+
+  async function copyRaffleUrl(raffle: Raffle) {
+    const url = raffleUrl(raffle);
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Link da rifa copiado");
+    } catch {
+      toast.info(url);
+    }
   }
 
   return (
@@ -109,6 +136,25 @@ export function RaffleStorefront({ company }: { company: PublicCompany }) {
                     <strong>{BRL.format(raffle.pricePerNumber)} por numero</strong>
                     <span>{raffle.availableNumbers} disponiveis</span>
                   </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Link
+                      href={`/rifas/${raffle.slug}`}
+                      onClick={(event) => event.stopPropagation()}
+                      className="rounded-xl bg-white px-4 py-2 text-sm font-bold text-ink"
+                    >
+                      Abrir pagina
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        copyRaffleUrl(raffle);
+                      }}
+                      className="rounded-xl border border-white/25 px-4 py-2 text-sm font-bold text-white"
+                    >
+                      Copiar link
+                    </button>
+                  </div>
                 </div>
               </button>
             ))}
@@ -122,6 +168,9 @@ export function RaffleStorefront({ company }: { company: PublicCompany }) {
                 <p className="text-xs font-bold uppercase tracking-[0.35em] text-ember">Escolha seus numeros</p>
                 <h2 className="text-3xl font-bold">{selected.title}</h2>
                 <p className="text-sm opacity-70">{selected.description || "Selecione apenas numeros disponiveis."}</p>
+                <p className="mt-2 break-all rounded-xl bg-slate-100 px-3 py-2 text-xs opacity-80">
+                  Link de divulgacao: {typeof window === "undefined" ? `/rifas/${selected.slug}` : raffleUrl(selected)}
+                </p>
               </div>
               <div className="rounded-2xl bg-slate-100 px-4 py-3 text-right">
                 <p className="text-xs opacity-60">Selecionado</p>
