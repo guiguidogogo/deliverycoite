@@ -78,6 +78,7 @@ function subdomainFromRequest(request: NextRequest) {
 }
 
 const hopByHopRequestHeaders = [
+  "accept-encoding",
   "connection",
   "content-length",
   "expect",
@@ -100,6 +101,7 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path?: s
   for (const header of hopByHopRequestHeaders) {
     headers.delete(header);
   }
+  headers.set("accept-encoding", "identity");
   headers.set("x-forwarded-host", normalizeHost(request.headers.get("x-forwarded-host") ?? request.headers.get("host")));
 
   const subdomain = subdomainFromRequest(request);
