@@ -62,6 +62,7 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
   const [pixPayment, setPixPayment] = useState<RafflePixPayment | null>(null);
   const [reserving, setReserving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [numbersLoading, setNumbersLoading] = useState(false);
 
   useEffect(() => {
     api<Raffle[]>("/public/raffles")
@@ -85,9 +86,12 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
     if (!selected) return;
     setSelectedNumbers([]);
     setPixPayment(null);
+    setNumbers([]);
+    setNumbersLoading(true);
     api<RaffleNumber[]>(`/public/raffles/${selected.id}/numbers`)
       .then(setNumbers)
-      .catch((error) => toast.error(error instanceof Error ? error.message : "Falha ao carregar numeros"));
+      .catch((error) => toast.error(error instanceof Error ? error.message : "Falha ao carregar numeros"))
+      .finally(() => setNumbersLoading(false));
   }, [selected]);
 
   useEffect(() => {
@@ -250,24 +254,50 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
               </div>
             </div>
 
-            <div className="mt-5 grid grid-cols-5 gap-2 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12">
-              {numbers.map((number) => {
-                const active = selectedNumbers.includes(number.id);
-                const tone = active
-                  ? "bg-ink text-white"
-                  : number.status === "AVAILABLE"
-                    ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
-                    : ["RESERVED", "PENDING_PAYMENT"].includes(number.status)
-                      ? "bg-orange-100 text-orange-800"
-                      : number.status === "PAID"
-                        ? "bg-red-100 text-red-700"
-                        : "bg-slate-200 text-slate-500";
-                return (
-                  <button key={number.id} disabled={number.status !== "AVAILABLE"} onClick={() => toggleNumber(number)} className={`rounded-xl px-2 py-2 text-sm font-bold ${tone}`}>
-                    {number.formattedNumber}
-                  </button>
-                );
-              })}
+            <div className="mt-5 rounded-3xl border border-black/10 bg-slate-50 p-4">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.25em] text-ember">Numeros da sorte</p>
+                  <p className="text-sm text-slate-500">Toque em um ou mais numeros disponiveis para reservar.</p>
+                </div>
+                <span className="rounded-full bg-white px-3 py-1 text-sm font-bold text-slate-700 shadow-sm">
+                  {numbersLoading ? "Carregando..." : `${numbers.length} numeros`}
+                </span>
+              </div>
+
+              {numbersLoading && (
+                <div className="rounded-2xl bg-white p-5 text-center text-sm font-semibold text-slate-500">
+                  Carregando numeros da rifa...
+                </div>
+              )}
+
+              {!numbersLoading && numbers.length === 0 && (
+                <div className="rounded-2xl bg-white p-5 text-center text-sm font-semibold text-slate-500">
+                  Nenhum numero foi encontrado para esta rifa. Atualize a pagina ou confira a campanha no painel.
+                </div>
+              )}
+
+              {!numbersLoading && numbers.length > 0 && (
+                <div className="grid max-h-[28rem] grid-cols-5 gap-2 overflow-y-auto pr-1 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12">
+                  {numbers.map((number) => {
+                    const active = selectedNumbers.includes(number.id);
+                    const tone = active
+                      ? "bg-ink text-white ring-2 ring-ink/30"
+                      : number.status === "AVAILABLE"
+                        ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                        : ["RESERVED", "PENDING_PAYMENT"].includes(number.status)
+                          ? "bg-orange-100 text-orange-800"
+                          : number.status === "PAID"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-slate-200 text-slate-500";
+                    return (
+                      <button key={number.id} disabled={number.status !== "AVAILABLE"} onClick={() => toggleNumber(number)} className={`rounded-xl px-2 py-2 text-sm font-bold ${tone}`}>
+                        {number.formattedNumber}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {selectedNumbers.length > 0 && (
