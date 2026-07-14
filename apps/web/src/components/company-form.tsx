@@ -283,7 +283,11 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
             <select
               className="rounded-xl border border-black/15 bg-transparent px-3 py-2 dark:border-white/20"
               value={form.category}
-              onChange={(event) => setForm((value) => ({ ...value, category: event.target.value }))}
+              onChange={(event) => setForm((value) => ({
+                ...value,
+                category: event.target.value,
+                businessType: event.target.value === "Rifas" ? "RAFFLE" : value.businessType
+              }))}
             >
               {["Lanches", "Pizzaria", "Açaí", "Marmitas", "Sushi", "Conveniência", "Farmácia", "Mercado", "Rifas"].map((category) => (
                 <option key={category} value={category}>{category}</option>

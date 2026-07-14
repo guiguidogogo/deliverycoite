@@ -143,8 +143,12 @@ function companyData(data: z.infer<typeof companySchema>) {
       message: "Este subdominio e reservado pelo sistema"
     }]);
   }
+  const category = data.category?.trim() || "Lanches";
+  const businessType = category.toLowerCase() === "rifas" ? "RAFFLE" : data.businessType;
   return {
     ...data,
+    businessType,
+    category,
     cnpj: onlyDigits(data.cnpj),
     phone: onlyDigits(data.phone),
     whatsapp: onlyDigits(data.whatsapp),
