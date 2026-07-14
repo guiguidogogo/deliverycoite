@@ -132,7 +132,6 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path?: s
   }
 
   const responseHeaders = new Headers(response.headers);
-  responseHeaders.delete("content-encoding");
   responseHeaders.delete("content-length");
   responseHeaders.delete("transfer-encoding");
 
