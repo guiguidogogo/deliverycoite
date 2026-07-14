@@ -2,6 +2,8 @@ import { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import type { Request, Response } from "express";
 import { z } from "zod";
+import { createMercadoPagoPixPayment, getMercadoPagoPayment, type MercadoPagoPaymentResponse } from "../services/mercadopago.js";
+import { env } from "../utils/env.js";
 import { prisma } from "../utils/prisma.js";
 import { getCompanyId } from "../utils/tenant.js";
 
@@ -53,6 +55,91 @@ function formatNumber(number: number, digits: number) {
 
 function onlyDigits(value: string) {
   return value.replace(/\D/g, "");
+}
+
+function requestBaseUrl(req: Request) {
+  const proto = req.get("x-forwarded-proto")?.split(",")[0] || req.protocol || "https";
+  const host = req.get("x-forwarded-host") || req.get("host");
+  return `${proto}://${host}`;
+}
+
+function rafflePaymentStatus(status?: string | null) {
+  if (status === "approved") return "APPROVED";
+  if (["cancelled", "canceled"].includes(status ?? "")) return "CANCELLED";
+  if (["rejected"].includes(status ?? "")) return "REJECTED";
+  if (status === "refunded") return "REFUNDED";
+  return "PENDING";
+}
+
+export async function applyApprovedRafflePayment(orderId: string, payment: MercadoPagoPaymentResponse) {
+  const order = await prisma.raffleOrder.findUnique({
+    where: { id: orderId },
+    include: { payments: true }
+  });
+  if (!order) return null;
+
+  const mappedStatus = rafflePaymentStatus(payment.status);
+  const approved = mappedStatus === "APPROVED";
+  const now = new Date();
+
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.raffleOrder.update({
+      where: { id: order.id },
+      data: {
+        mercadoPagoPaymentId: String(payment.id),
+        paymentStatus: mappedStatus,
+        paymentMethod: "MERCADO_PAGO",
+        ...(approved
+          ? {
+              status: "PAID",
+              paidAt: order.paidAt ?? now,
+              reservationExpiresAt: null
+            }
+          : {})
+      }
+    });
+
+    if (approved) {
+      await tx.raffleNumber.updateMany({
+        where: { companyId: order.companyId, orderId: order.id },
+        data: {
+          status: "PAID",
+          paidAt: now,
+          reservedUntil: null
+        }
+      });
+    }
+
+    const existingPayment = order.payments.find((item) => item.providerPaymentId === String(payment.id));
+    if (existingPayment) {
+      await tx.rafflePayment.update({
+        where: { id: existingPayment.id },
+        data: {
+          status: mappedStatus,
+          method: payment.payment_method_id ?? payment.payment_type_id ?? existingPayment.method,
+          payload: payment as unknown as Prisma.InputJsonValue,
+          processedAt: approved ? now : existingPayment.processedAt
+        }
+      });
+    } else {
+      await tx.rafflePayment.create({
+        data: {
+          companyId: order.companyId,
+          raffleId: order.raffleId,
+          orderId: order.id,
+          provider: "MERCADO_PAGO",
+          providerPaymentId: String(payment.id),
+          method: payment.payment_method_id ?? payment.payment_type_id ?? "pix",
+          status: mappedStatus,
+          amount: order.total,
+          payload: payment as unknown as Prisma.InputJsonValue,
+          processedAt: approved ? now : null
+        }
+      });
+    }
+
+    return updated;
+  });
 }
 
 async function releaseExpiredReservations(companyId: string, raffleId?: string) {
@@ -502,5 +589,139 @@ export async function reservePublicRaffleNumbers(req: Request, res: Response) {
       formattedNumber: item.formattedNumber,
       price: Number(item.price)
     }))
+  });
+}
+
+export async function createRaffleMercadoPagoPix(req: Request, res: Response) {
+  const companyId = getCompanyId(req);
+  const { orderId } = z.object({ orderId: z.string().min(1) }).parse(req.params);
+  await releaseExpiredReservations(companyId);
+
+  const order = await prisma.raffleOrder.findFirst({
+    where: { id: orderId, companyId },
+    include: {
+      company: true,
+      raffle: true,
+      participant: true,
+      items: true,
+      payments: { orderBy: { createdAt: "desc" } }
+    }
+  });
+
+  if (!order) return res.status(404).json({ message: "Reserva nao encontrada" });
+  if (order.status === "PAID") return res.status(400).json({ message: "Esta reserva ja esta paga" });
+  if (["CANCELLED", "EXPIRED", "REFUNDED"].includes(order.status)) {
+    return res.status(400).json({ message: "Esta reserva nao pode ser paga" });
+  }
+  if (order.reservationExpiresAt && order.reservationExpiresAt < new Date()) {
+    await releaseExpiredReservations(companyId, order.raffleId);
+    return res.status(400).json({ message: "Reserva expirada. Escolha os numeros novamente." });
+  }
+  if (!order.company.mercadoPagoEnabled || !order.company.mercadoPagoAccessToken) {
+    return res.status(400).json({ message: "Mercado Pago nao configurado para esta empresa" });
+  }
+
+  const existingPaymentId = order.mercadoPagoPaymentId || order.payments.find((payment) => payment.providerPaymentId)?.providerPaymentId;
+  if (existingPaymentId && order.pixCopiaCola) {
+    return res.status(200).json({
+      orderId: order.id,
+      paymentId: existingPaymentId,
+      status: order.paymentStatus,
+      qrCode: order.pixCopiaCola,
+      qrCodeBase64: order.pixQrCode,
+      reservationExpiresAt: order.reservationExpiresAt,
+      paid: Boolean(order.paidAt)
+    });
+  }
+
+  const payment = await createMercadoPagoPixPayment({
+    accessToken: order.company.mercadoPagoAccessToken,
+    orderId: `raffle:${order.id}`,
+    companyId: order.companyId,
+    orderNumber: Number(order.createdAt.getTime().toString().slice(-8)),
+    description: `${order.company.tradeName} - Rifa ${order.raffle.title}`,
+    amount: Number(order.total),
+    payer: {
+      name: order.participant.name,
+      email: order.participant.email || `rifa-${order.id}@${env.rootDomain}`,
+      phone: order.participant.phone
+    },
+    notificationUrl: `${requestBaseUrl(req)}/api/mercadopago/webhook`
+  });
+
+  const transactionData = payment.point_of_interaction?.transaction_data;
+  const mappedStatus = rafflePaymentStatus(payment.status);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.raffleOrder.update({
+      where: { id: order.id },
+      data: {
+        status: "PENDING_PAYMENT",
+        paymentMethod: "MERCADO_PAGO",
+        paymentStatus: mappedStatus,
+        mercadoPagoPaymentId: String(payment.id),
+        pixCopiaCola: transactionData?.qr_code ?? null,
+        pixQrCode: transactionData?.qr_code_base64 ?? null
+      }
+    });
+
+    await tx.raffleNumber.updateMany({
+      where: { companyId, orderId: order.id, status: "RESERVED" },
+      data: { status: "PENDING_PAYMENT" }
+    });
+
+    await tx.rafflePayment.create({
+      data: {
+        companyId,
+        raffleId: order.raffleId,
+        orderId: order.id,
+        provider: "MERCADO_PAGO",
+        providerPaymentId: String(payment.id),
+        method: payment.payment_method_id ?? payment.payment_type_id ?? "pix",
+        status: mappedStatus,
+        amount: order.total,
+        payload: payment as unknown as Prisma.InputJsonValue
+      }
+    });
+  });
+
+  return res.status(201).json({
+    orderId: order.id,
+    paymentId: String(payment.id),
+    status: mappedStatus,
+    qrCode: transactionData?.qr_code ?? null,
+    qrCodeBase64: transactionData?.qr_code_base64 ?? null,
+    ticketUrl: transactionData?.ticket_url ?? null,
+    reservationExpiresAt: order.reservationExpiresAt,
+    paid: mappedStatus === "APPROVED"
+  });
+}
+
+export async function getRaffleMercadoPagoStatus(req: Request, res: Response) {
+  const companyId = getCompanyId(req);
+  const { orderId } = z.object({ orderId: z.string().min(1) }).parse(req.params);
+  const order = await prisma.raffleOrder.findFirst({
+    where: { id: orderId, companyId },
+    include: { company: true, payments: { orderBy: { createdAt: "desc" } } }
+  });
+  if (!order) return res.status(404).json({ message: "Reserva nao encontrada" });
+
+  let current = order;
+  const paymentId = order.mercadoPagoPaymentId || order.payments.find((payment) => payment.providerPaymentId)?.providerPaymentId;
+  if (paymentId && !order.paidAt && order.company.mercadoPagoAccessToken) {
+    const payment = await getMercadoPagoPayment(order.company.mercadoPagoAccessToken, paymentId);
+    const updated = await applyApprovedRafflePayment(order.id, payment);
+    if (updated) {
+      current = { ...order, ...updated };
+    }
+  }
+
+  return res.json({
+    orderId: current.id,
+    status: current.status,
+    paymentStatus: current.paymentStatus,
+    paid: Boolean(current.paidAt),
+    paidAt: current.paidAt,
+    reservationExpiresAt: current.reservationExpiresAt
   });
 }

@@ -141,8 +141,10 @@ import { getSettings, updateSettings } from "../controllers/settings-controller.
 import { listMarketplaceCompanies, marketplaceSummary } from "../controllers/marketplace-controller.js";
 import {
   createAdminRaffle,
+  createRaffleMercadoPagoPix,
   getAdminRaffle,
   getPublicRaffle,
+  getRaffleMercadoPagoStatus,
   listAdminRaffles,
   listPublicRaffleNumbers,
   listPublicRaffles,
@@ -219,6 +221,8 @@ route.get("/public/raffles", listPublicRaffles);
 route.get("/public/raffles/:slug", getPublicRaffle);
 route.get("/public/raffles/:id/numbers", listPublicRaffleNumbers);
 route.post("/public/raffles/:id/reserve", reservePublicRaffleNumbers);
+route.post("/public/raffles/orders/:orderId/mercadopago/pix", createRaffleMercadoPagoPix);
+route.get("/public/raffles/orders/:orderId/mercadopago/status", getRaffleMercadoPagoStatus);
 route.get("/company", getPublicCompany);
 route.post("/driver/auth/login", driverLogin);
 route.get("/driver/me", driverAuth, getDriverProfile);

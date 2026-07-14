@@ -17,6 +17,7 @@ import { companyWhere, getCompanyId } from "../utils/tenant.js";
 import { env } from "../utils/env.js";
 import { formatOrderCode } from "../utils/order-code.js";
 import { audit } from "../utils/audit.js";
+import { applyApprovedRafflePayment } from "./raffles-controller.js";
 
 function requestBaseUrl(req: Request) {
   const proto = req.get("x-forwarded-proto")?.split(",")[0] || req.protocol || "https";
@@ -291,6 +292,17 @@ export async function mercadoPagoWebhook(req: Request, res: Response) {
     return res.status(200).json({ ok: true, ignored: true });
   }
 
+  const existingRafflePayment = await prisma.rafflePayment.findFirst({
+    where: { providerPaymentId: paymentId },
+    include: { company: true, order: true }
+  });
+
+  if (existingRafflePayment?.company.mercadoPagoAccessToken) {
+    const payment = await getMercadoPagoPayment(existingRafflePayment.company.mercadoPagoAccessToken, paymentId);
+    await applyApprovedRafflePayment(existingRafflePayment.orderId, payment);
+    return res.status(200).json({ ok: true, type: "raffle" });
+  }
+
   const existingByPayment = await prisma.order.findFirst({
     where: { mercadoPagoPaymentId: paymentId },
     include: { company: true }
@@ -299,6 +311,16 @@ export async function mercadoPagoWebhook(req: Request, res: Response) {
   let accessToken = existingByPayment?.company.mercadoPagoAccessToken;
   let payment = accessToken ? await getMercadoPagoPayment(accessToken, paymentId) : null;
   let orderId = payment?.external_reference || payment?.metadata?.order_id || existingByPayment?.id;
+
+  if (orderId?.startsWith("raffle:")) {
+    const raffleOrderId = orderId.replace(/^raffle:/, "");
+    const raffleOrder = await prisma.raffleOrder.findUnique({ where: { id: raffleOrderId }, include: { company: true } });
+    if (raffleOrder?.company.mercadoPagoAccessToken) {
+      payment = payment ?? await getMercadoPagoPayment(raffleOrder.company.mercadoPagoAccessToken, paymentId);
+      await applyApprovedRafflePayment(raffleOrder.id, payment);
+      return res.status(200).json({ ok: true, type: "raffle" });
+    }
+  }
 
   if (!orderId) {
     return res.status(200).json({ ok: true, ignored: true, reason: "order_not_found_in_payment" });
