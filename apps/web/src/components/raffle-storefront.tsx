@@ -50,6 +50,35 @@ type RafflePixPayment = {
 
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
+async function publicRaffleJson<T>(path: string): Promise<T> {
+  const separator = path.includes("?") ? "&" : "?";
+  const response = await fetch(`/api${path}${separator}_=${Date.now()}`, {
+    cache: "no-store",
+    headers: { Accept: "application/json" }
+  });
+  const contentType = response.headers.get("content-type") ?? "";
+  const text = await response.text().catch(() => "");
+
+  if (!response.ok) {
+    if (contentType.includes("application/json")) {
+      try {
+        const payload = JSON.parse(text) as { message?: string };
+        throw new Error(payload.message ?? `Erro na requisicao ${path}`);
+      } catch (error) {
+        if (error instanceof Error && error.message !== "Unexpected end of JSON input") throw error;
+      }
+    }
+    throw new Error(`Erro na requisicao ${path}`);
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    const preview = text.trim().replace(/\s+/g, " ").slice(0, 80);
+    throw new Error(`Resposta invalida da API em ${path}${preview ? `: ${preview}` : ""}`);
+  }
+}
+
 export function RaffleStorefront({ company, initialSlug }: { company: PublicCompany; initialSlug?: string }) {
   const [raffles, setRaffles] = useState<Raffle[]>([]);
   const [selected, setSelected] = useState<Raffle | null>(null);
@@ -68,14 +97,14 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
     const load = async () => {
       if (initialSlug) {
         try {
-          const directRaffle = await api<Raffle>(`/public/raffles/${initialSlug}`);
+          const directRaffle = await publicRaffleJson<Raffle>(`/public/raffles/${initialSlug}`);
           setSelected(directRaffle);
         } catch {
           toast.error("Rifa nao encontrada ou indisponivel");
         }
       }
 
-      const payload = await api<Raffle[]>("/public/raffles");
+      const payload = await publicRaffleJson<Raffle[]>("/public/raffles");
       setRaffles(payload);
       if (!initialSlug && payload[0]) {
         setSelected(payload[0]);
@@ -96,7 +125,7 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
     setPixPayment(null);
     setNumbers([]);
     setNumbersLoading(true);
-    api<RaffleNumber[]>(`/public/raffles/${selected.id}/numbers`)
+    publicRaffleJson<RaffleNumber[]>(`/public/raffles/${selected.id}/numbers`)
       .then(setNumbers)
       .catch((error) => toast.error(error instanceof Error ? error.message : "Falha ao carregar numeros"))
       .finally(() => setNumbersLoading(false));
@@ -113,7 +142,7 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
           if (status.paid) {
             toast.success("Pagamento confirmado! Seus numeros foram marcados como pagos.");
             if (selected) {
-              void api<RaffleNumber[]>(`/public/raffles/${selected.id}/numbers`).then(setNumbers);
+              void publicRaffleJson<RaffleNumber[]>(`/public/raffles/${selected.id}/numbers`).then(setNumbers);
             }
           }
         })
@@ -175,7 +204,7 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
       setPixPayment(pix);
       toast.success(`Reserva criada: ${order.numbers.map((item) => item.formattedNumber).join(", ")}. Pague o Pix para confirmar.`);
       setSelectedNumbers([]);
-      setNumbers(await api<RaffleNumber[]>(`/public/raffles/${selected.id}/numbers`));
+      setNumbers(await publicRaffleJson<RaffleNumber[]>(`/public/raffles/${selected.id}/numbers`));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao reservar numeros");
     } finally {
