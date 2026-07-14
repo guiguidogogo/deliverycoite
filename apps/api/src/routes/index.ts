@@ -146,6 +146,7 @@ import {
   listAdminRaffles,
   listPublicRaffleNumbers,
   listPublicRaffles,
+  reservePublicRaffleNumbers,
   updateAdminRaffle,
   updateAdminRaffleStatus
 } from "../controllers/raffles-controller.js";
@@ -217,6 +218,7 @@ route.get("/marketplace/summary", marketplaceSummary);
 route.get("/public/raffles", listPublicRaffles);
 route.get("/public/raffles/:slug", getPublicRaffle);
 route.get("/public/raffles/:id/numbers", listPublicRaffleNumbers);
+route.post("/public/raffles/:id/reserve", reservePublicRaffleNumbers);
 route.get("/company", getPublicCompany);
 route.post("/driver/auth/login", driverLogin);
 route.get("/driver/me", driverAuth, getDriverProfile);

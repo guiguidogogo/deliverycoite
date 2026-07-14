@@ -28,6 +28,15 @@ type RaffleNumber = {
   status: "AVAILABLE" | "RESERVED" | "PENDING_PAYMENT" | "PAID" | "BLOCKED" | "CANCELLED";
 };
 
+type ReserveResponse = {
+  id: string;
+  status: string;
+  paymentStatus: string;
+  total: number;
+  reservationExpiresAt: string;
+  numbers: Array<{ formattedNumber: string }>;
+};
+
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
 export function RaffleStorefront({ company, initialSlug }: { company: PublicCompany; initialSlug?: string }) {
@@ -35,6 +44,11 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
   const [selected, setSelected] = useState<Raffle | null>(null);
   const [numbers, setNumbers] = useState<RaffleNumber[]>([]);
   const [selectedNumbers, setSelectedNumbers] = useState<string[]>([]);
+  const [participantName, setParticipantName] = useState("");
+  const [participantPhone, setParticipantPhone] = useState("");
+  const [participantEmail, setParticipantEmail] = useState("");
+  const [participantPassword, setParticipantPassword] = useState("");
+  const [reserving, setReserving] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -67,9 +81,8 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
 
   function toggleNumber(number: RaffleNumber) {
     if (number.status !== "AVAILABLE") return;
-    setSelectedNumbers((current) => current.includes(number.id)
-      ? current.filter((id) => id !== number.id)
-      : [...current, number.id]
+    setSelectedNumbers((current) =>
+      current.includes(number.id) ? current.filter((id) => id !== number.id) : [...current, number.id]
     );
   }
 
@@ -85,6 +98,41 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
       toast.success("Link da rifa copiado");
     } catch {
       toast.info(url);
+    }
+  }
+
+  async function reserveNumbers() {
+    if (!selected) return;
+    if (selectedNumbers.length === 0) {
+      toast.error("Escolha pelo menos um numero");
+      return;
+    }
+    if (!participantName.trim() || !participantPhone.trim() || !participantEmail.trim()) {
+      toast.error("Informe nome, WhatsApp e e-mail para reservar");
+      return;
+    }
+
+    setReserving(true);
+    try {
+      const order = await api<ReserveResponse>(`/public/raffles/${selected.id}/reserve`, {
+        method: "POST",
+        body: JSON.stringify({
+          numberIds: selectedNumbers,
+          participant: {
+            name: participantName,
+            phone: participantPhone,
+            email: participantEmail,
+            password: participantPassword
+          }
+        })
+      });
+      toast.success(`Reserva criada: ${order.numbers.map((item) => item.formattedNumber).join(", ")}`);
+      setSelectedNumbers([]);
+      setNumbers(await api<RaffleNumber[]>(`/public/raffles/${selected.id}/numbers`));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao reservar numeros");
+    } finally {
+      setReserving(false);
     }
   }
 
@@ -137,21 +185,10 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
                     <span>{raffle.availableNumbers} disponiveis</span>
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">
-                    <Link
-                      href={`/rifas/${raffle.slug}`}
-                      onClick={(event) => event.stopPropagation()}
-                      className="rounded-xl bg-white px-4 py-2 text-sm font-bold text-ink"
-                    >
+                    <Link href={`/rifas/${raffle.slug}`} onClick={(event) => event.stopPropagation()} className="rounded-xl bg-white px-4 py-2 text-sm font-bold text-ink">
                       Abrir pagina
                     </Link>
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        copyRaffleUrl(raffle);
-                      }}
-                      className="rounded-xl border border-white/25 px-4 py-2 text-sm font-bold text-white"
-                    >
+                    <button type="button" onClick={(event) => { event.stopPropagation(); copyRaffleUrl(raffle); }} className="rounded-xl border border-white/25 px-4 py-2 text-sm font-bold text-white">
                       Copiar link
                     </button>
                   </div>
@@ -177,6 +214,7 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
                 <strong>{selectedNumbers.length} numero(s) • {BRL.format(total)}</strong>
               </div>
             </div>
+
             <div className="mt-5 grid grid-cols-5 gap-2 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12">
               {numbers.map((number) => {
                 const active = selectedNumbers.includes(number.id);
@@ -196,14 +234,28 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
                 );
               })}
             </div>
+
+            {selectedNumbers.length > 0 && (
+              <div className="mt-5 rounded-2xl border border-black/10 bg-slate-50 p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.3em] text-ember">Cadastro do participante</p>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <input value={participantName} onChange={(event) => setParticipantName(event.target.value)} className="rounded-xl border px-4 py-3" placeholder="Nome completo" />
+                  <input value={participantPhone} onChange={(event) => setParticipantPhone(event.target.value)} className="rounded-xl border px-4 py-3" placeholder="WhatsApp" />
+                  <input value={participantEmail} onChange={(event) => setParticipantEmail(event.target.value)} className="rounded-xl border px-4 py-3" placeholder="E-mail" type="email" />
+                  <input value={participantPassword} onChange={(event) => setParticipantPassword(event.target.value)} className="rounded-xl border px-4 py-3" placeholder="Senha para acessar depois (opcional)" type="password" />
+                </div>
+                <p className="mt-3 text-xs opacity-60">A reserva segura os numeros por 15 minutos. A proxima etapa liga isso ao Mercado Pago.</p>
+              </div>
+            )}
+
             <div className="sticky bottom-3 mt-6 rounded-2xl bg-ink p-4 text-white shadow-xl">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-sm opacity-70">Checkout completo entra na proxima fase.</p>
+                  <p className="text-sm opacity-70">Informe seus dados para reservar por 15 minutos.</p>
                   <strong>{selectedNumbers.length} numero(s) selecionado(s) • {BRL.format(total)}</strong>
                 </div>
-                <button className="rounded-xl bg-ember px-5 py-3 font-bold" onClick={() => toast.info("Proxima etapa: cadastro, reserva de 10 minutos e Mercado Pago")}>
-                  Participar
+                <button className="rounded-xl bg-ember px-5 py-3 font-bold disabled:opacity-60" disabled={reserving} onClick={() => void reserveNumbers()}>
+                  {reserving ? "Reservando..." : "Reservar numeros"}
                 </button>
               </div>
             </div>
