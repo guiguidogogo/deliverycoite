@@ -33,12 +33,30 @@ function normalizeSubdomain(value?: string | null) {
 }
 
 function rootDomainFromHost(host: string) {
-  if (configuredRootDomain) return configuredRootDomain;
+  if (configuredRootDomain && (host === configuredRootDomain || host.endsWith(`.${configuredRootDomain}`))) {
+    return configuredRootDomain;
+  }
+
   if (host.endsWith(".sslip.io")) {
     const parts = host.split(".");
-    if (parts.length > 2) return parts.slice(1).join(".");
+    const sslipIndex = parts.length - 2;
+    const ipIndex = sslipIndex - 4;
+    const ipParts = parts.slice(ipIndex, sslipIndex);
+    const hasEmbeddedIpv4 = ipIndex >= 0 && ipParts.every((part) => /^\d{1,3}$/.test(part));
+
+    if (!hasEmbeddedIpv4) {
+      if (parts.length > 2) return parts.slice(1).join(".");
+    } else {
+      const prefix = parts.slice(0, ipIndex);
+      const ipRoot = parts.slice(ipIndex).join(".");
+      if (prefix.length >= 2) return [...prefix.slice(1), ...parts.slice(ipIndex)].join(".");
+
+      const onlyPrefix = prefix[0] ?? "";
+      const looksLikeCoolifySlug = /^[a-z0-9]{12,}$/i.test(onlyPrefix);
+      return looksLikeCoolifySlug ? host : ipRoot;
+    }
   }
-  return "hubregional.com.br";
+  return configuredRootDomain || "hubregional.com.br";
 }
 
 function subdomainFromRequest(request: NextRequest) {
