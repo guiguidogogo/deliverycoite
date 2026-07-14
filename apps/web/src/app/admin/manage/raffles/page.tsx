@@ -22,6 +22,24 @@ type Raffle = {
   _count?: { numbers: number; orders: number; participants: number };
 };
 
+type RaffleOrder = {
+  id: string;
+  raffle: { id: string; title: string; slug: string };
+  participant: { name: string; phone: string; email?: string | null };
+  status: string;
+  paymentStatus: string;
+  paymentMethod?: string | null;
+  mercadoPagoPaymentId?: string | null;
+  total: number;
+  reservationExpiresAt?: string | null;
+  paidAt?: string | null;
+  cancelledAt?: string | null;
+  cancelReason?: string | null;
+  createdAt: string;
+  numbers: Array<{ formattedNumber: string; price: number }>;
+  lastPayment?: { provider: string; providerPaymentId?: string | null; method?: string | null; status: string; processedAt?: string | null } | null;
+};
+
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
 const initialForm = {
@@ -44,6 +62,7 @@ const initialForm = {
 
 export default function AdminRafflesPage() {
   const [raffles, setRaffles] = useState<Raffle[]>([]);
+  const [orders, setOrders] = useState<RaffleOrder[]>([]);
   const [form, setForm] = useState(initialForm);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -54,6 +73,7 @@ export default function AdminRafflesPage() {
     setLoading(true);
     try {
       setRaffles(await adminApi<Raffle[]>("/admin/raffles"));
+      setOrders(await adminApi<RaffleOrder[]>("/admin/raffles/orders"));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao carregar rifas");
     } finally {
@@ -109,6 +129,8 @@ export default function AdminRafflesPage() {
   }
 
   const update = (field: keyof typeof initialForm, value: string | number) => setForm((current) => ({ ...current, [field]: value }));
+  const paidOrders = orders.filter((order) => order.paymentStatus === "APPROVED" || order.status === "PAID").length;
+  const pendingOrders = orders.filter((order) => ["RESERVED", "PENDING_PAYMENT"].includes(order.status)).length;
 
   return (
     <main className="mx-auto max-w-6xl p-4 md:p-8">
@@ -190,6 +212,51 @@ export default function AdminRafflesPage() {
             ))}
           </div>
         </section>
+      </section>
+
+      <section className="mt-6 rounded-3xl border border-black/10 bg-white/85 p-5 shadow-sm dark:border-white/10 dark:bg-slate-900/70">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.35em] text-ember">Reservas e pagamentos</p>
+            <h2 className="text-2xl font-bold">Pedidos das rifas</h2>
+            <p className="text-sm opacity-70">{paidOrders} pago(s) · {pendingOrders} pendente(s)</p>
+          </div>
+          <button className="rounded-xl border px-3 py-2 text-sm font-bold" onClick={() => void load()}>Atualizar pedidos</button>
+        </div>
+
+        <div className="mt-4 grid gap-3">
+          {!loading && orders.length === 0 && <p className="rounded-2xl bg-slate-50 p-4 text-sm opacity-70">Nenhum pedido de rifa ainda.</p>}
+          {orders.map((order) => (
+            <article key={order.id} className="rounded-2xl border border-black/10 p-4 dark:border-white/10">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-bold">{order.participant.name}</h3>
+                  <p className="text-sm opacity-70">{order.raffle.title} · {new Date(order.createdAt).toLocaleString("pt-BR")}</p>
+                  <p className="text-xs opacity-70">
+                    {order.participant.phone}{order.participant.email ? ` · ${order.participant.email}` : ""}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <strong>{BRL.format(order.total)}</strong>
+                  <p className={`mt-1 rounded-full px-3 py-1 text-xs font-bold ${order.paymentStatus === "APPROVED" || order.status === "PAID" ? "bg-emerald-100 text-emerald-700" : order.status === "EXPIRED" || order.paymentStatus === "CANCELLED" ? "bg-red-100 text-red-700" : "bg-orange-100 text-orange-700"}`}>
+                    {order.status} / {order.paymentStatus}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {order.numbers.map((number) => (
+                  <span key={number.formattedNumber} className="rounded-lg bg-slate-100 px-2 py-1 text-sm font-bold dark:bg-slate-800">
+                    {number.formattedNumber}
+                  </span>
+                ))}
+              </div>
+              <div className="mt-3 grid gap-1 text-xs opacity-70 md:grid-cols-2">
+                <span>Pagamento MP: {order.mercadoPagoPaymentId || order.lastPayment?.providerPaymentId || "-"}</span>
+                <span>{order.paidAt ? `Pago em ${new Date(order.paidAt).toLocaleString("pt-BR")}` : order.reservationExpiresAt ? `Expira em ${new Date(order.reservationExpiresAt).toLocaleString("pt-BR")}` : "Sem expiracao"}</span>
+              </div>
+            </article>
+          ))}
+        </div>
       </section>
     </main>
   );

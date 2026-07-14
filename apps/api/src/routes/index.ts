@@ -145,6 +145,7 @@ import {
   getAdminRaffle,
   getPublicRaffle,
   getRaffleMercadoPagoStatus,
+  listAdminRaffleOrders,
   listAdminRaffles,
   listPublicRaffleNumbers,
   listPublicRaffles,
@@ -294,6 +295,7 @@ route.get("/admin/business-hours", requirePermission("SETTINGS"), getAdminBusine
 route.put("/admin/business-hours", requirePermission("SETTINGS"), updateAdminBusinessHours);
 route.get("/admin/raffles", requireAnyPermission(["CATALOG", "REPORTS"]), listAdminRaffles);
 route.post("/admin/raffles", requirePermission("CATALOG"), createAdminRaffle);
+route.get("/admin/raffles/orders", requireAnyPermission(["CATALOG", "REPORTS"]), listAdminRaffleOrders);
 route.get("/admin/raffles/:id", requireAnyPermission(["CATALOG", "REPORTS"]), getAdminRaffle);
 route.patch("/admin/raffles/:id", requirePermission("CATALOG"), updateAdminRaffle);
 route.patch("/admin/raffles/:id/status", requirePermission("CATALOG"), updateAdminRaffleStatus);

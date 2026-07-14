@@ -244,6 +244,7 @@ function serializeRaffle<T extends { pricePerNumber: Prisma.Decimal; _count?: Re
 
 export async function listAdminRaffles(req: Request, res: Response) {
   const companyId = getCompanyId(req);
+  await releaseExpiredReservations(companyId);
   const raffles = await prisma.raffle.findMany({
     where: { companyId },
     include: {
@@ -258,6 +259,44 @@ export async function listAdminRaffles(req: Request, res: Response) {
     orderBy: { createdAt: "desc" }
   });
   return res.json(raffles.map(serializeRaffle));
+}
+
+export async function listAdminRaffleOrders(req: Request, res: Response) {
+  const companyId = getCompanyId(req);
+  await releaseExpiredReservations(companyId);
+
+  const orders = await prisma.raffleOrder.findMany({
+    where: { companyId },
+    include: {
+      raffle: { select: { id: true, title: true, slug: true } },
+      participant: { select: { name: true, phone: true, email: true } },
+      items: { select: { formattedNumber: true, price: true }, orderBy: { number: "asc" } },
+      payments: { select: { provider: true, providerPaymentId: true, method: true, status: true, processedAt: true }, orderBy: { createdAt: "desc" }, take: 1 }
+    },
+    orderBy: { createdAt: "desc" },
+    take: 80
+  });
+
+  return res.json(orders.map((order) => ({
+    id: order.id,
+    raffle: order.raffle,
+    participant: order.participant,
+    status: order.status,
+    paymentStatus: order.paymentStatus,
+    paymentMethod: order.paymentMethod,
+    mercadoPagoPaymentId: order.mercadoPagoPaymentId,
+    total: Number(order.total),
+    reservationExpiresAt: order.reservationExpiresAt,
+    paidAt: order.paidAt,
+    cancelledAt: order.cancelledAt,
+    cancelReason: order.cancelReason,
+    createdAt: order.createdAt,
+    numbers: order.items.map((item) => ({
+      formattedNumber: item.formattedNumber,
+      price: Number(item.price)
+    })),
+    lastPayment: order.payments[0] ?? null
+  })));
 }
 
 export async function createAdminRaffle(req: Request, res: Response) {
