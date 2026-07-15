@@ -737,15 +737,29 @@ export async function reservePublicRaffleNumbers(req: Request, res: Response) {
   const phone = onlyDigits(body.participant.phone);
   const cpf = body.participant.cpf ? onlyDigits(body.participant.cpf) : null;
   const email = body.participant.email.toLowerCase();
-  const existingParticipant = await prisma.raffleParticipant.findUnique({
+  const existingParticipant = await prisma.raffleParticipant.findFirst({
     where: {
-      companyId_phone: {
-        companyId,
-        phone
-      }
+      companyId,
+      OR: [
+        { phone },
+        { email }
+      ]
     },
     select: { id: true, passwordHash: true }
   });
+  const participantPayload = getRaffleParticipantPayload(req);
+  const isAuthenticatedParticipant = Boolean(
+    existingParticipant
+    && participantPayload?.raffleParticipantId === existingParticipant.id
+    && participantPayload.companyId === companyId
+  );
+
+  if (existingParticipant?.passwordHash && !isAuthenticatedParticipant) {
+    return res.status(409).json({
+      message: "Ja existe um cadastro com este e-mail ou telefone. Faça login em Minha conta para continuar sua compra.",
+      code: "RAFFLE_ACCOUNT_EXISTS"
+    });
+  }
 
   if (!existingParticipant?.passwordHash && !body.participant.password) {
     return res.status(400).json({ message: "Crie uma senha com pelo menos 6 digitos para acessar suas rifas depois." });
@@ -768,33 +782,32 @@ export async function reservePublicRaffleNumbers(req: Request, res: Response) {
       throw { statusCode: 400, message: "Um ou mais numeros ja foram reservados. Atualize a rifa e escolha novamente." };
     }
 
-    const participant = await tx.raffleParticipant.upsert({
-      where: {
-        companyId_phone: {
-          companyId,
-          phone
-        }
-      },
-      update: {
-        name: body.participant.name,
-        email,
-        cpf,
-        raffleId: raffle.id,
-        ...(passwordHash ? { passwordHash } : {}),
-        lastAccessAt: now
-      },
-      create: {
-        companyId,
-        raffleId: raffle.id,
-        name: body.participant.name,
-        phone,
-        email,
-        cpf,
-        passwordHash: passwordHash ?? null,
-        acceptedTermsAt: now,
-        lastAccessAt: now
-      }
-    });
+    const participant = existingParticipant
+      ? await tx.raffleParticipant.update({
+          where: { id: existingParticipant.id },
+          data: {
+            name: body.participant.name,
+            phone,
+            email,
+            cpf,
+            raffleId: raffle.id,
+            ...(passwordHash ? { passwordHash } : {}),
+            lastAccessAt: now
+          }
+        })
+      : await tx.raffleParticipant.create({
+          data: {
+            companyId,
+            raffleId: raffle.id,
+            name: body.participant.name,
+            phone,
+            email,
+            cpf,
+            passwordHash: passwordHash ?? null,
+            acceptedTermsAt: now,
+            lastAccessAt: now
+          }
+        });
 
     const subtotal = new Prisma.Decimal(raffle.pricePerNumber).mul(numbers.length);
     const createdOrder = await tx.raffleOrder.create({

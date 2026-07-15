@@ -103,6 +103,7 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
   const [loading, setLoading] = useState(true);
   const [numbersLoading, setNumbersLoading] = useState(false);
   const [loggedParticipant, setLoggedParticipant] = useState<RaffleAccountSummary["participant"] | null>(null);
+  const [accountRequiredMessage, setAccountRequiredMessage] = useState("");
 
   useEffect(() => {
     const load = async () => {
@@ -210,15 +211,18 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
       toast.error("Escolha pelo menos um numero");
       return;
     }
-    if (!participantName.trim() || !participantPhone.trim() || !participantEmail.trim() || !participantPassword.trim()) {
+    if (!participantName.trim() || !participantPhone.trim() || !participantEmail.trim() || (!loggedParticipant && !participantPassword.trim())) {
       toast.error("Informe nome, WhatsApp, e-mail e crie uma senha para reservar");
       return;
     }
 
     setReserving(true);
+    setAccountRequiredMessage("");
     try {
+      const token = localStorage.getItem(RAFFLE_TOKEN_KEY);
       const order = await api<ReserveResponse>(`/public/raffles/${selected.id}/reserve`, {
         method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         body: JSON.stringify({
           numberIds: selectedNumbers,
           participant: {
@@ -238,7 +242,11 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
       setSelectedNumbers([]);
       setNumbers(await publicRaffleJson<RaffleNumber[]>(`/public/raffles/${selected.id}/numbers`));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Falha ao reservar numeros");
+      const message = error instanceof Error ? error.message : "Falha ao reservar numeros";
+      if (message.toLowerCase().includes("faça login") || message.toLowerCase().includes("cadastro com este e-mail")) {
+        setAccountRequiredMessage(message);
+      }
+      toast.error(message);
     } finally {
       setReserving(false);
     }
@@ -403,6 +411,22 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
                   </div>
                 ) : (
                   <>
+                    <div className="mb-3 rounded-2xl border border-blue-100 bg-blue-50 p-4">
+                      <p className="text-sm font-bold text-blue-900">Ja tem cadastro?</p>
+                      <p className="mt-1 text-sm text-slate-600">Entre na sua conta para usar seus dados salvos, ver rifas compradas e continuar novas reservas.</p>
+                      <Link href="/rifas/minha-conta" className="mt-3 inline-flex rounded-xl bg-ink px-4 py-2 text-sm font-bold text-white">
+                        Entrar na minha conta
+                      </Link>
+                    </div>
+                    {accountRequiredMessage && (
+                      <div className="mb-3 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
+                        <strong>Conta encontrada.</strong>
+                        <p className="mt-1">{accountRequiredMessage}</p>
+                        <Link href="/rifas/minha-conta" className="mt-3 inline-flex rounded-xl bg-orange-600 px-4 py-2 text-sm font-bold text-white">
+                          Fazer login e continuar
+                        </Link>
+                      </div>
+                    )}
                     <div className="mt-3 grid gap-3 md:grid-cols-2">
                       <input value={participantName} onChange={(event) => setParticipantName(event.target.value)} className="rounded-xl border px-4 py-3" placeholder="Nome completo" />
                       <input value={participantPhone} onChange={(event) => setParticipantPhone(event.target.value)} className="rounded-xl border px-4 py-3" placeholder="WhatsApp" />
