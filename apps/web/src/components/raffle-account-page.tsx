@@ -62,6 +62,17 @@ type LoginResponse = {
   participant: Participant;
 };
 
+type RafflePixPayment = {
+  orderId: string;
+  paymentId?: string;
+  status?: string;
+  qrCode?: string | null;
+  qrCodeBase64?: string | null;
+  ticketUrl?: string | null;
+  reservationExpiresAt?: string | null;
+  paid?: boolean;
+};
+
 const TOKEN_KEY = "hubregional:raffleParticipantToken";
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -91,6 +102,7 @@ export function RaffleAccountPage() {
   const [token, setToken] = useState("");
   const [account, setAccount] = useState<RaffleAccountPayload | null>(null);
   const [loading, setLoading] = useState(false);
+  const [payingOrderId, setPayingOrderId] = useState("");
 
   const pendingOrders = useMemo(
     () => account?.orders.filter((order) => statusLabel(order) === "Pendente") ?? [],
@@ -126,6 +138,29 @@ export function RaffleAccountPage() {
     if (stored) void loadAccount(stored);
   }, []);
 
+  useEffect(() => {
+    if (!token || pendingOrders.length === 0) return;
+
+    const interval = window.setInterval(() => {
+      Promise.allSettled(
+        pendingOrders.map((order) =>
+          api<{ paid: boolean }>(`/public/raffles/orders/${order.id}/mercadopago/status`, {
+            headers: { Authorization: `Bearer ${token}` }
+          })
+        )
+      )
+        .then((results) => {
+          if (results.some((result) => result.status === "fulfilled" && result.value.paid)) {
+            toast.success("Pagamento confirmado! Seus numeros foram liberados.");
+          }
+          return loadAccount(token);
+        })
+        .catch(() => undefined);
+    }, 8000);
+
+    return () => window.clearInterval(interval);
+  }, [token, pendingOrders.map((order) => order.id).join("|")]);
+
   async function submitLogin(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
@@ -149,6 +184,39 @@ export function RaffleAccountPage() {
     setAccount(null);
     setPassword("");
     toast.info("Voce saiu da conta");
+  }
+
+  async function createPixPayment(orderId: string) {
+    setPayingOrderId(orderId);
+    try {
+      const payment = await api<RafflePixPayment>(`/public/raffles/orders/${orderId}/mercadopago/pix`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
+      if (payment.paid) {
+        toast.success("Pagamento confirmado!");
+      } else {
+        toast.success("Pix Mercado Pago gerado. Pague pelo QR Code ou copia e cola.");
+      }
+      await loadAccount(token);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Nao foi possivel gerar o Pix");
+    } finally {
+      setPayingOrderId("");
+    }
+  }
+
+  async function refreshPayment(orderId: string) {
+    try {
+      const status = await api<{ paid: boolean }>(`/public/raffles/orders/${orderId}/mercadopago/status`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
+      if (status.paid) toast.success("Pagamento confirmado!");
+      else toast.info("Pagamento ainda pendente");
+      await loadAccount(token);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Nao foi possivel consultar o pagamento");
+    }
   }
 
   return (
@@ -242,7 +310,14 @@ export function RaffleAccountPage() {
               {pendingOrders.length === 0 && <p className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">Nenhum pagamento pendente.</p>}
               <div className="mt-4 grid gap-4">
                 {pendingOrders.map((order) => (
-                  <OrderCard key={order.id} order={order} showPix />
+                  <OrderCard
+                    key={order.id}
+                    order={order}
+                    showPix
+                    paying={payingOrderId === order.id}
+                    onCreatePix={() => void createPixPayment(order.id)}
+                    onRefreshPayment={() => void refreshPayment(order.id)}
+                  />
                 ))}
               </div>
             </section>
@@ -264,7 +339,19 @@ export function RaffleAccountPage() {
   );
 }
 
-function OrderCard({ order, showPix = false }: { order: RaffleAccountOrder; showPix?: boolean }) {
+function OrderCard({
+  order,
+  showPix = false,
+  paying = false,
+  onCreatePix,
+  onRefreshPayment
+}: {
+  order: RaffleAccountOrder;
+  showPix?: boolean;
+  paying?: boolean;
+  onCreatePix?: () => void;
+  onRefreshPayment?: () => void;
+}) {
   return (
     <article className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -287,30 +374,54 @@ function OrderCard({ order, showPix = false }: { order: RaffleAccountOrder; show
         ))}
       </div>
 
-      {showPix && order.pixCopiaCola && (
-        <div className="mt-4 grid gap-4 rounded-2xl bg-emerald-50 p-4 md:grid-cols-[180px_1fr]">
-          <div className="rounded-xl bg-white p-2">
-            {order.pixQrCode ? (
-              <img src={`data:image/png;base64,${order.pixQrCode}`} alt="QR Code Pix" className="h-full w-full object-contain" />
-            ) : (
-              <div className="grid h-40 place-items-center text-center text-sm text-slate-500">Use o copia e cola.</div>
+      {showPix && (
+        order.pixCopiaCola ? (
+          <div className="mt-4 grid gap-4 rounded-2xl bg-emerald-50 p-4 md:grid-cols-[180px_1fr]">
+            <div className="rounded-xl bg-white p-2">
+              {order.pixQrCode ? (
+                <img src={`data:image/png;base64,${order.pixQrCode}`} alt="QR Code Pix" className="h-full w-full object-contain" />
+              ) : (
+                <div className="grid h-40 place-items-center text-center text-sm text-slate-500">Use o copia e cola.</div>
+              )}
+            </div>
+            <div>
+              <p className="text-sm font-bold text-emerald-800">Pix copia e cola</p>
+              <textarea readOnly value={order.pixCopiaCola} className="mt-2 h-28 w-full rounded-xl border bg-white p-3 text-sm" />
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(order.pixCopiaCola ?? "");
+                    toast.success("Codigo Pix copiado");
+                  }}
+                  className="rounded-xl bg-ink px-4 py-2 text-sm font-bold text-white"
+                >
+                  Copiar codigo Pix
+                </button>
+                {onRefreshPayment && (
+                  <button type="button" onClick={onRefreshPayment} className="rounded-xl border px-4 py-2 text-sm font-bold">
+                    Ja paguei / atualizar
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-4 rounded-2xl bg-orange-50 p-4">
+            <p className="text-sm font-bold text-orange-800">Esta reserva ainda nao tem Pix gerado.</p>
+            <p className="mt-1 text-sm text-orange-700">Clique para gerar o QR Code Mercado Pago e finalizar sua compra.</p>
+            {onCreatePix && (
+              <button
+                type="button"
+                onClick={onCreatePix}
+                disabled={paying}
+                className="mt-3 rounded-xl bg-ember px-4 py-2 text-sm font-bold text-white disabled:opacity-60"
+              >
+                {paying ? "Gerando Pix..." : "Pagar agora com Pix"}
+              </button>
             )}
           </div>
-          <div>
-            <p className="text-sm font-bold text-emerald-800">Pix copia e cola</p>
-            <textarea readOnly value={order.pixCopiaCola} className="mt-2 h-28 w-full rounded-xl border bg-white p-3 text-sm" />
-            <button
-              type="button"
-              onClick={() => {
-                void navigator.clipboard.writeText(order.pixCopiaCola ?? "");
-                toast.success("Codigo Pix copiado");
-              }}
-              className="mt-2 rounded-xl bg-ink px-4 py-2 text-sm font-bold text-white"
-            >
-              Copiar codigo Pix
-            </button>
-          </div>
-        </div>
+        )
       )}
 
       {order.paidAt && <p className="mt-3 text-sm text-emerald-700">Pagamento confirmado em {formatDate(order.paidAt)}</p>}

@@ -45,6 +45,12 @@ const raffleParticipantLoginSchema = z.object({
   password: z.string().min(6, "Informe sua senha")
 });
 
+const RAFFLE_RESERVATION_HOURS = 24;
+
+function getRaffleReservationExpiresAt(baseDate = new Date()) {
+  return new Date(baseDate.getTime() + RAFFLE_RESERVATION_HOURS * 60 * 60 * 1000);
+}
+
 function slugify(value: string) {
   return value
     .normalize("NFD")
@@ -273,6 +279,18 @@ async function releaseExpiredReservations(companyId: string, raffleId?: string) 
         paymentStatus: "CANCELLED",
         cancelledAt: now,
         cancelReason: "Reserva expirada automaticamente"
+      }
+    });
+
+    await tx.rafflePayment.updateMany({
+      where: {
+        companyId,
+        orderId: { in: expiredOrderIds },
+        status: "PENDING"
+      },
+      data: {
+        status: "CANCELLED",
+        processedAt: now
       }
     });
   });
@@ -704,7 +722,7 @@ export async function reservePublicRaffleNumbers(req: Request, res: Response) {
   const companyId = getCompanyId(req);
   const body = publicReserveSchema.parse(req.body);
   const now = new Date();
-  const reservationExpiresAt = new Date(now.getTime() + 15 * 60 * 1000);
+  const reservationExpiresAt = getRaffleReservationExpiresAt(now);
 
   await releaseExpiredReservations(companyId, req.params.id);
 
@@ -976,6 +994,8 @@ export async function createRaffleMercadoPagoPix(req: Request, res: Response) {
 export async function getRaffleMercadoPagoStatus(req: Request, res: Response) {
   const companyId = getCompanyId(req);
   const { orderId } = z.object({ orderId: z.string().min(1) }).parse(req.params);
+  await releaseExpiredReservations(companyId);
+
   const order = await prisma.raffleOrder.findFirst({
     where: { id: orderId, companyId },
     include: { company: true, payments: { orderBy: { createdAt: "desc" } } }
