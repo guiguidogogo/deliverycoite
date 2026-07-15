@@ -144,11 +144,13 @@ import {
   createRaffleMercadoPagoPix,
   getAdminRaffle,
   getPublicRaffle,
+  getRaffleParticipantAccount,
   getRaffleMercadoPagoStatus,
   listAdminRaffleOrders,
   listAdminRaffles,
   listPublicRaffleNumbers,
   listPublicRaffles,
+  loginRaffleParticipant,
   reservePublicRaffleNumbers,
   updateAdminRaffle,
   updateAdminRaffleStatus
@@ -219,6 +221,8 @@ route.get("/marketplace/assets/:id", getPersistentImage);
 route.get("/marketplace/companies", listMarketplaceCompanies);
 route.get("/marketplace/summary", marketplaceSummary);
 route.get("/public/raffles", listPublicRaffles);
+route.post("/public/raffles/auth/login", loginRaffleParticipant);
+route.get("/public/raffles/account/me", getRaffleParticipantAccount);
 route.get("/public/raffles/:slug", getPublicRaffle);
 route.get("/public/raffles/:id/numbers", listPublicRaffleNumbers);
 route.post("/public/raffles/:id/reserve", reservePublicRaffleNumbers);

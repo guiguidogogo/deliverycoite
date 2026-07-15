@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { createMercadoPagoPixPayment, getMercadoPagoPayment, type MercadoPagoPaymentResponse } from "../services/mercadopago.js";
@@ -35,8 +36,13 @@ const publicReserveSchema = z.object({
     phone: z.string().trim().min(8, "Informe seu WhatsApp").max(30),
     email: z.string().trim().email("Informe um e-mail valido").max(180),
     cpf: z.string().trim().max(20).optional().nullable(),
-    password: z.string().min(6, "A senha deve ter pelo menos 6 digitos").max(72).optional().or(z.literal(""))
+    password: z.string().min(6, "Crie uma senha com pelo menos 6 digitos").max(72).optional().or(z.literal(""))
   })
+});
+
+const raffleParticipantLoginSchema = z.object({
+  login: z.string().trim().min(3, "Informe e-mail ou WhatsApp"),
+  password: z.string().min(6, "Informe sua senha")
 });
 
 function slugify(value: string) {
@@ -69,6 +75,94 @@ function rafflePaymentStatus(status?: string | null) {
   if (["rejected"].includes(status ?? "")) return "REJECTED";
   if (status === "refunded") return "REFUNDED";
   return "PENDING";
+}
+
+function signRaffleParticipantToken(participant: { id: string; companyId: string; phone: string; email: string | null }) {
+  return jwt.sign(
+    {
+      type: "RAFFLE_PARTICIPANT",
+      raffleParticipantId: participant.id,
+      companyId: participant.companyId,
+      phone: participant.phone,
+      email: participant.email
+    },
+    env.jwtSecret,
+    { subject: participant.id, expiresIn: "30d" }
+  );
+}
+
+function getRaffleParticipantPayload(req: Request) {
+  const header = req.get("authorization");
+  if (!header?.startsWith("Bearer ")) return null;
+  try {
+    const payload = jwt.verify(header.slice(7), env.jwtSecret) as {
+      type?: string;
+      raffleParticipantId?: string;
+      companyId?: string;
+    };
+    if (payload.type !== "RAFFLE_PARTICIPANT" || !payload.raffleParticipantId || payload.companyId !== getCompanyId(req)) {
+      return null;
+    }
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function serializeRaffleOrderForParticipant(order: {
+  id: string;
+  status: string;
+  paymentStatus: string;
+  paymentMethod: string | null;
+  total: Prisma.Decimal;
+  subtotal: Prisma.Decimal;
+  paidAt: Date | null;
+  reservationExpiresAt: Date | null;
+  createdAt: Date;
+  pixQrCode: string | null;
+  pixCopiaCola: string | null;
+  mercadoPagoPaymentId: string | null;
+  raffle: { id: string; title: string; slug: string; prize: string | null; featuredImageUrl: string | null; endsAt: Date | null };
+  items: Array<{ id: string; formattedNumber: string; number: number; price: Prisma.Decimal }>;
+  payments: Array<{ providerPaymentId: string | null; method: string | null; status: string; createdAt: Date; processedAt: Date | null }>;
+}) {
+  return {
+    id: order.id,
+    raffle: {
+      id: order.raffle.id,
+      title: order.raffle.title,
+      slug: order.raffle.slug,
+      prize: order.raffle.prize,
+      featuredImageUrl: order.raffle.featuredImageUrl,
+      endsAt: order.raffle.endsAt
+    },
+    status: order.status,
+    paymentStatus: order.paymentStatus,
+    paymentMethod: order.paymentMethod,
+    total: Number(order.total),
+    subtotal: Number(order.subtotal),
+    paidAt: order.paidAt,
+    reservationExpiresAt: order.reservationExpiresAt,
+    createdAt: order.createdAt,
+    pixQrCode: order.paymentStatus === "PENDING" ? order.pixQrCode : null,
+    pixCopiaCola: order.paymentStatus === "PENDING" ? order.pixCopiaCola : null,
+    mercadoPagoPaymentId: order.mercadoPagoPaymentId,
+    numbers: order.items.map((item) => ({
+      id: item.id,
+      number: item.number,
+      formattedNumber: item.formattedNumber,
+      price: Number(item.price)
+    })),
+    latestPayment: order.payments[0]
+      ? {
+          providerPaymentId: order.payments[0].providerPaymentId,
+          method: order.payments[0].method,
+          status: order.payments[0].status,
+          createdAt: order.payments[0].createdAt,
+          processedAt: order.payments[0].processedAt
+        }
+      : null
+  };
 }
 
 export async function applyApprovedRafflePayment(orderId: string, payment: MercadoPagoPaymentResponse) {
@@ -422,6 +516,121 @@ export async function updateAdminRaffleStatus(req: Request, res: Response) {
   return res.json(serializeRaffle(updated));
 }
 
+export async function loginRaffleParticipant(req: Request, res: Response) {
+  const companyId = getCompanyId(req);
+  const body = raffleParticipantLoginSchema.parse(req.body);
+  const rawLogin = body.login.toLowerCase();
+  const phone = onlyDigits(body.login);
+
+  const participant = await prisma.raffleParticipant.findFirst({
+    where: {
+      companyId,
+      OR: [
+        ...(phone.length >= 8 ? [{ phone }] : []),
+        { email: rawLogin }
+      ]
+    }
+  });
+
+  if (!participant?.passwordHash) {
+    return res.status(401).json({ message: "Cadastro nao encontrado ou sem senha. Use o WhatsApp/e-mail usado na compra." });
+  }
+
+  const valid = await bcrypt.compare(body.password, participant.passwordHash);
+  if (!valid) {
+    return res.status(401).json({ message: "Credenciais invalidas" });
+  }
+
+  const updated = await prisma.raffleParticipant.update({
+    where: { id: participant.id },
+    data: { lastAccessAt: new Date() }
+  });
+
+  return res.json({
+    token: signRaffleParticipantToken(updated),
+    participant: {
+      id: updated.id,
+      name: updated.name,
+      phone: updated.phone,
+      email: updated.email,
+      cpf: updated.cpf
+    }
+  });
+}
+
+export async function getRaffleParticipantAccount(req: Request, res: Response) {
+  const companyId = getCompanyId(req);
+  const payload = getRaffleParticipantPayload(req);
+  if (!payload) {
+    return res.status(401).json({ message: "Faça login para acessar suas rifas" });
+  }
+
+  await releaseExpiredReservations(companyId);
+
+  const participant = await prisma.raffleParticipant.findFirst({
+    where: { id: payload.raffleParticipantId, companyId },
+    select: { id: true, name: true, phone: true, email: true, cpf: true, lastAccessAt: true, createdAt: true }
+  });
+  if (!participant) return res.status(404).json({ message: "Participante nao encontrado" });
+
+  const orders = await prisma.raffleOrder.findMany({
+    where: {
+      companyId,
+      participantId: participant.id,
+      status: { notIn: ["EXPIRED", "CANCELLED"] }
+    },
+    include: {
+      raffle: {
+        select: {
+          id: true,
+          title: true,
+          slug: true,
+          prize: true,
+          featuredImageUrl: true,
+          endsAt: true
+        }
+      },
+      items: { orderBy: { number: "asc" } },
+      payments: { orderBy: { createdAt: "desc" }, take: 1 }
+    },
+    orderBy: { createdAt: "desc" },
+    take: 100
+  });
+
+  const winnerNumberIds = orders.flatMap((order) => order.items.map((item) => item.raffleNumberId));
+  const winners = await prisma.raffleWinner.findMany({
+    where: {
+      companyId,
+      published: true,
+      OR: [
+        { participantPhone: participant.phone },
+        ...(winnerNumberIds.length ? [{ raffleNumberId: { in: winnerNumberIds } }] : [])
+      ]
+    },
+    include: { raffle: { select: { id: true, title: true, slug: true, prize: true } } },
+    orderBy: { drawnAt: "desc" }
+  });
+
+  return res.json({
+    participant,
+    orders: orders.map(serializeRaffleOrderForParticipant),
+    winners: winners.map((winner) => ({
+      id: winner.id,
+      raffleId: winner.raffleId,
+      raffleTitle: winner.raffle.title,
+      raffleSlug: winner.raffle.slug,
+      prize: winner.raffle.prize,
+      number: winner.number,
+      formattedNumber: winner.formattedNumber,
+      participantName: winner.participantName,
+      participantPhone: winner.participantPhone,
+      proofUrl: winner.proofUrl,
+      notes: winner.notes,
+      drawnAt: winner.drawnAt
+    }))
+  });
+}
+
 export async function listPublicRaffles(req: Request, res: Response) {
   const companyId = getCompanyId(req);
   await releaseExpiredReservations(companyId);
@@ -528,6 +737,20 @@ export async function reservePublicRaffleNumbers(req: Request, res: Response) {
   const phone = onlyDigits(body.participant.phone);
   const cpf = body.participant.cpf ? onlyDigits(body.participant.cpf) : null;
   const email = body.participant.email.toLowerCase();
+  const existingParticipant = await prisma.raffleParticipant.findUnique({
+    where: {
+      companyId_phone: {
+        companyId,
+        phone
+      }
+    },
+    select: { id: true, passwordHash: true }
+  });
+
+  if (!existingParticipant?.passwordHash && !body.participant.password) {
+    return res.status(400).json({ message: "Crie uma senha com pelo menos 6 digitos para acessar suas rifas depois." });
+  }
+
   const passwordHash = body.participant.password ? await bcrypt.hash(body.participant.password, 10) : undefined;
 
   const order = await prisma.$transaction(async (tx) => {
@@ -621,6 +844,7 @@ export async function reservePublicRaffleNumbers(req: Request, res: Response) {
     paymentStatus: order.paymentStatus,
     total: Number(order.total),
     reservationExpiresAt: order.reservationExpiresAt,
+    token: order.participant ? signRaffleParticipantToken({ ...order.participant, companyId }) : null,
     participant: order.participant,
     numbers: order.items.map((item) => ({
       id: item.raffleNumberId,

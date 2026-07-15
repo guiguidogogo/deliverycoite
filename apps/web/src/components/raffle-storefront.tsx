@@ -34,6 +34,7 @@ type ReserveResponse = {
   paymentStatus: string;
   total: number;
   reservationExpiresAt: string;
+  token?: string | null;
   numbers: Array<{ formattedNumber: string }>;
 };
 
@@ -48,7 +49,16 @@ type RafflePixPayment = {
   paid?: boolean;
 };
 
+type RaffleAccountSummary = {
+  participant: {
+    name: string;
+    phone: string;
+    email?: string | null;
+  };
+};
+
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+const RAFFLE_TOKEN_KEY = "hubregional:raffleParticipantToken";
 
 async function publicRaffleJson<T>(path: string): Promise<T> {
   const separator = path.includes("?") ? "&" : "?";
@@ -92,6 +102,7 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
   const [reserving, setReserving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [numbersLoading, setNumbersLoading] = useState(false);
+  const [loggedParticipant, setLoggedParticipant] = useState<RaffleAccountSummary["participant"] | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -118,6 +129,24 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
       })
       .finally(() => setLoading(false));
   }, [initialSlug]);
+
+  useEffect(() => {
+    const token = localStorage.getItem(RAFFLE_TOKEN_KEY);
+    if (!token) return;
+    api<RaffleAccountSummary>("/public/raffles/account/me", {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then((payload) => {
+        setLoggedParticipant(payload.participant);
+        setParticipantName(payload.participant.name ?? "");
+        setParticipantPhone(payload.participant.phone ?? "");
+        setParticipantEmail(payload.participant.email ?? "");
+      })
+      .catch(() => {
+        localStorage.removeItem(RAFFLE_TOKEN_KEY);
+        setLoggedParticipant(null);
+      });
+  }, []);
 
   useEffect(() => {
     if (!selected) return;
@@ -181,8 +210,8 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
       toast.error("Escolha pelo menos um numero");
       return;
     }
-    if (!participantName.trim() || !participantPhone.trim() || !participantEmail.trim()) {
-      toast.error("Informe nome, WhatsApp e e-mail para reservar");
+    if (!participantName.trim() || !participantPhone.trim() || !participantEmail.trim() || !participantPassword.trim()) {
+      toast.error("Informe nome, WhatsApp, e-mail e crie uma senha para reservar");
       return;
     }
 
@@ -200,6 +229,9 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
           }
         })
       });
+      if (order.token) {
+        localStorage.setItem(RAFFLE_TOKEN_KEY, order.token);
+      }
       const pix = await api<RafflePixPayment>(`/public/raffles/orders/${order.id}/mercadopago/pix`, { method: "POST" });
       setPixPayment(pix);
       toast.success(`Reserva criada: ${order.numbers.map((item) => item.formattedNumber).join(", ")}. Pague o Pix para confirmar.`);
@@ -216,15 +248,20 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
     <main className="min-h-screen bg-[#070912] text-white">
       <section className="mx-auto max-w-6xl px-4 py-8 md:py-14">
         <header className="rounded-[2rem] border border-white/10 bg-white/10 p-6 shadow-2xl backdrop-blur md:p-10">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="grid h-16 w-16 place-items-center overflow-hidden rounded-2xl bg-white text-ink">
-              {company.logoUrl ? <img src={company.logoUrl} alt={company.tradeName} className="h-full w-full object-cover" /> : "HR"}
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="grid h-16 w-16 place-items-center overflow-hidden rounded-2xl bg-white text-ink">
+                {company.logoUrl ? <img src={company.logoUrl} alt={company.tradeName} className="h-full w-full object-cover" /> : "HR"}
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.45em] text-orange-300">HubRegional Rifas</p>
+                <h1 className="font-display text-5xl">{company.tradeName}</h1>
+                <p className="mt-2 max-w-2xl text-white/70">Escolha sua campanha, selecione seus numeros da sorte e acompanhe tudo com seguranca.</p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.45em] text-orange-300">HubRegional Rifas</p>
-              <h1 className="font-display text-5xl">{company.tradeName}</h1>
-              <p className="mt-2 max-w-2xl text-white/70">Escolha sua campanha, selecione seus numeros da sorte e acompanhe tudo com seguranca.</p>
-            </div>
+            <Link href="/rifas/minha-conta" className="rounded-xl bg-white px-4 py-2 text-sm font-bold text-ink">
+              Minha conta
+            </Link>
           </div>
         </header>
 
@@ -340,13 +377,41 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
             {selectedNumbers.length > 0 && (
               <div className="mt-5 rounded-2xl border border-black/10 bg-slate-50 p-4">
                 <p className="text-xs font-bold uppercase tracking-[0.3em] text-ember">Cadastro do participante</p>
-                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  <input value={participantName} onChange={(event) => setParticipantName(event.target.value)} className="rounded-xl border px-4 py-3" placeholder="Nome completo" />
-                  <input value={participantPhone} onChange={(event) => setParticipantPhone(event.target.value)} className="rounded-xl border px-4 py-3" placeholder="WhatsApp" />
-                  <input value={participantEmail} onChange={(event) => setParticipantEmail(event.target.value)} className="rounded-xl border px-4 py-3" placeholder="E-mail" type="email" />
-                  <input value={participantPassword} onChange={(event) => setParticipantPassword(event.target.value)} className="rounded-xl border px-4 py-3" placeholder="Senha para acessar depois (opcional)" type="password" />
-                </div>
-                <p className="mt-3 text-xs opacity-60">A reserva segura os numeros por 15 minutos. O Pix Mercado Pago aparece logo apos confirmar.</p>
+                {loggedParticipant ? (
+                  <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                    <p className="text-sm font-bold text-emerald-800">Comprando como:</p>
+                    <p className="mt-1 text-sm text-slate-700">{loggedParticipant.name} • {loggedParticipant.phone} • {loggedParticipant.email || "sem e-mail"}</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Link href="/rifas/minha-conta" className="rounded-xl bg-ink px-4 py-2 text-sm font-bold text-white">
+                        Minha conta
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          localStorage.removeItem(RAFFLE_TOKEN_KEY);
+                          setLoggedParticipant(null);
+                          setParticipantName("");
+                          setParticipantPhone("");
+                          setParticipantEmail("");
+                          setParticipantPassword("");
+                        }}
+                        className="rounded-xl border border-red-200 px-4 py-2 text-sm font-bold text-red-600"
+                      >
+                        Trocar conta
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <input value={participantName} onChange={(event) => setParticipantName(event.target.value)} className="rounded-xl border px-4 py-3" placeholder="Nome completo" />
+                      <input value={participantPhone} onChange={(event) => setParticipantPhone(event.target.value)} className="rounded-xl border px-4 py-3" placeholder="WhatsApp" />
+                      <input value={participantEmail} onChange={(event) => setParticipantEmail(event.target.value)} className="rounded-xl border px-4 py-3" placeholder="E-mail" type="email" />
+                      <input value={participantPassword} onChange={(event) => setParticipantPassword(event.target.value)} className="rounded-xl border px-4 py-3" placeholder="Crie uma senha para acessar depois" type="password" />
+                    </div>
+                    <p className="mt-3 text-xs opacity-60">A reserva segura os numeros por 15 minutos. Com essa senha voce entra em Minha conta para ver suas compras e resultado.</p>
+                  </>
+                )}
               </div>
             )}
 
