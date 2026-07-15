@@ -46,6 +46,14 @@ const raffleParticipantLoginSchema = z.object({
   password: z.string().min(6, "Informe sua senha")
 });
 
+const raffleParticipantRegisterSchema = z.object({
+  name: z.string().trim().min(3, "Informe seu nome completo").max(120),
+  phone: z.string().trim().min(8, "Informe seu WhatsApp").max(30),
+  email: z.string().trim().email("Informe um e-mail valido").max(180),
+  cpf: z.string().trim().max(20).optional().nullable(),
+  password: z.string().min(6, "Crie uma senha com pelo menos 6 digitos").max(72)
+});
+
 const DEFAULT_RAFFLE_RESERVATION_MINUTES = 15;
 
 function getRaffleReservationExpiresAt(baseDate = new Date(), minutes = DEFAULT_RAFFLE_RESERVATION_MINUTES) {
@@ -579,6 +587,75 @@ export async function loginRaffleParticipant(req: Request, res: Response) {
       phone: updated.phone,
       email: updated.email,
       cpf: updated.cpf
+    }
+  });
+}
+
+export async function registerRaffleParticipant(req: Request, res: Response) {
+  const companyId = getCompanyId(req);
+  const body = raffleParticipantRegisterSchema.parse(req.body);
+  const phone = onlyDigits(body.phone);
+  const email = body.email.toLowerCase();
+  const cpf = body.cpf ? onlyDigits(body.cpf) : null;
+
+  const existingParticipants = await prisma.raffleParticipant.findMany({
+    where: {
+      companyId,
+      OR: [
+        { phone },
+        { email }
+      ]
+    },
+    orderBy: { createdAt: "asc" },
+    take: 5
+  });
+
+  const accountWithPassword = existingParticipants.find((participant) => Boolean(participant.passwordHash));
+  if (accountWithPassword) {
+    return res.status(409).json({
+      code: "RAFFLE_ACCOUNT_EXISTS",
+      message: "Ja existe um cadastro com este e-mail ou telefone. Faca login para acessar suas rifas."
+    });
+  }
+
+  const passwordHash = await bcrypt.hash(body.password, 10);
+  const now = new Date();
+  const participantToUpgrade = existingParticipants.find((participant) => participant.phone === phone) ?? existingParticipants[0];
+
+  const participant = participantToUpgrade
+    ? await prisma.raffleParticipant.update({
+        where: { id: participantToUpgrade.id },
+        data: {
+          name: body.name,
+          phone,
+          email,
+          cpf,
+          passwordHash,
+          acceptedTermsAt: participantToUpgrade.acceptedTermsAt ?? now,
+          lastAccessAt: now
+        }
+      })
+    : await prisma.raffleParticipant.create({
+        data: {
+          companyId,
+          name: body.name,
+          phone,
+          email,
+          cpf,
+          passwordHash,
+          acceptedTermsAt: now,
+          lastAccessAt: now
+        }
+      });
+
+  return res.status(participantToUpgrade ? 200 : 201).json({
+    token: signRaffleParticipantToken(participant),
+    participant: {
+      id: participant.id,
+      name: participant.name,
+      phone: participant.phone,
+      email: participant.email,
+      cpf: participant.cpf
     }
   });
 }

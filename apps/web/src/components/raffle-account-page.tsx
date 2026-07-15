@@ -99,6 +99,12 @@ function formatDate(value?: string | null) {
 export function RaffleAccountPage() {
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [registerName, setRegisterName] = useState("");
+  const [registerPhone, setRegisterPhone] = useState("");
+  const [registerEmail, setRegisterEmail] = useState("");
+  const [registerCpf, setRegisterCpf] = useState("");
+  const [registerPassword, setRegisterPassword] = useState("");
   const [token, setToken] = useState("");
   const [account, setAccount] = useState<RaffleAccountPayload | null>(null);
   const [loading, setLoading] = useState(false);
@@ -178,6 +184,34 @@ export function RaffleAccountPage() {
     }
   }
 
+  async function submitRegister(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLoading(true);
+    try {
+      const response = await api<LoginResponse>("/public/raffles/auth/register", {
+        method: "POST",
+        body: JSON.stringify({
+          name: registerName,
+          phone: registerPhone,
+          email: registerEmail,
+          cpf: registerCpf,
+          password: registerPassword
+        })
+      });
+      toast.success("Conta criada. Agora voce pode acompanhar suas rifas.");
+      await loadAccount(response.token);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao criar conta";
+      toast.error(message);
+      if (message.toLowerCase().includes("ja existe")) {
+        setMode("login");
+        setLogin(registerEmail || registerPhone);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function logout() {
     localStorage.removeItem(TOKEN_KEY);
     setToken("");
@@ -234,33 +268,98 @@ export function RaffleAccountPage() {
         </header>
 
         {!account && (
-          <form onSubmit={submitLogin} className="mx-auto mt-8 max-w-lg rounded-[2rem] bg-white p-6 text-ink shadow-2xl">
+          <section className="mx-auto mt-8 max-w-lg rounded-[2rem] bg-white p-6 text-ink shadow-2xl">
             <p className="text-xs font-bold uppercase tracking-[0.35em] text-ember">Acesso do comprador</p>
-            <h2 className="mt-1 text-3xl font-bold">Entrar nas minhas rifas</h2>
+            <h2 className="mt-1 text-3xl font-bold">{mode === "login" ? "Entrar nas minhas rifas" : "Criar minha conta"}</h2>
             <p className="mt-2 text-sm text-slate-600">
-              Use o e-mail ou WhatsApp informado na compra e a senha criada na reserva.
+              {mode === "login"
+                ? "Use o e-mail ou WhatsApp informado na compra e a senha criada na reserva."
+                : "Crie sua conta uma vez para reutilizar seus dados e acompanhar compras, pagamentos e resultados."}
             </p>
-            <div className="mt-5 grid gap-3">
-              <input
-                value={login}
-                onChange={(event) => setLogin(event.target.value)}
-                className="rounded-xl border px-4 py-3"
-                placeholder="E-mail ou WhatsApp"
-                autoComplete="username"
-              />
-              <input
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                className="rounded-xl border px-4 py-3"
-                placeholder="Senha"
-                type="password"
-                autoComplete="current-password"
-              />
-              <button disabled={loading} className="rounded-xl bg-ink px-5 py-3 font-bold text-white disabled:opacity-60">
-                {loading ? "Entrando..." : "Entrar"}
+
+            <div className="mt-5 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1">
+              <button
+                type="button"
+                onClick={() => setMode("login")}
+                className={`rounded-xl px-4 py-2 text-sm font-bold ${mode === "login" ? "bg-ink text-white shadow-sm" : "text-slate-600"}`}
+              >
+                Ja tenho conta
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("register")}
+                className={`rounded-xl px-4 py-2 text-sm font-bold ${mode === "register" ? "bg-ink text-white shadow-sm" : "text-slate-600"}`}
+              >
+                Criar conta
               </button>
             </div>
-          </form>
+
+            {mode === "login" ? (
+              <form onSubmit={submitLogin} className="mt-5 grid gap-3">
+                <input
+                  value={login}
+                  onChange={(event) => setLogin(event.target.value)}
+                  className="rounded-xl border px-4 py-3"
+                  placeholder="E-mail ou WhatsApp"
+                  autoComplete="username"
+                />
+                <input
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  className="rounded-xl border px-4 py-3"
+                  placeholder="Senha"
+                  type="password"
+                  autoComplete="current-password"
+                />
+                <button disabled={loading} className="rounded-xl bg-ink px-5 py-3 font-bold text-white disabled:opacity-60">
+                  {loading ? "Entrando..." : "Entrar"}
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={submitRegister} className="mt-5 grid gap-3">
+                <input
+                  value={registerName}
+                  onChange={(event) => setRegisterName(event.target.value)}
+                  className="rounded-xl border px-4 py-3"
+                  placeholder="Nome completo"
+                  autoComplete="name"
+                />
+                <input
+                  value={registerPhone}
+                  onChange={(event) => setRegisterPhone(event.target.value)}
+                  className="rounded-xl border px-4 py-3"
+                  placeholder="WhatsApp"
+                  autoComplete="tel"
+                />
+                <input
+                  value={registerEmail}
+                  onChange={(event) => setRegisterEmail(event.target.value)}
+                  className="rounded-xl border px-4 py-3"
+                  placeholder="E-mail"
+                  type="email"
+                  autoComplete="email"
+                />
+                <input
+                  value={registerCpf}
+                  onChange={(event) => setRegisterCpf(event.target.value)}
+                  className="rounded-xl border px-4 py-3"
+                  placeholder="CPF opcional"
+                  autoComplete="off"
+                />
+                <input
+                  value={registerPassword}
+                  onChange={(event) => setRegisterPassword(event.target.value)}
+                  className="rounded-xl border px-4 py-3"
+                  placeholder="Senha de acesso"
+                  type="password"
+                  autoComplete="new-password"
+                />
+                <button disabled={loading} className="rounded-xl bg-ember px-5 py-3 font-bold text-white disabled:opacity-60">
+                  {loading ? "Criando..." : "Criar conta e entrar"}
+                </button>
+              </form>
+            )}
+          </section>
         )}
 
         {account && (

@@ -151,6 +151,7 @@ import {
   listPublicRaffleNumbers,
   listPublicRaffles,
   loginRaffleParticipant,
+  registerRaffleParticipant,
   reservePublicRaffleNumbers,
   updateAdminRaffle,
   updateAdminRaffleStatus
@@ -222,6 +223,7 @@ route.get("/marketplace/companies", listMarketplaceCompanies);
 route.get("/marketplace/summary", marketplaceSummary);
 route.get("/public/raffles", listPublicRaffles);
 route.post("/public/raffles/auth/login", loginRaffleParticipant);
+route.post("/public/raffles/auth/register", registerRaffleParticipant);
 route.get("/public/raffles/account/me", getRaffleParticipantAccount);
 route.get("/public/raffles/:slug", getPublicRaffle);
 route.get("/public/raffles/:id/numbers", listPublicRaffleNumbers);
