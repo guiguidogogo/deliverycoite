@@ -342,6 +342,10 @@ export async function updateCompany(req: Request, res: Response) {
   const existing = await prisma.company.findUnique({ where: { id: req.params.id } });
   if (!existing) return res.status(404).json({ message: "Empresa nao encontrada" });
   const body = companySchema.partial().parse(req.body);
+  const nextCategory = body.category ?? existing.category;
+  const nextBusinessType = nextCategory.toLowerCase() === "rifas"
+    ? "RAFFLE"
+    : (body.businessType ?? existing.businessType);
   const merged = companyData({
     companyName: body.companyName ?? existing.companyName,
     tradeName: body.tradeName ?? existing.tradeName,
@@ -359,8 +363,8 @@ export async function updateCompany(req: Request, res: Response) {
     active: body.active ?? existing.active,
     marketplaceVisible: body.marketplaceVisible ?? existing.marketplaceVisible,
     featured: body.featured ?? existing.featured,
-    businessType: body.businessType ?? existing.businessType,
-    category: body.category ?? existing.category,
+    businessType: nextBusinessType,
+    category: nextCategory,
     city: body.city ?? existing.city,
     isOpen: body.isOpen ?? existing.isOpen,
     deliveryFee: body.deliveryFee ?? Number(existing.deliveryFee),

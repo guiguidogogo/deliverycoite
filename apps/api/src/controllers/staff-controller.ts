@@ -51,7 +51,7 @@ export async function getCurrentStaff(req: Request, res: Response) {
     include: {
       staffRole: true,
       company: {
-        select: { id: true, tradeName: true, subdomain: true, active: true, businessType: true }
+        select: { id: true, tradeName: true, subdomain: true, active: true, businessType: true, category: true }
       }
     }
   });

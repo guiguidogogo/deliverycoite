@@ -13,8 +13,16 @@ type AdminUserWithCompany = AdminUser & {
     subdomain: string;
     active: boolean;
     businessType?: string;
+    category?: string | null;
   } | null;
 };
+
+function isRaffleCompany(user: AdminUserWithCompany | null) {
+  const businessType = user?.company?.businessType?.trim().toUpperCase();
+  const category = user?.company?.category?.trim().toLowerCase() ?? "";
+
+  return businessType === "RAFFLE" || category.includes("rifa");
+}
 
 export function AdminHome() {
   const [user, setUser] = useState<AdminUserWithCompany | null>(null);
@@ -35,7 +43,7 @@ export function AdminHome() {
     );
   }
 
-  if (user?.company?.businessType === "RAFFLE") {
+  if (isRaffleCompany(user)) {
     return <RaffleAdminPanel />;
   }
 

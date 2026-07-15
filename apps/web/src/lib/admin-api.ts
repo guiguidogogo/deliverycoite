@@ -13,6 +13,7 @@ export type AdminUser = {
     subdomain: string;
     active: boolean;
     businessType?: string;
+    category?: string | null;
   } | null;
 };
 
