@@ -766,6 +766,7 @@ export async function listPublicRaffles(req: Request, res: Response) {
       prize: raffle.prize,
       featuredImageUrl: raffle.featuredImageUrl,
       pricePerNumber: Number(raffle.pricePerNumber),
+      reservationMinutes: raffle.reservationMinutes,
       totalNumbers: raffle.totalNumbers,
       paidNumbers: paid,
       reservedNumbers: reserved,

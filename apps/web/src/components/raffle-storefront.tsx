@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { PublicCompany } from "../lib/types";
@@ -14,6 +14,7 @@ type Raffle = {
   prize?: string | null;
   featuredImageUrl?: string | null;
   pricePerNumber: number;
+  reservationMinutes?: number;
   totalNumbers: number;
   paidNumbers: number;
   reservedNumbers: number;
@@ -104,6 +105,7 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
   const [numbersLoading, setNumbersLoading] = useState(false);
   const [loggedParticipant, setLoggedParticipant] = useState<RaffleAccountSummary["participant"] | null>(null);
   const [accountRequiredMessage, setAccountRequiredMessage] = useState("");
+  const notifiedPaidOrders = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const load = async () => {
@@ -169,7 +171,8 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
           setPixPayment((current) => current?.orderId === pixPayment.orderId
             ? { ...current, paid: status.paid, status: status.paymentStatus }
             : current);
-          if (status.paid) {
+          if (status.paid && !notifiedPaidOrders.current.has(pixPayment.orderId)) {
+            notifiedPaidOrders.current.add(pixPayment.orderId);
             toast.success("Pagamento confirmado! Seus numeros foram marcados como pagos.");
             if (selected) {
               void publicRaffleJson<RaffleNumber[]>(`/public/raffles/${selected.id}/numbers`).then(setNumbers);
@@ -236,7 +239,11 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
       if (order.token) {
         localStorage.setItem(RAFFLE_TOKEN_KEY, order.token);
       }
-      const pix = await api<RafflePixPayment>(`/public/raffles/orders/${order.id}/mercadopago/pix`, { method: "POST" });
+      const authToken = order.token || token;
+      const pix = await api<RafflePixPayment>(`/public/raffles/orders/${order.id}/mercadopago/pix`, {
+        method: "POST",
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined
+      });
       setPixPayment(pix);
       toast.success(`Reserva criada: ${order.numbers.map((item) => item.formattedNumber).join(", ")}. Pague o Pix para confirmar.`);
       setSelectedNumbers([]);
@@ -433,7 +440,9 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
                       <input value={participantEmail} onChange={(event) => setParticipantEmail(event.target.value)} className="rounded-xl border px-4 py-3" placeholder="E-mail" type="email" />
                       <input value={participantPassword} onChange={(event) => setParticipantPassword(event.target.value)} className="rounded-xl border px-4 py-3" placeholder="Crie uma senha para acessar depois" type="password" />
                     </div>
-                    <p className="mt-3 text-xs opacity-60">A reserva segura os numeros por 15 minutos. Com essa senha voce entra em Minha conta para ver suas compras e resultado.</p>
+                    <p className="mt-3 text-xs opacity-60">
+                      A reserva segura os numeros por {selected.reservationMinutes ?? 15} minutos. Com essa senha voce entra em Minha conta para ver suas compras e resultado.
+                    </p>
                   </>
                 )}
               </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 
@@ -109,6 +109,7 @@ export function RaffleAccountPage() {
   const [account, setAccount] = useState<RaffleAccountPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [payingOrderId, setPayingOrderId] = useState("");
+  const notifiedPaidOrders = useRef<Set<string>>(new Set());
 
   const pendingOrders = useMemo(
     () => account?.orders.filter((order) => statusLabel(order) === "Pendente") ?? [],
@@ -156,7 +157,15 @@ export function RaffleAccountPage() {
         )
       )
         .then((results) => {
-          if (results.some((result) => result.status === "fulfilled" && result.value.paid)) {
+          const newlyPaid = results.some((result, index) => {
+            const orderId = pendingOrders[index]?.id;
+            if (result.status !== "fulfilled" || !result.value.paid || !orderId || notifiedPaidOrders.current.has(orderId)) {
+              return false;
+            }
+            notifiedPaidOrders.current.add(orderId);
+            return true;
+          });
+          if (newlyPaid) {
             toast.success("Pagamento confirmado! Seus numeros foram liberados.");
           }
           return loadAccount(token);
@@ -228,7 +237,10 @@ export function RaffleAccountPage() {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
       if (payment.paid) {
-        toast.success("Pagamento confirmado!");
+        if (!notifiedPaidOrders.current.has(orderId)) {
+          notifiedPaidOrders.current.add(orderId);
+          toast.success("Pagamento confirmado!");
+        }
       } else {
         toast.success("Pix Mercado Pago gerado. Pague pelo QR Code ou copia e cola.");
       }
@@ -245,7 +257,14 @@ export function RaffleAccountPage() {
       const status = await api<{ paid: boolean }>(`/public/raffles/orders/${orderId}/mercadopago/status`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
-      if (status.paid) toast.success("Pagamento confirmado!");
+      if (status.paid) {
+        if (!notifiedPaidOrders.current.has(orderId)) {
+          notifiedPaidOrders.current.add(orderId);
+          toast.success("Pagamento confirmado!");
+        } else {
+          toast.info("Pagamento ja confirmado");
+        }
+      }
       else toast.info("Pagamento ainda pendente");
       await loadAccount(token);
     } catch (error) {
