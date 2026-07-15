@@ -345,16 +345,34 @@ export default function SettingsManagePage() {
 
   async function testMenuia() {
     const token = localStorage.getItem("delivery:token");
-    if (!token) return;
+    if (!token) {
+      toast.error("Faça login novamente para testar a conexão MenuIA.");
+      window.setTimeout(() => {
+        window.location.href = "/admin/login";
+      }, 900);
+      return;
+    }
+
+    if (!form.menuiaEnabled) {
+      toast.error("Ative a integração MenuIA antes de testar. Se você não usa MenuIA, pode deixar desativado.");
+      return;
+    }
+
+    if (!form.menuiaApiKey.trim() || !form.menuiaStoreId.trim()) {
+      toast.error("Preencha AUTHKEY e APPKEY da MenuIA para testar. Esses campos só são necessários se a integração estiver ativa.");
+      return;
+    }
 
     const res = await apiFetch(`/admin/integrations/menuia/test`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` }
     });
 
+    if (await handleUnauthorized(res)) return;
+
     const payload = await readApiJson<any>(res).catch(() => ({}));
     if (!res.ok || !payload.ok) {
-      toast.error(payload.message ?? "Teste Menuia falhou");
+      toast.error(payload.message ? `MenuIA: ${payload.message}` : "Teste MenuIA falhou. Confira AUTHKEY e APPKEY.");
       return;
     }
 
