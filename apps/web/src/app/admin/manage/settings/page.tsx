@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { API_URL, apiFetch, readApiJson } from "../../../../lib/api";
 import { LocationPicker } from "../../../../components/location-picker";
@@ -71,6 +71,7 @@ function validateBusinessHours(days: BusinessHourDay[]) {
 }
 
 export default function SettingsManagePage() {
+  const sessionExpiredRef = useRef(false);
   const [form, setForm] = useState({
     companyName: "",
     whatsappNumber: "",
@@ -113,16 +114,52 @@ export default function SettingsManagePage() {
     lastSeenAt: null as string | null
   });
   const [newPrinterToken, setNewPrinterToken] = useState("");
+
+  async function handleUnauthorized(response: Response) {
+    if (response.status !== 401 || sessionExpiredRef.current) return false;
+
+    sessionExpiredRef.current = true;
+    const payload: { message?: string } = await readApiJson<{ message?: string }>(response).catch(() => ({}));
+    localStorage.removeItem("delivery:token");
+    localStorage.removeItem("delivery:admin-user");
+    toast.error(payload.message ?? "Sessao expirada. Faça login novamente para salvar configuracoes.");
+    window.setTimeout(() => {
+      window.location.href = "/admin/login";
+    }, 900);
+    return true;
+  }
+
+  async function ensureAdminResponse(response: Response, fallbackMessage: string) {
+    if (await handleUnauthorized(response)) return null;
+    if (!response.ok) {
+      const payload: { message?: string; issues?: Array<{ message?: string; path?: Array<string | number> }> } = await readApiJson<{
+        message?: string;
+        issues?: Array<{ message?: string; path?: Array<string | number> }>;
+      }>(response).catch(() => ({}));
+      const firstIssue = Array.isArray(payload.issues) ? payload.issues[0] : null;
+      const field = Array.isArray(firstIssue?.path) ? firstIssue.path.join(".") : "";
+      throw new Error(firstIssue?.message ? `${field ? `${field}: ` : ""}${firstIssue.message}` : payload.message ?? fallbackMessage);
+    }
+    return readApiJson<any>(response);
+  }
+
   useEffect(() => {
     const token = localStorage.getItem("delivery:token");
-    if (!token) return;
+    if (!token) {
+      toast.error("Faça login para acessar as configuracoes.");
+      window.setTimeout(() => {
+        window.location.href = "/admin/login";
+      }, 900);
+      return;
+    }
 
     void apiFetch(`/admin/settings`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store"
     })
-      .then((res) => readApiJson<any>(res))
+      .then((res) => ensureAdminResponse(res, "Falha ao carregar configuracoes"))
       .then((data) => {
+        if (!data) return;
         setForm({
           companyName: data.companyName ?? "",
           whatsappNumber: data.whatsappNumber ?? "",
@@ -159,13 +196,16 @@ export default function SettingsManagePage() {
           timezone: data.timezone ?? "America/Bahia",
           closedOrderPolicy: data.closedOrderPolicy ?? "BLOCK_WHEN_CLOSED"
         });
+      })
+      .catch((error) => {
+        if (!sessionExpiredRef.current) toast.error(error.message ?? "Falha ao carregar configuracoes");
       });
 
     void apiFetch(`/admin/business-hours`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store"
     })
-      .then((res) => res.ok ? readApiJson<any>(res) : null)
+      .then((res) => ensureAdminResponse(res, "Falha ao carregar horarios"))
       .then((data) => {
         if (!data?.days) return;
         setBusinessHours(
@@ -183,13 +223,16 @@ export default function SettingsManagePage() {
           timezone: data.timezone ?? current.timezone,
           closedOrderPolicy: data.closedOrderPolicy ?? current.closedOrderPolicy
         }));
+      })
+      .catch((error) => {
+        if (!sessionExpiredRef.current) toast.error(error.message ?? "Falha ao carregar horarios");
       });
 
     void apiFetch(`/admin/printer-agent`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store"
     })
-      .then((res) => res.ok ? readApiJson<any>(res) : null)
+      .then((res) => ensureAdminResponse(res, "Falha ao carregar agente de impressao"))
       .then((data) => {
         if (data) {
           setPrinterAgent({
@@ -198,6 +241,9 @@ export default function SettingsManagePage() {
             lastSeenAt: data.lastSeenAt ?? null
           });
         }
+      })
+      .catch((error) => {
+        if (!sessionExpiredRef.current) toast.error(error.message ?? "Falha ao carregar agente de impressao");
       });
 
   }, []);
@@ -227,6 +273,8 @@ export default function SettingsManagePage() {
       })
     });
 
+    if (await handleUnauthorized(res)) return;
+
     if (!res.ok) {
       const payload = await readApiJson<any>(res).catch(() => ({}));
       const firstIssue = Array.isArray(payload.issues) ? payload.issues[0] : null;
@@ -250,6 +298,8 @@ export default function SettingsManagePage() {
         }))
       })
     });
+
+    if (await handleUnauthorized(hoursRes)) return;
 
     if (!hoursRes.ok) {
       const payload = await readApiJson<any>(hoursRes).catch(() => ({}));
