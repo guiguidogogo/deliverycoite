@@ -24,6 +24,7 @@ const raffleSchema = z.object({
   pricePerNumber: z.coerce.number().min(0.01).max(999999),
   minimumQuantity: z.coerce.number().int().min(1).default(1),
   maximumQuantity: z.coerce.number().int().min(1).max(1000).default(10),
+  reservationMinutes: z.coerce.number().int().min(5, "A reserva precisa ter pelo menos 5 minutos").max(1440, "A reserva pode ter no maximo 24 horas").default(15),
   participantLimit: z.coerce.number().int().min(1).optional().nullable(),
   featuredImageUrl: z.string().trim().url().optional().nullable().or(z.literal("")),
   videoUrl: z.string().trim().url().optional().nullable().or(z.literal(""))
@@ -45,10 +46,11 @@ const raffleParticipantLoginSchema = z.object({
   password: z.string().min(6, "Informe sua senha")
 });
 
-const RAFFLE_RESERVATION_HOURS = 24;
+const DEFAULT_RAFFLE_RESERVATION_MINUTES = 15;
 
-function getRaffleReservationExpiresAt(baseDate = new Date()) {
-  return new Date(baseDate.getTime() + RAFFLE_RESERVATION_HOURS * 60 * 60 * 1000);
+function getRaffleReservationExpiresAt(baseDate = new Date(), minutes = DEFAULT_RAFFLE_RESERVATION_MINUTES) {
+  const safeMinutes = Number.isFinite(minutes) && minutes > 0 ? minutes : DEFAULT_RAFFLE_RESERVATION_MINUTES;
+  return new Date(baseDate.getTime() + safeMinutes * 60 * 1000);
 }
 
 function slugify(value: string) {
@@ -350,7 +352,10 @@ function validateRaffleNumbers(data: z.infer<typeof raffleSchema>) {
 function serializeRaffle<T extends { pricePerNumber: Prisma.Decimal; _count?: Record<string, number> }>(raffle: T) {
   return {
     ...raffle,
-    pricePerNumber: Number(raffle.pricePerNumber)
+    pricePerNumber: Number(raffle.pricePerNumber),
+    reservationMinutes: "reservationMinutes" in raffle && typeof raffle.reservationMinutes === "number"
+      ? raffle.reservationMinutes
+      : DEFAULT_RAFFLE_RESERVATION_MINUTES
   };
 }
 
@@ -436,6 +441,7 @@ export async function createAdminRaffle(req: Request, res: Response) {
         pricePerNumber: new Prisma.Decimal(body.pricePerNumber),
         minimumQuantity: body.minimumQuantity,
         maximumQuantity: body.maximumQuantity,
+        reservationMinutes: body.reservationMinutes,
         participantLimit: body.participantLimit ?? null,
         featuredImageUrl: body.featuredImageUrl || null,
         videoUrl: body.videoUrl || null,
@@ -506,6 +512,7 @@ export async function updateAdminRaffle(req: Request, res: Response) {
     ...(body.pricePerNumber !== undefined ? { pricePerNumber: new Prisma.Decimal(body.pricePerNumber) } : {}),
     ...(body.minimumQuantity !== undefined ? { minimumQuantity: body.minimumQuantity } : {}),
     ...(body.maximumQuantity !== undefined ? { maximumQuantity: body.maximumQuantity } : {}),
+    ...(body.reservationMinutes !== undefined ? { reservationMinutes: body.reservationMinutes } : {}),
     ...(body.participantLimit !== undefined ? { participantLimit: body.participantLimit ?? null } : {}),
     ...(body.featuredImageUrl !== undefined ? { featuredImageUrl: body.featuredImageUrl || null } : {}),
     ...(body.videoUrl !== undefined ? { videoUrl: body.videoUrl || null } : {})
@@ -722,7 +729,6 @@ export async function reservePublicRaffleNumbers(req: Request, res: Response) {
   const companyId = getCompanyId(req);
   const body = publicReserveSchema.parse(req.body);
   const now = new Date();
-  const reservationExpiresAt = getRaffleReservationExpiresAt(now);
 
   await releaseExpiredReservations(companyId, req.params.id);
 
@@ -739,10 +745,12 @@ export async function reservePublicRaffleNumbers(req: Request, res: Response) {
       title: true,
       pricePerNumber: true,
       minimumQuantity: true,
-      maximumQuantity: true
+      maximumQuantity: true,
+      reservationMinutes: true
     }
   });
   if (!raffle) return res.status(404).json({ message: "Rifa nao encontrada ou indisponivel" });
+  const reservationExpiresAt = getRaffleReservationExpiresAt(now, raffle.reservationMinutes);
 
   const uniqueNumberIds = Array.from(new Set(body.numberIds));
   if (uniqueNumberIds.length < raffle.minimumQuantity) {

@@ -18,6 +18,7 @@ type Raffle = {
   pricePerNumber: number;
   minimumQuantity: number;
   maximumQuantity: number;
+  reservationMinutes: number;
   featuredImageUrl?: string | null;
   _count?: { numbers: number; orders: number; participants: number };
 };
@@ -56,6 +57,7 @@ const initialForm = {
   pricePerNumber: 1,
   minimumQuantity: 1,
   maximumQuantity: 10,
+  reservationMinutes: 15,
   featuredImageUrl: "",
   videoUrl: ""
 };
@@ -131,6 +133,27 @@ export default function AdminRafflesPage() {
   const update = (field: keyof typeof initialForm, value: string | number) => setForm((current) => ({ ...current, [field]: value }));
   const paidOrders = orders.filter((order) => order.paymentStatus === "APPROVED" || order.status === "PAID").length;
   const pendingOrders = orders.filter((order) => ["RESERVED", "PENDING_PAYMENT"].includes(order.status)).length;
+  const raffleUrl = (raffle: Raffle) => {
+    if (typeof window === "undefined") return `/rifas/${raffle.slug}`;
+    return `${window.location.origin}/rifas/${raffle.slug}`;
+  };
+  const raffleShareText = (raffle: Raffle) => [
+    `🎟️ ${raffle.title}`,
+    raffle.prize ? `Prêmio: ${raffle.prize}` : null,
+    `Número por ${BRL.format(raffle.pricePerNumber)}`,
+    `Escolha seus números aqui: ${raffleUrl(raffle)}`
+  ].filter(Boolean).join("\n");
+  const copyText = async (text: string, message: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(message);
+    } catch {
+      toast.error("Nao foi possivel copiar");
+    }
+  };
+  const openWhatsappShare = (raffle: Raffle) => {
+    window.open(`https://wa.me/?text=${encodeURIComponent(raffleShareText(raffle))}`, "_blank", "noopener,noreferrer");
+  };
 
   return (
     <main className="mx-auto max-w-6xl p-4 md:p-8">
@@ -169,6 +192,14 @@ export default function AdminRafflesPage() {
               <Field label="Minimo por compra"><input className="input" type="number" min={1} value={form.minimumQuantity} onChange={(e) => update("minimumQuantity", Number(e.target.value))} /></Field>
               <Field label="Maximo por compra"><input className="input" type="number" min={1} value={form.maximumQuantity} onChange={(e) => update("maximumQuantity", Number(e.target.value))} /></Field>
             </div>
+            <Field label="Tempo de reserva pendente">
+              <div className="grid gap-2">
+                <input className="input" type="number" min={5} max={1440} value={form.reservationMinutes} onChange={(e) => update("reservationMinutes", Number(e.target.value))} />
+                <span className="rounded-2xl bg-orange-50 px-3 py-2 text-xs text-orange-800">
+                  Padrao recomendado: 15 minutos. Se o Pix nao for pago nesse prazo, os numeros voltam para venda.
+                </span>
+              </div>
+            </Field>
             <Field label="Status inicial">
               <select className="input" value={form.status} onChange={(e) => update("status", e.target.value)}>
                 <option value="DRAFT">Rascunho</option>
@@ -198,7 +229,7 @@ export default function AdminRafflesPage() {
                     <p className="text-xs font-bold uppercase tracking-[0.25em] text-ember">{raffle.status}</p>
                     <h3 className="text-xl font-bold">{raffle.title}</h3>
                     <p className="text-sm opacity-70">{raffle.prize || "Premio nao informado"}</p>
-                    <p className="mt-1 text-xs opacity-60">{raffle.totalNumbers} numeros • {BRL.format(raffle.pricePerNumber)} por numero • {raffle._count?.orders ?? 0} pedido(s)</p>
+                    <p className="mt-1 text-xs opacity-60">{raffle.totalNumbers} numeros • {BRL.format(raffle.pricePerNumber)} por numero • reserva {raffle.reservationMinutes ?? 15} min • {raffle._count?.orders ?? 0} pedido(s)</p>
                   </div>
                   <strong className="rounded-full bg-emerald-100 px-3 py-1 text-sm text-emerald-700">{raffle._count?.numbers ?? raffle.totalNumbers} nums</strong>
                 </div>
@@ -207,6 +238,16 @@ export default function AdminRafflesPage() {
                   {raffle.status === "ACTIVE" && <button className="rounded-xl bg-amber-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void changeStatus(raffle.id, "PAUSED")}>Pausar</button>}
                   <button className="rounded-xl border px-3 py-2 text-sm font-bold" onClick={() => void changeStatus(raffle.id, "FINISHED")}>Finalizar</button>
                   <span className="rounded-xl bg-slate-100 px-3 py-2 font-mono text-xs dark:bg-slate-800">/rifas/{raffle.slug}</span>
+                </div>
+                <div className="mt-3 rounded-2xl border border-orange-200 bg-orange-50 p-3 text-sm text-orange-950">
+                  <p className="text-xs font-black uppercase tracking-[0.25em] text-orange-700">Divulgacao</p>
+                  <p className="mt-1 break-all font-mono text-xs">{raffleUrl(raffle)}</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button type="button" className="rounded-xl bg-ink px-3 py-2 text-xs font-bold text-white" onClick={() => window.open(raffleUrl(raffle), "_blank", "noopener,noreferrer")}>Abrir vitrine</button>
+                    <button type="button" className="rounded-xl border border-orange-300 px-3 py-2 text-xs font-bold" onClick={() => void copyText(raffleUrl(raffle), "Link copiado")}>Copiar link</button>
+                    <button type="button" className="rounded-xl border border-orange-300 px-3 py-2 text-xs font-bold" onClick={() => void copyText(raffleShareText(raffle), "Texto de divulgacao copiado")}>Copiar texto</button>
+                    <button type="button" className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white" onClick={() => openWhatsappShare(raffle)}>Enviar WhatsApp</button>
+                  </div>
                 </div>
               </article>
             ))}

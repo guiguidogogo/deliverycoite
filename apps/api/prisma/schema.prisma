@@ -597,6 +597,7 @@ model Raffle {
   pricePerNumber     Decimal             @db.Decimal(10, 2)
   minimumQuantity    Int                 @default(1)
   maximumQuantity    Int                 @default(10)
+  reservationMinutes Int                 @default(15)
   participantLimit   Int?
   featuredImageUrl   String?
   videoUrl           String?
