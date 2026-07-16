@@ -63,11 +63,11 @@ export function RaffleAdminPanel() {
 
       <section className="mt-5 grid gap-4 md:grid-cols-3">
         <AdminShortcut title="Rifas" description="Criar, editar e publicar campanhas." href="/admin/manage/raffles" />
-        <AdminShortcut title="Participantes" description="Base de compradores e interessados." disabled />
-        <AdminShortcut title="Pagamentos" description="Acompanhar Pix, cartão e confirmações." disabled />
-        <AdminShortcut title="Sorteios" description="Apuração, ganhadores e auditoria." disabled />
-        <AdminShortcut title="Relatórios" description="Vendas, números e conversão." disabled />
-        <AdminShortcut title="Integrações" description="Mercado Pago, WhatsApp/MenuIA e e-mail." href="/admin/manage/settings" />
+        <AdminShortcut title="Participantes" description="Base de compradores e interessados." href="/admin/manage/raffles#participantes" />
+        <AdminShortcut title="Pagamentos" description="Acompanhar Pix, cartao e confirmacoes." href="/admin/manage/raffles#pagamentos" />
+        <AdminShortcut title="Sorteios" description="Apuracao, ganhadores e auditoria." href="/admin/manage/raffles#sorteios" />
+        <AdminShortcut title="Relatorios" description="Vendas, numeros e conversao." href="/admin/manage/raffles#relatorios" />
+        <AdminShortcut title="Integracoes" description="Mercado Pago, WhatsApp/MenuIA e e-mail." href="/admin/manage/settings" />
       </section>
 
       <section className="mt-6 rounded-3xl border border-black/10 bg-white/85 p-5 shadow-sm dark:border-white/10 dark:bg-slate-900/70">
@@ -118,15 +118,15 @@ function Metric({ label, value }: { label: string; value: number }) {
   );
 }
 
-function AdminShortcut({ title, description, href, disabled }: { title: string; description: string; href?: string; disabled?: boolean }) {
+function AdminShortcut({ title, description, href }: { title: string; description: string; href?: string }) {
   const content = (
-    <div className={`rounded-3xl border border-black/10 bg-white/85 p-5 shadow-sm dark:border-white/10 dark:bg-slate-900/70 ${disabled ? "opacity-55" : ""}`}>
+    <div className="rounded-3xl border border-black/10 bg-white/85 p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-purple-300 hover:shadow-md dark:border-white/10 dark:bg-slate-900/70">
       <h3 className="text-xl font-bold">{title}</h3>
       <p className="mt-2 text-sm opacity-70">{description}</p>
-      <p className="mt-4 text-sm font-bold text-purple-700">{disabled ? "Em breve" : "Acessar"}</p>
+      <p className="mt-4 text-sm font-bold text-purple-700">Acessar</p>
     </div>
   );
 
-  if (disabled || !href) return content;
+  if (!href) return content;
   return <a href={href}>{content}</a>;
 }

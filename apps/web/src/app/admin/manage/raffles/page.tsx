@@ -133,6 +133,39 @@ export default function AdminRafflesPage() {
   const update = (field: keyof typeof initialForm, value: string | number) => setForm((current) => ({ ...current, [field]: value }));
   const paidOrders = orders.filter((order) => order.paymentStatus === "APPROVED" || order.status === "PAID").length;
   const pendingOrders = orders.filter((order) => ["RESERVED", "PENDING_PAYMENT"].includes(order.status)).length;
+  const paidRevenue = orders
+    .filter((order) => order.paymentStatus === "APPROVED" || order.status === "PAID")
+    .reduce((sum, order) => sum + order.total, 0);
+  const pendingRevenue = orders
+    .filter((order) => ["RESERVED", "PENDING_PAYMENT"].includes(order.status))
+    .reduce((sum, order) => sum + order.total, 0);
+  const soldNumbers = orders
+    .filter((order) => order.paymentStatus === "APPROVED" || order.status === "PAID")
+    .reduce((sum, order) => sum + order.numbers.length, 0);
+  const uniqueParticipants = Array.from(
+    orders.reduce((map, order) => {
+      const key = order.participant.email || order.participant.phone;
+      if (!map.has(key)) {
+        map.set(key, {
+          ...order.participant,
+          orders: 0,
+          paidOrders: 0,
+          totalSpent: 0,
+          lastOrderAt: order.createdAt
+        });
+      }
+      const participant = map.get(key)!;
+      participant.orders += 1;
+      if (order.paymentStatus === "APPROVED" || order.status === "PAID") {
+        participant.paidOrders += 1;
+        participant.totalSpent += order.total;
+      }
+      if (new Date(order.createdAt).getTime() > new Date(participant.lastOrderAt).getTime()) {
+        participant.lastOrderAt = order.createdAt;
+      }
+      return map;
+    }, new Map<string, { name: string; phone: string; email?: string | null; orders: number; paidOrders: number; totalSpent: number; lastOrderAt: string }>())
+  ).map(([, participant]) => participant);
   const raffleUrl = (raffle: Raffle) => {
     if (typeof window === "undefined") return `/rifas/${raffle.slug}`;
     return `${window.location.origin}/rifas/${raffle.slug}`;
@@ -166,7 +199,21 @@ export default function AdminRafflesPage() {
         <Link className="rounded-xl bg-ink px-4 py-2 font-bold text-white" href="/admin">Voltar</Link>
       </div>
 
-      <section className="mt-6 grid gap-5 lg:grid-cols-[0.85fr_1.15fr]">
+      <nav className="mt-5 flex gap-2 overflow-x-auto pb-1">
+        {[
+          ["Campanhas", "#campanhas"],
+          ["Participantes", "#participantes"],
+          ["Pagamentos", "#pagamentos"],
+          ["Sorteios", "#sorteios"],
+          ["Relatorios", "#relatorios"]
+        ].map(([label, href]) => (
+          <a key={href} href={href} className="whitespace-nowrap rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-bold shadow-sm hover:border-orange-300 dark:border-white/10 dark:bg-slate-900">
+            {label}
+          </a>
+        ))}
+      </nav>
+
+      <section id="campanhas" className="mt-6 grid gap-5 lg:grid-cols-[0.85fr_1.15fr]">
         <form onSubmit={submit} className="rounded-3xl border border-black/10 bg-white/85 p-5 shadow-sm dark:border-white/10 dark:bg-slate-900/70">
           <h2 className="text-2xl font-bold">Nova rifa</h2>
           <div className="mt-4 grid gap-3">
@@ -255,7 +302,7 @@ export default function AdminRafflesPage() {
         </section>
       </section>
 
-      <section className="mt-6 rounded-3xl border border-black/10 bg-white/85 p-5 shadow-sm dark:border-white/10 dark:bg-slate-900/70">
+      <section id="pagamentos" className="mt-6 scroll-mt-24 rounded-3xl border border-black/10 bg-white/85 p-5 shadow-sm dark:border-white/10 dark:bg-slate-900/70">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.35em] text-ember">Reservas e pagamentos</p>
@@ -299,6 +346,62 @@ export default function AdminRafflesPage() {
           ))}
         </div>
       </section>
+
+      <section id="participantes" className="mt-6 scroll-mt-24 rounded-3xl border border-black/10 bg-white/85 p-5 shadow-sm dark:border-white/10 dark:bg-slate-900/70">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.35em] text-purple-700">Participantes</p>
+            <h2 className="text-2xl font-bold">Base de compradores</h2>
+            <p className="text-sm opacity-70">{uniqueParticipants.length} participante(s) com interesse ou compra registrada.</p>
+          </div>
+          <button className="rounded-xl border px-3 py-2 text-sm font-bold" onClick={() => void copyText(
+            uniqueParticipants.map((participant) => `${participant.name};${participant.phone};${participant.email || ""};${BRL.format(participant.totalSpent)}`).join("\n"),
+            "Lista de participantes copiada"
+          )}>Copiar lista</button>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          {!loading && uniqueParticipants.length === 0 && <p className="rounded-2xl bg-slate-50 p-4 text-sm opacity-70">Nenhum participante ainda.</p>}
+          {uniqueParticipants.map((participant) => (
+            <article key={participant.email || participant.phone} className="rounded-2xl border border-black/10 p-4 dark:border-white/10">
+              <h3 className="text-lg font-bold">{participant.name}</h3>
+              <p className="text-sm opacity-70">{participant.phone}{participant.email ? ` · ${participant.email}` : ""}</p>
+              <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
+                <span className="rounded-xl bg-slate-50 p-2 dark:bg-slate-800"><strong>{participant.orders}</strong><br />pedido(s)</span>
+                <span className="rounded-xl bg-emerald-50 p-2 text-emerald-800"><strong>{participant.paidOrders}</strong><br />pago(s)</span>
+                <span className="rounded-xl bg-orange-50 p-2 text-orange-800"><strong>{BRL.format(participant.totalSpent)}</strong><br />total</span>
+              </div>
+              <p className="mt-2 text-xs opacity-60">Ultimo pedido: {new Date(participant.lastOrderAt).toLocaleString("pt-BR")}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section id="sorteios" className="mt-6 scroll-mt-24 rounded-3xl border border-black/10 bg-white/85 p-5 shadow-sm dark:border-white/10 dark:bg-slate-900/70">
+        <p className="text-xs font-bold uppercase tracking-[0.35em] text-purple-700">Sorteios</p>
+        <h2 className="text-2xl font-bold">Apuracao e ganhadores</h2>
+        <p className="mt-1 text-sm opacity-70">
+          Use esta area para acompanhar campanhas finalizadas e preparar a apuracao. Por seguranca, somente numeros pagos entram na contagem.
+        </p>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <MetricCard label="Campanhas finalizadas" value={raffles.filter((raffle) => ["ENDED", "FINISHED"].includes(raffle.status)).length.toString()} />
+          <MetricCard label="Numeros pagos" value={soldNumbers.toString()} />
+          <MetricCard label="Pedidos pagos" value={paidOrders.toString()} />
+        </div>
+        <div className="mt-4 rounded-2xl bg-purple-50 p-4 text-sm text-purple-950">
+          Proximo passo operacional: selecionar uma campanha finalizada, sortear um numero pago e registrar o ganhador com auditoria.
+        </div>
+      </section>
+
+      <section id="relatorios" className="mt-6 scroll-mt-24 rounded-3xl border border-black/10 bg-white/85 p-5 shadow-sm dark:border-white/10 dark:bg-slate-900/70">
+        <p className="text-xs font-bold uppercase tracking-[0.35em] text-ember">Relatorios</p>
+        <h2 className="text-2xl font-bold">Resumo comercial</h2>
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          <MetricCard label="Faturamento pago" value={BRL.format(paidRevenue)} />
+          <MetricCard label="Reservas pendentes" value={BRL.format(pendingRevenue)} />
+          <MetricCard label="Pedidos" value={orders.length.toString()} />
+          <MetricCard label="Conversao" value={`${orders.length ? Math.round((paidOrders / orders.length) * 100) : 0}%`} />
+        </div>
+      </section>
     </main>
   );
 }
@@ -309,5 +412,14 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="font-semibold">{label}</span>
       {children}
     </label>
+  );
+}
+
+function MetricCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-black/10 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-800">
+      <p className="text-xs font-bold uppercase tracking-[0.2em] opacity-60">{label}</p>
+      <p className="mt-2 text-2xl font-black">{value}</p>
+    </div>
   );
 }
