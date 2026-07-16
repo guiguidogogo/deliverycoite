@@ -121,6 +121,7 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
   const [inlinePassword, setInlinePassword] = useState("");
   const [inlineLoginLoading, setInlineLoginLoading] = useState(false);
   const notifiedPaidOrders = useRef<Set<string>>(new Set());
+  const accountLoginRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -256,12 +257,31 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
       });
       applyParticipantLogin(payload);
       setInlinePassword("");
-      toast.success("Conta acessada. Agora voce pode confirmar a reserva.");
+      toast.success("Conta acessada. Agora voce pode confirmar a reserva sem perder os numeros escolhidos.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Nao foi possivel entrar na conta");
     } finally {
       setInlineLoginLoading(false);
     }
+  }
+
+  function openInlineLogin(message?: string) {
+    setAccountRequiredMessage(message || "Entre com sua conta para continuar a reserva sem perder os numeros selecionados.");
+    setInlineLogin(participantEmail || participantPhone || inlineLogin);
+    window.setTimeout(() => accountLoginRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
+  }
+
+  function isAccountAlreadyRegisteredMessage(message: string) {
+    const normalized = message.toLowerCase();
+    return (
+      normalized.includes("cadastro com este e-mail") ||
+      normalized.includes("cadastro com este email") ||
+      normalized.includes("ja existe") ||
+      normalized.includes("já existe") ||
+      normalized.includes("faca login") ||
+      normalized.includes("faça login") ||
+      normalized.includes("conta encontrada")
+    );
   }
 
   async function reserveNumbers() {
@@ -306,9 +326,8 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
       setNumbers(await publicRaffleJson<RaffleNumber[]>(`/public/raffles/${selected.id}/numbers`));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao reservar numeros";
-      if (message.toLowerCase().includes("faça login") || message.toLowerCase().includes("cadastro com este e-mail")) {
-        setAccountRequiredMessage(message);
-        setInlineLogin(participantEmail || participantPhone);
+      if (isAccountAlreadyRegisteredMessage(message)) {
+        openInlineLogin(message);
       }
       toast.error(message);
     } finally {
@@ -499,12 +518,21 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
                     <div className="mb-3 rounded-2xl border border-blue-100 bg-blue-50 p-4">
                       <p className="text-sm font-bold text-blue-900">Ja tem cadastro?</p>
                       <p className="mt-1 text-sm text-slate-600">Entre na sua conta para usar seus dados salvos, ver rifas compradas e continuar novas reservas.</p>
-                      <Link href="/rifas/minha-conta" className="mt-3 inline-flex rounded-xl bg-ink px-4 py-2 text-sm font-bold text-white">
-                        Entrar na minha conta
-                      </Link>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openInlineLogin("Entre com sua conta para continuar esta reserva. Seus numeros selecionados ficam salvos nesta tela.")}
+                          className="inline-flex rounded-xl bg-ink px-4 py-2 text-sm font-bold text-white"
+                        >
+                          Entrar e continuar aqui
+                        </button>
+                        <Link href="/rifas/minha-conta" className="inline-flex rounded-xl border border-blue-200 bg-white px-4 py-2 text-sm font-bold text-blue-900">
+                          Ver minhas rifas
+                        </Link>
+                      </div>
                     </div>
                     {accountRequiredMessage && (
-                      <div className="mb-3 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
+                      <div ref={accountLoginRef} className="mb-3 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
                         <strong>Conta encontrada.</strong>
                         <p className="mt-1">{accountRequiredMessage}</p>
                         <form onSubmit={submitInlineLogin} className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_auto]">

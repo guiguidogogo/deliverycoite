@@ -212,9 +212,16 @@ export function RaffleAccountPage() {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao criar conta";
       toast.error(message);
-      if (message.toLowerCase().includes("ja existe")) {
+      const normalized = message.toLowerCase();
+      if (
+        normalized.includes("ja existe") ||
+        normalized.includes("já existe") ||
+        normalized.includes("cadastro com este e-mail") ||
+        normalized.includes("cadastro com este email")
+      ) {
         setMode("login");
         setLogin(registerEmail || registerPhone);
+        toast.info("Conta encontrada. Informe sua senha para acessar suas rifas.");
       }
     } finally {
       setLoading(false);
