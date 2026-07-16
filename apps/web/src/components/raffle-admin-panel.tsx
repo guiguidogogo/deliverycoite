@@ -67,7 +67,11 @@ export function RaffleAdminPanel() {
         <AdminShortcut title="Pagamentos" description="Acompanhar Pix, cartao e confirmacoes." href="/admin/manage/raffles#pagamentos" />
         <AdminShortcut title="Sorteios" description="Apuracao, ganhadores e auditoria." href="/admin/manage/raffles#sorteios" />
         <AdminShortcut title="Relatorios" description="Vendas, numeros e conversao." href="/admin/manage/raffles#relatorios" />
-        <AdminShortcut title="Integracoes" description="Mercado Pago, WhatsApp/MenuIA e e-mail." href="/admin/manage/settings" />
+        <AdminShortcut
+          title="Integracoes"
+          description="Mercado Pago, WhatsApp/MenuIA e e-mail para reservas, pagamentos e avisos das rifas."
+          href="/admin/manage/raffles#integracoes"
+        />
       </section>
 
       <section className="mt-6 rounded-3xl border border-black/10 bg-white/85 p-5 shadow-sm dark:border-white/10 dark:bg-slate-900/70">

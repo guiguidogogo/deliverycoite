@@ -259,7 +259,8 @@ export default function AdminRafflesPage() {
           ["Participantes", "#participantes"],
           ["Pagamentos", "#pagamentos"],
           ["Sorteios", "#sorteios"],
-          ["Relatorios", "#relatorios"]
+          ["Relatorios", "#relatorios"],
+          ["Integracoes", "#integracoes"]
         ].map(([label, href]) => (
           <a key={href} href={href} className="whitespace-nowrap rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-bold shadow-sm hover:border-orange-300 dark:border-white/10 dark:bg-slate-900">
             {label}
@@ -503,6 +504,36 @@ export default function AdminRafflesPage() {
           <MetricCard label="Conversao" value={`${orders.length ? Math.round((paidOrders / orders.length) * 100) : 0}%`} />
         </div>
       </section>
+
+      <section id="integracoes" className="mt-6 scroll-mt-24 rounded-3xl border border-purple-200 bg-white/90 p-5 shadow-sm dark:border-purple-500/30 dark:bg-slate-900/70">
+        <p className="text-xs font-bold uppercase tracking-[0.35em] text-purple-700">Integracoes</p>
+        <h2 className="text-2xl font-bold">Integracoes das rifas</h2>
+        <p className="mt-1 text-sm opacity-70">
+          Esta area mostra apenas conexoes usadas em campanhas de rifas. Configuracoes de delivery, cardapio, mesas e impressao nao fazem parte deste painel.
+        </p>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <IntegrationCard
+            title="Mercado Pago"
+            description="Receber Pix, confirmar pagamentos automaticamente e liberar numeros pagos."
+            status="Pagamento online"
+          />
+          <IntegrationCard
+            title="WhatsApp / MenuIA"
+            description="Enviar avisos de reserva, Pix pendente, pagamento aprovado, lembretes e resultado do sorteio."
+            status="Mensagens"
+          />
+          <IntegrationCard
+            title="E-mail"
+            description="Enviar comprovantes, recibos e comunicados para participantes cadastrados."
+            status="Comunicacao"
+          />
+        </div>
+
+        <div className="mt-4 rounded-2xl bg-purple-50 p-4 text-sm text-purple-950">
+          Proximo passo: transformar estes cards em formularios proprios de integracao para rifas, sem misturar com configuracoes de lanchonete.
+        </div>
+      </section>
     </main>
   );
 }
@@ -521,6 +552,16 @@ function MetricCard({ label, value }: { label: string; value: string }) {
     <div className="rounded-2xl border border-black/10 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-800">
       <p className="text-xs font-bold uppercase tracking-[0.2em] opacity-60">{label}</p>
       <p className="mt-2 text-2xl font-black">{value}</p>
+    </div>
+  );
+}
+
+function IntegrationCard({ title, description, status }: { title: string; description: string; status: string }) {
+  return (
+    <div className="rounded-2xl border border-black/10 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-800">
+      <p className="text-xs font-bold uppercase tracking-[0.2em] text-purple-700">{status}</p>
+      <h3 className="mt-2 text-lg font-black">{title}</h3>
+      <p className="mt-2 text-sm opacity-70">{description}</p>
     </div>
   );
 }
