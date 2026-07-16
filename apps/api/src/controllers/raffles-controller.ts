@@ -841,7 +841,7 @@ export async function reservePublicRaffleNumbers(req: Request, res: Response) {
   const phone = onlyDigits(body.participant.phone);
   const cpf = body.participant.cpf ? onlyDigits(body.participant.cpf) : null;
   const email = body.participant.email.toLowerCase();
-  const existingParticipant = await prisma.raffleParticipant.findFirst({
+  const existingParticipants = await prisma.raffleParticipant.findMany({
     where: {
       companyId,
       OR: [
@@ -849,16 +849,19 @@ export async function reservePublicRaffleNumbers(req: Request, res: Response) {
         { email }
       ]
     },
-    select: { id: true, passwordHash: true }
+    select: { id: true, passwordHash: true, createdAt: true },
+    orderBy: { createdAt: "asc" },
+    take: 10
   });
   const participantPayload = getRaffleParticipantPayload(req);
-  const isAuthenticatedParticipant = Boolean(
-    existingParticipant
-    && participantPayload?.raffleParticipantId === existingParticipant.id
-    && participantPayload.companyId === companyId
-  );
+  const authenticatedParticipant = participantPayload?.companyId === companyId
+    ? existingParticipants.find((participant) => participant.id === participantPayload.raffleParticipantId)
+    : null;
+  const accountWithPassword = existingParticipants.find((participant) => Boolean(participant.passwordHash));
+  const existingParticipant = authenticatedParticipant ?? accountWithPassword ?? existingParticipants[0] ?? null;
+  const isAuthenticatedParticipant = Boolean(authenticatedParticipant);
 
-  if (existingParticipant?.passwordHash && !isAuthenticatedParticipant) {
+  if (accountWithPassword && !isAuthenticatedParticipant) {
     return res.status(409).json({
       message: "Ja existe um cadastro com este e-mail ou telefone. Faça login em Minha conta para continuar sua compra.",
       code: "RAFFLE_ACCOUNT_EXISTS"

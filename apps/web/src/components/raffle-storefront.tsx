@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { PublicCompany } from "../lib/types";
@@ -52,10 +52,16 @@ type RafflePixPayment = {
 
 type RaffleAccountSummary = {
   participant: {
+    id?: string;
     name: string;
     phone: string;
     email?: string | null;
   };
+};
+
+type RaffleLoginResponse = {
+  token: string;
+  participant: RaffleAccountSummary["participant"];
 };
 
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -105,6 +111,9 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
   const [numbersLoading, setNumbersLoading] = useState(false);
   const [loggedParticipant, setLoggedParticipant] = useState<RaffleAccountSummary["participant"] | null>(null);
   const [accountRequiredMessage, setAccountRequiredMessage] = useState("");
+  const [inlineLogin, setInlineLogin] = useState("");
+  const [inlinePassword, setInlinePassword] = useState("");
+  const [inlineLoginLoading, setInlineLoginLoading] = useState(false);
   const notifiedPaidOrders = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -208,6 +217,42 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
     }
   }
 
+  function applyParticipantLogin(payload: RaffleLoginResponse) {
+    localStorage.setItem(RAFFLE_TOKEN_KEY, payload.token);
+    setLoggedParticipant(payload.participant);
+    setParticipantName(payload.participant.name ?? "");
+    setParticipantPhone(payload.participant.phone ?? "");
+    setParticipantEmail(payload.participant.email ?? "");
+    setParticipantPassword("");
+    setAccountRequiredMessage("");
+  }
+
+  async function submitInlineLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!inlineLogin.trim() || !inlinePassword.trim()) {
+      toast.error("Informe e-mail/WhatsApp e senha para entrar");
+      return;
+    }
+
+    setInlineLoginLoading(true);
+    try {
+      const payload = await api<RaffleLoginResponse>("/public/raffles/auth/login", {
+        method: "POST",
+        body: JSON.stringify({
+          login: inlineLogin,
+          password: inlinePassword
+        })
+      });
+      applyParticipantLogin(payload);
+      setInlinePassword("");
+      toast.success("Conta acessada. Agora voce pode confirmar a reserva.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Nao foi possivel entrar na conta");
+    } finally {
+      setInlineLoginLoading(false);
+    }
+  }
+
   async function reserveNumbers() {
     if (!selected) return;
     if (selectedNumbers.length === 0) {
@@ -252,6 +297,7 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
       const message = error instanceof Error ? error.message : "Falha ao reservar numeros";
       if (message.toLowerCase().includes("faça login") || message.toLowerCase().includes("cadastro com este e-mail")) {
         setAccountRequiredMessage(message);
+        setInlineLogin(participantEmail || participantPhone);
       }
       toast.error(message);
     } finally {
@@ -429,9 +475,24 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
                       <div className="mb-3 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
                         <strong>Conta encontrada.</strong>
                         <p className="mt-1">{accountRequiredMessage}</p>
-                        <Link href="/rifas/minha-conta" className="mt-3 inline-flex rounded-xl bg-orange-600 px-4 py-2 text-sm font-bold text-white">
-                          Fazer login e continuar
-                        </Link>
+                        <form onSubmit={submitInlineLogin} className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+                          <input
+                            value={inlineLogin}
+                            onChange={(event) => setInlineLogin(event.target.value)}
+                            className="rounded-xl border border-orange-200 bg-white px-4 py-3 text-ink"
+                            placeholder="E-mail ou WhatsApp"
+                          />
+                          <input
+                            value={inlinePassword}
+                            onChange={(event) => setInlinePassword(event.target.value)}
+                            className="rounded-xl border border-orange-200 bg-white px-4 py-3 text-ink"
+                            placeholder="Senha"
+                            type="password"
+                          />
+                          <button disabled={inlineLoginLoading} className="rounded-xl bg-orange-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-60">
+                            {inlineLoginLoading ? "Entrando..." : "Entrar e continuar"}
+                          </button>
+                        </form>
                       </div>
                     )}
                     <div className="mt-3 grid gap-3 md:grid-cols-2">
