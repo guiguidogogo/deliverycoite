@@ -27,7 +27,8 @@ const raffleSchema = z.object({
   reservationMinutes: z.coerce.number().int().min(5, "A reserva precisa ter pelo menos 5 minutos").max(1440, "A reserva pode ter no maximo 24 horas").default(15),
   participantLimit: z.coerce.number().int().min(1).optional().nullable(),
   featuredImageUrl: z.string().trim().url().optional().nullable().or(z.literal("")),
-  videoUrl: z.string().trim().url().optional().nullable().or(z.literal(""))
+  videoUrl: z.string().trim().url().optional().nullable().or(z.literal("")),
+  videoUrls: z.array(z.string().trim().url()).max(5, "Informe no maximo 5 videos").optional()
 });
 
 const publicReserveSchema = z.object({
@@ -357,9 +358,27 @@ function validateRaffleNumbers(data: z.infer<typeof raffleSchema>) {
   return totalNumbers;
 }
 
-function serializeRaffle<T extends { pricePerNumber: Prisma.Decimal; _count?: Record<string, number> }>(raffle: T) {
+function normalizeRaffleVideoUrls(videoUrls?: string[] | null, fallback?: string | null) {
+  const values = [...(videoUrls ?? []), ...(fallback ? [fallback] : [])]
+    .map((url) => url.trim())
+    .filter(Boolean);
+  return Array.from(new Set(values)).slice(0, 5);
+}
+
+function getRaffleVideoUrls(raffle: { videoUrl?: string | null; media?: Array<{ type: string; url: string; sortOrder: number }> }) {
+  const mediaVideos = Array.isArray(raffle.media)
+    ? raffle.media
+        .filter((item) => item.type === "VIDEO")
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((item) => item.url)
+    : [];
+  return mediaVideos.length ? mediaVideos : raffle.videoUrl ? [raffle.videoUrl] : [];
+}
+
+function serializeRaffle<T extends { pricePerNumber: Prisma.Decimal; videoUrl?: string | null; media?: Array<{ type: string; url: string; sortOrder: number }>; _count?: Record<string, number> }>(raffle: T) {
   return {
     ...raffle,
+    videoUrls: getRaffleVideoUrls(raffle),
     pricePerNumber: Number(raffle.pricePerNumber),
     reservationMinutes: "reservationMinutes" in raffle && typeof raffle.reservationMinutes === "number"
       ? raffle.reservationMinutes
@@ -373,6 +392,7 @@ export async function listAdminRaffles(req: Request, res: Response) {
   const raffles = await prisma.raffle.findMany({
     where: { companyId },
     include: {
+      media: { select: { type: true, url: true, sortOrder: true }, orderBy: { sortOrder: "asc" } },
       _count: {
         select: {
           numbers: true,
@@ -429,6 +449,7 @@ export async function createAdminRaffle(req: Request, res: Response) {
   const body = raffleSchema.parse(req.body);
   const totalNumbers = validateRaffleNumbers(body);
   const slug = await uniqueRaffleSlug(companyId, body.title);
+  const videoUrls = normalizeRaffleVideoUrls(body.videoUrls, body.videoUrl);
 
   const raffle = await prisma.$transaction(async (tx) => {
     const created = await tx.raffle.create({
@@ -452,10 +473,22 @@ export async function createAdminRaffle(req: Request, res: Response) {
         reservationMinutes: body.reservationMinutes,
         participantLimit: body.participantLimit ?? null,
         featuredImageUrl: body.featuredImageUrl || null,
-        videoUrl: body.videoUrl || null,
+        videoUrl: videoUrls[0] ?? null,
         publishedAt: body.status === "ACTIVE" ? new Date() : null
       }
     });
+
+    if (videoUrls.length) {
+      await tx.raffleMedia.createMany({
+        data: videoUrls.map((url, index) => ({
+          companyId,
+          raffleId: created.id,
+          type: "VIDEO",
+          url,
+          sortOrder: index
+        }))
+      });
+    }
 
     const batchSize = 1000;
     for (let start = body.numberStart; start <= body.numberEnd; start += batchSize) {
@@ -486,7 +519,12 @@ export async function createAdminRaffle(req: Request, res: Response) {
       }
     });
 
-    return created;
+    return tx.raffle.findUniqueOrThrow({
+      where: { id: created.id },
+      include: {
+        media: { select: { type: true, url: true, sortOrder: true }, orderBy: { sortOrder: "asc" } }
+      }
+    });
   });
 
   return res.status(201).json(serializeRaffle(raffle));
@@ -496,6 +534,7 @@ export async function getAdminRaffle(req: Request, res: Response) {
   const raffle = await prisma.raffle.findFirst({
     where: { id: req.params.id, companyId: getCompanyId(req) },
     include: {
+      media: { select: { type: true, url: true, sortOrder: true }, orderBy: { sortOrder: "asc" } },
       _count: { select: { numbers: true, orders: true, participants: true } }
     }
   });
@@ -509,6 +548,8 @@ export async function updateAdminRaffle(req: Request, res: Response) {
   if (!existing) return res.status(404).json({ message: "Rifa nao encontrada" });
 
   const body = raffleSchema.partial().parse(req.body);
+  const shouldReplaceVideos = body.videoUrls !== undefined || body.videoUrl !== undefined;
+  const videoUrls = shouldReplaceVideos ? normalizeRaffleVideoUrls(body.videoUrls, body.videoUrl) : [];
   const data: Prisma.RaffleUpdateInput = {
     ...(body.title ? { title: body.title, slug: await uniqueRaffleSlug(companyId, body.title, existing.id) } : {}),
     ...(body.description !== undefined ? { description: body.description || null } : {}),
@@ -523,12 +564,34 @@ export async function updateAdminRaffle(req: Request, res: Response) {
     ...(body.reservationMinutes !== undefined ? { reservationMinutes: body.reservationMinutes } : {}),
     ...(body.participantLimit !== undefined ? { participantLimit: body.participantLimit ?? null } : {}),
     ...(body.featuredImageUrl !== undefined ? { featuredImageUrl: body.featuredImageUrl || null } : {}),
-    ...(body.videoUrl !== undefined ? { videoUrl: body.videoUrl || null } : {})
+    ...(shouldReplaceVideos ? { videoUrl: videoUrls[0] ?? null } : {})
   };
 
-  const updated = await prisma.raffle.update({
-    where: { id: existing.id },
-    data
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.raffle.update({
+      where: { id: existing.id },
+      data
+    });
+    if (shouldReplaceVideos) {
+      await tx.raffleMedia.deleteMany({ where: { companyId, raffleId: existing.id, type: "VIDEO" } });
+      if (videoUrls.length) {
+        await tx.raffleMedia.createMany({
+          data: videoUrls.map((url, index) => ({
+            companyId,
+            raffleId: existing.id,
+            type: "VIDEO",
+            url,
+            sortOrder: index
+          }))
+        });
+      }
+    }
+    return tx.raffle.findUniqueOrThrow({
+      where: { id: existing.id },
+      include: {
+        media: { select: { type: true, url: true, sortOrder: true }, orderBy: { sortOrder: "asc" } }
+      }
+    });
   });
   return res.json(serializeRaffle(updated));
 }
@@ -745,6 +808,7 @@ export async function listPublicRaffles(req: Request, res: Response) {
       AND: [{ OR: [{ endsAt: null }, { endsAt: { gt: now } }] }]
     },
     include: {
+      media: { select: { type: true, url: true, sortOrder: true }, orderBy: { sortOrder: "asc" } },
       numbers: {
         select: { status: true }
       },
@@ -765,6 +829,8 @@ export async function listPublicRaffles(req: Request, res: Response) {
       description: raffle.description,
       prize: raffle.prize,
       featuredImageUrl: raffle.featuredImageUrl,
+      videoUrl: raffle.videoUrl,
+      videoUrls: getRaffleVideoUrls(raffle),
       pricePerNumber: Number(raffle.pricePerNumber),
       reservationMinutes: raffle.reservationMinutes,
       totalNumbers: raffle.totalNumbers,
@@ -783,6 +849,7 @@ export async function getPublicRaffle(req: Request, res: Response) {
   const raffle = await prisma.raffle.findFirst({
     where: { companyId, slug: req.params.slug, status: { in: ["ACTIVE", "PAUSED", "ENDED", "FINISHED"] } },
     include: {
+      media: { select: { type: true, url: true, sortOrder: true }, orderBy: { sortOrder: "asc" } },
       company: { select: { tradeName: true, logoUrl: true, whatsapp: true, instagram: true } }
     }
   });

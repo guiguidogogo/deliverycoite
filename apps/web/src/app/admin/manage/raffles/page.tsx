@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { adminApi } from "../../../../lib/admin-api";
+import { adminApi, getAdminToken } from "../../../../lib/admin-api";
+import { apiFetch, readApiJson, resolveAssetUrl } from "../../../../lib/api";
 
 type Raffle = {
   id: string;
@@ -20,6 +21,8 @@ type Raffle = {
   maximumQuantity: number;
   reservationMinutes: number;
   featuredImageUrl?: string | null;
+  videoUrl?: string | null;
+  videoUrls?: string[];
   _count?: { numbers: number; orders: number; participants: number };
 };
 
@@ -59,7 +62,8 @@ const initialForm = {
   maximumQuantity: 10,
   reservationMinutes: 15,
   featuredImageUrl: "",
-  videoUrl: ""
+  videoUrl: "",
+  videoUrls: [""]
 };
 
 export default function AdminRafflesPage() {
@@ -68,6 +72,7 @@ export default function AdminRafflesPage() {
   const [form, setForm] = useState(initialForm);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   const totalNumbers = useMemo(() => Math.max(0, Number(form.numberEnd) - Number(form.numberStart) + 1), [form.numberEnd, form.numberStart]);
 
@@ -95,11 +100,14 @@ export default function AdminRafflesPage() {
     }
     setSaving(true);
     try {
+      const videoUrls = form.videoUrls.map((url) => url.trim()).filter(Boolean).slice(0, 5);
       await adminApi("/admin/raffles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
+          videoUrl: videoUrls[0] ?? "",
+          videoUrls,
           startsAt: form.startsAt ? new Date(form.startsAt).toISOString() : null,
           endsAt: form.endsAt ? new Date(form.endsAt).toISOString() : null
         })
@@ -130,7 +138,53 @@ export default function AdminRafflesPage() {
     }
   }
 
-  const update = (field: keyof typeof initialForm, value: string | number) => setForm((current) => ({ ...current, [field]: value }));
+  const update = (field: keyof typeof initialForm, value: string | number | string[]) => setForm((current) => ({ ...current, [field]: value }));
+  const updateVideoUrl = (index: number, value: string) => {
+    setForm((current) => ({
+      ...current,
+      videoUrls: current.videoUrls.map((url, currentIndex) => currentIndex === index ? value : url)
+    }));
+  };
+  const addVideoUrl = () => {
+    setForm((current) => current.videoUrls.length >= 5 ? current : { ...current, videoUrls: [...current.videoUrls, ""] });
+  };
+  const removeVideoUrl = (index: number) => {
+    setForm((current) => ({
+      ...current,
+      videoUrls: current.videoUrls.length <= 1 ? [""] : current.videoUrls.filter((_, currentIndex) => currentIndex !== index)
+    }));
+  };
+  const uploadRaffleImage = async (file?: File | null) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Envie uma imagem valida para a rifa");
+      return;
+    }
+    const token = getAdminToken();
+    if (!token) {
+      toast.error("Sessao expirada. Entre novamente no painel.");
+      return;
+    }
+    setUploadingImage(true);
+    try {
+      const data = new FormData();
+      data.append("image", file);
+      const response = await apiFetch("/admin/uploads/image", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: data
+      }, { json: false, skipSubdomain: true });
+      const payload = await readApiJson<{ url?: string; message?: string }>(response);
+      if (!response.ok) throw new Error(payload.message ?? "Falha ao enviar imagem");
+      if (!payload.url) throw new Error("Upload sem URL de retorno");
+      update("featuredImageUrl", payload.url);
+      toast.success("Imagem da rifa enviada");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao enviar imagem");
+    } finally {
+      setUploadingImage(false);
+    }
+  };
   const paidOrders = orders.filter((order) => order.paymentStatus === "APPROVED" || order.status === "PAID").length;
   const pendingOrders = orders.filter((order) => ["RESERVED", "PENDING_PAYMENT"].includes(order.status)).length;
   const paidRevenue = orders
@@ -221,7 +275,54 @@ export default function AdminRafflesPage() {
             <Field label="Premio"><input className="input" value={form.prize} onChange={(e) => update("prize", e.target.value)} /></Field>
             <Field label="Descricao"><textarea className="input min-h-24" value={form.description} onChange={(e) => update("description", e.target.value)} /></Field>
             <Field label="Regulamento"><textarea className="input min-h-28" value={form.regulation} onChange={(e) => update("regulation", e.target.value)} /></Field>
-            <Field label="Imagem principal"><input className="input" placeholder="https://..." value={form.featuredImageUrl} onChange={(e) => update("featuredImageUrl", e.target.value)} /></Field>
+            <Field label="Imagem principal">
+              <div className="grid gap-2 rounded-2xl border border-black/10 p-3 dark:border-white/10">
+                <input className="input" placeholder="URL da imagem ou envie um arquivo abaixo" value={form.featuredImageUrl} onChange={(e) => update("featuredImageUrl", e.target.value)} />
+                <input
+                  className="input"
+                  type="file"
+                  accept="image/*"
+                  disabled={uploadingImage}
+                  onChange={(event) => void uploadRaffleImage(event.target.files?.[0])}
+                />
+                {uploadingImage && <span className="text-xs font-bold text-orange-700">Enviando imagem...</span>}
+                {form.featuredImageUrl && (
+                  <img
+                    src={resolveAssetUrl(form.featuredImageUrl)}
+                    alt="Previa da rifa"
+                    className="h-32 w-full rounded-2xl object-cover"
+                  />
+                )}
+              </div>
+            </Field>
+            <Field label="Videos da rifa (ate 5)">
+              <div className="grid gap-2 rounded-2xl border border-black/10 p-3 dark:border-white/10">
+                {form.videoUrls.map((url, index) => (
+                  <div key={index} className="grid gap-2 md:grid-cols-[1fr_auto]">
+                    <input
+                      className="input"
+                      placeholder={`Link do video ${index + 1}`}
+                      value={url}
+                      onChange={(event) => updateVideoUrl(index, event.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="rounded-xl border border-red-200 px-3 py-2 text-sm font-bold text-red-600 disabled:opacity-40"
+                      disabled={form.videoUrls.length <= 1}
+                      onClick={() => removeVideoUrl(index)}
+                    >
+                      Remover
+                    </button>
+                  </div>
+                ))}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs opacity-70">Use links do YouTube, Instagram, TikTok ou videos hospedados. Limite: 5.</span>
+                  <button type="button" className="rounded-xl bg-ink px-3 py-2 text-sm font-bold text-white disabled:opacity-50" disabled={form.videoUrls.length >= 5} onClick={addVideoUrl}>
+                    + Adicionar video
+                  </button>
+                </div>
+              </div>
+            </Field>
             <div className="grid gap-3 md:grid-cols-2">
               <Field label="Inicio"><input className="input" type="datetime-local" value={form.startsAt} onChange={(e) => update("startsAt", e.target.value)} /></Field>
               <Field label="Encerramento"><input className="input" type="datetime-local" value={form.endsAt} onChange={(e) => update("endsAt", e.target.value)} /></Field>

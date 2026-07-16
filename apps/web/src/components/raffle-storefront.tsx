@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { api } from "../lib/api";
+import { api, resolveAssetUrl } from "../lib/api";
 import type { PublicCompany } from "../lib/types";
 
 type Raffle = {
@@ -13,6 +13,8 @@ type Raffle = {
   description?: string | null;
   prize?: string | null;
   featuredImageUrl?: string | null;
+  videoUrl?: string | null;
+  videoUrls?: string[];
   pricePerNumber: number;
   reservationMinutes?: number;
   totalNumbers: number;
@@ -66,6 +68,10 @@ type RaffleLoginResponse = {
 
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const RAFFLE_TOKEN_KEY = "hubregional:raffleParticipantToken";
+
+function isDirectVideoUrl(url: string) {
+  return /\.(mp4|webm|ogg)(\?|#|$)/i.test(url);
+}
 
 async function publicRaffleJson<T>(path: string): Promise<T> {
   const separator = path.includes("?") ? "&" : "?";
@@ -194,6 +200,11 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
   }, [pixPayment?.orderId, pixPayment?.paid, selected?.id]);
 
   const total = useMemo(() => selectedNumbers.length * (selected?.pricePerNumber ?? 0), [selectedNumbers, selected]);
+  const selectedVideoUrls = useMemo(() => {
+    if (!selected) return [];
+    const urls = selected.videoUrls?.filter(Boolean) ?? [];
+    return urls.length ? urls.slice(0, 5) : selected.videoUrl ? [selected.videoUrl] : [];
+  }, [selected]);
 
   function toggleNumber(number: RaffleNumber) {
     if (number.status !== "AVAILABLE") return;
@@ -388,6 +399,27 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
                 <strong>{selectedNumbers.length} numero(s) • {BRL.format(total)}</strong>
               </div>
             </div>
+
+            {selectedVideoUrls.length > 0 && (
+              <section className="mt-5 rounded-3xl border border-orange-200 bg-orange-50/80 p-4 text-orange-950">
+                <p className="text-xs font-black uppercase tracking-[0.35em] text-ember">Videos</p>
+                <h3 className="mt-1 text-xl font-black">Veja a campanha</h3>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  {selectedVideoUrls.map((url, index) => (
+                    <div key={`${url}-${index}`} className="overflow-hidden rounded-2xl border border-orange-200 bg-white">
+                      {isDirectVideoUrl(url) ? (
+                        <video controls className="aspect-video w-full bg-black object-cover" src={resolveAssetUrl(url)} />
+                      ) : (
+                        <a href={url} target="_blank" rel="noreferrer" className="flex min-h-28 items-center justify-between gap-3 p-4 font-bold text-ink">
+                          <span>Assistir video {index + 1}</span>
+                          <span className="rounded-full bg-ember px-3 py-1 text-xs text-white">Abrir</span>
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
 
             <div className="mt-5 rounded-3xl border border-black/10 bg-slate-50 p-4">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
