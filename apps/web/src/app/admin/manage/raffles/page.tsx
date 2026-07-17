@@ -503,7 +503,9 @@ export default function AdminRafflesPage() {
               <h2 className="text-2xl font-bold">{isEditing ? "Editar rifa" : "Nova rifa"}</h2>
               {isEditing && (
                 <p className="mt-1 text-sm text-orange-700">
-                  Editando: {editingRaffle?.title}. A numeracao fica bloqueada para preservar reservas e pagamentos.
+                  Editando: {editingRaffle?.title}. Alguns campos ficam protegidos depois que a rifa foi criada,
+                  como a numeracao, para preservar reservas, pagamentos e participantes. Voce ainda pode ajustar
+                  textos, midias, valor, prazo de reserva, apuracao e status.
                 </p>
               )}
             </div>

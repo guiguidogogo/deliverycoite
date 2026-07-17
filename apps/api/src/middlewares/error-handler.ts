@@ -3,7 +3,11 @@ import { ZodError } from "zod";
 
 export function errorHandler(error: unknown, _req: Request, res: Response, _next: NextFunction) {
   if (error instanceof ZodError) {
-    return res.status(400).json({ message: "Erro de validacao", issues: error.issues });
+    const firstIssue = error.issues[0];
+    return res.status(400).json({
+      message: firstIssue?.message ?? "Algumas informacoes precisam ser revisadas antes de salvar.",
+      issues: error.issues
+    });
   }
 
   if (
