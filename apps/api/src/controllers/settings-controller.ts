@@ -96,7 +96,9 @@ export async function getSettings(req: Request, res: Response) {
     select: {
       mercadoPagoPublicKey: true,
       mercadoPagoAccessToken: true,
-      mercadoPagoEnabled: true
+      mercadoPagoEnabled: true,
+      businessType: true,
+      category: true
     }
   });
 
@@ -105,7 +107,9 @@ export async function getSettings(req: Request, res: Response) {
     ...settings,
     mercadoPagoPublicKey: company?.mercadoPagoPublicKey ?? null,
     ...(isAdminRequest ? { mercadoPagoAccessToken: company?.mercadoPagoAccessToken ?? null } : {}),
-    mercadoPagoEnabled: company?.mercadoPagoEnabled ?? false
+    mercadoPagoEnabled: company?.mercadoPagoEnabled ?? false,
+    businessType: company?.businessType ?? "FOOD",
+    category: company?.category ?? null
   });
 }
 
@@ -190,7 +194,9 @@ export async function updateSettings(req: Request, res: Response) {
       select: {
         mercadoPagoPublicKey: true,
         mercadoPagoAccessToken: true,
-        mercadoPagoEnabled: true
+        mercadoPagoEnabled: true,
+        businessType: true,
+        category: true
       }
     });
 
@@ -198,7 +204,9 @@ export async function updateSettings(req: Request, res: Response) {
       ...savedSettings,
       mercadoPagoPublicKey: savedCompany?.mercadoPagoPublicKey ?? null,
       mercadoPagoAccessToken: savedCompany?.mercadoPagoAccessToken ?? null,
-      mercadoPagoEnabled: savedCompany?.mercadoPagoEnabled ?? false
+      mercadoPagoEnabled: savedCompany?.mercadoPagoEnabled ?? false,
+      businessType: savedCompany?.businessType ?? "FOOD",
+      category: savedCompany?.category ?? null
     };
   });
 

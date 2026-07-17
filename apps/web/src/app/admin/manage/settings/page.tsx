@@ -105,6 +105,8 @@ export default function SettingsManagePage() {
     closedOrderPolicy: "BLOCK_WHEN_CLOSED" as ClosedOrderPolicy
   });
   const [businessHours, setBusinessHours] = useState<BusinessHourDay[]>(defaultBusinessHours);
+  const [businessType, setBusinessType] = useState("FOOD");
+  const [marketplaceCategory, setMarketplaceCategory] = useState("");
   const [printers, setPrinters] = useState<string[]>([]);
   const [agentStatus, setAgentStatus] = useState<"idle" | "connecting" | "connected" | "error">("idle");
   const [printerAgent, setPrinterAgent] = useState({
@@ -123,6 +125,8 @@ export default function SettingsManagePage() {
     })
       .then((res) => readApiJson<any>(res))
       .then((data) => {
+        setBusinessType(data.businessType ?? "FOOD");
+        setMarketplaceCategory(data.category ?? "");
         setForm({
           companyName: data.companyName ?? "",
           whatsappNumber: data.whatsappNumber ?? "",
@@ -205,11 +209,14 @@ export default function SettingsManagePage() {
   async function save() {
     const token = localStorage.getItem("delivery:token");
     if (!token) return;
+    const isRaffleBusiness = businessType === "RAFFLE" || marketplaceCategory.toLowerCase().includes("rifa");
 
-    const businessHoursError = validateBusinessHours(businessHours);
-    if (businessHoursError) {
-      toast.error(businessHoursError);
-      return;
+    if (!isRaffleBusiness) {
+      const businessHoursError = validateBusinessHours(businessHours);
+      if (businessHoursError) {
+        toast.error(businessHoursError);
+        return;
+      }
     }
 
     const res = await apiFetch(`/admin/settings`, {
@@ -232,6 +239,11 @@ export default function SettingsManagePage() {
       const firstIssue = Array.isArray(payload.issues) ? payload.issues[0] : null;
       const field = Array.isArray(firstIssue?.path) ? firstIssue.path.join(".") : "";
       toast.error(firstIssue?.message ? `${field ? `${field}: ` : ""}${firstIssue.message}` : payload.message ?? "Falha ao salvar configuracoes");
+      return;
+    }
+
+    if (isRaffleBusiness) {
+      toast.success("Integracoes de rifas salvas");
       return;
     }
 
@@ -462,6 +474,147 @@ export default function SettingsManagePage() {
           ? day
           : { ...day, isOpen: source.isOpen, periods: source.periods.map((period) => ({ ...period })) }
       )
+    );
+  }
+
+  const isRaffleBusiness = businessType === "RAFFLE" || marketplaceCategory.toLowerCase().includes("rifa");
+
+  if (isRaffleBusiness) {
+    return (
+      <main id="raffle-integrations" className="mx-auto max-w-4xl p-4 pb-28">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.35em] text-purple-700">Painel exclusivo</p>
+            <h1 className="font-display text-4xl">Integracoes de rifas</h1>
+            <p className="mt-1 text-sm opacity-70">
+              Configure somente os canais usados por campanhas de rifas: pagamento, WhatsApp/MenuIA e comunicacoes.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-bold text-white shadow-sm"
+              onClick={() => void save()}
+            >
+              Salvar
+            </button>
+            <Link className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin">
+              Voltar
+            </Link>
+          </div>
+        </div>
+
+        <section className="rounded-3xl border border-black/10 bg-white/90 p-5 shadow-sm dark:border-white/10 dark:bg-slate-900/70">
+          <h2 className="text-xl font-bold">Dados da pagina de rifas</h2>
+          <p className="mt-1 text-sm opacity-70">Informacoes basicas exibidas nas campanhas e mensagens automaticas.</p>
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <label className="grid gap-1 text-sm">
+              <span className="font-semibold">Nome da empresa</span>
+              <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" value={form.companyName} onChange={(e) => setForm((v) => ({ ...v, companyName: e.target.value }))} />
+            </label>
+            <label className="grid gap-1 text-sm">
+              <span className="font-semibold">WhatsApp principal</span>
+              <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="5571999999999" value={form.whatsappNumber} onChange={(e) => setForm((v) => ({ ...v, whatsappNumber: e.target.value }))} />
+            </label>
+            <label className="grid gap-1 text-sm md:col-span-2">
+              <span className="font-semibold">Mensagem padrao</span>
+              <textarea className="min-h-24 rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="Mensagem enviada apos reserva, pagamento ou sorteio" value={form.autoMessage} onChange={(e) => setForm((v) => ({ ...v, autoMessage: e.target.value }))} />
+            </label>
+          </div>
+        </section>
+
+        <section className="mt-4 rounded-3xl border border-orange-200 bg-orange-50/70 p-5 shadow-sm dark:border-orange-500/30 dark:bg-orange-950/20">
+          <p className="text-xs font-black uppercase tracking-[0.35em] text-orange-700">Pagamento online</p>
+          <h2 className="text-2xl font-black">Mercado Pago</h2>
+          <p className="mt-1 text-sm opacity-75">
+            Usado para gerar Pix, confirmar pagamentos automaticamente e liberar numeros pagos.
+          </p>
+          <label className="mt-4 flex items-center gap-2 rounded-xl border border-orange-200 bg-white/80 px-3 py-2 font-semibold dark:border-orange-500/30 dark:bg-black/20">
+            <input
+              type="checkbox"
+              checked={form.mercadoPagoEnabled}
+              onChange={(e) => setForm((v) => ({ ...v, mercadoPagoEnabled: e.target.checked }))}
+            />
+            Ativar Mercado Pago nas rifas
+          </label>
+          <div className="mt-3 grid grid-cols-1 gap-3">
+            <label className="grid gap-1 text-sm">
+              <span className="font-semibold">Public Key</span>
+              <input className="rounded-xl border border-black/10 bg-white/70 px-3 py-2 dark:border-white/20 dark:bg-black/20" placeholder="APP_USR-..." value={form.mercadoPagoPublicKey} onChange={(e) => setForm((v) => ({ ...v, mercadoPagoPublicKey: e.target.value }))} />
+            </label>
+            <label className="grid gap-1 text-sm">
+              <span className="font-semibold">Access Token</span>
+              <input className="rounded-xl border border-black/10 bg-white/70 px-3 py-2 dark:border-white/20 dark:bg-black/20" placeholder="APP_USR-..." type="password" value={form.mercadoPagoAccessToken} onChange={(e) => setForm((v) => ({ ...v, mercadoPagoAccessToken: e.target.value }))} />
+            </label>
+          </div>
+        </section>
+
+        <section className="mt-4 rounded-3xl border border-purple-200 bg-white/90 p-5 shadow-sm dark:border-purple-500/30 dark:bg-slate-900/70">
+          <p className="text-xs font-black uppercase tracking-[0.35em] text-purple-700">Mensagens</p>
+          <h2 className="text-2xl font-black">WhatsApp / MenuIA</h2>
+          <p className="mt-1 text-sm opacity-75">
+            Envie avisos de reserva, Pix pendente, pagamento aprovado, lembretes e resultado do sorteio.
+          </p>
+          <label className="mt-4 flex items-center gap-2 rounded-xl border border-black/10 px-3 py-2 font-semibold dark:border-white/20">
+            <input
+              type="checkbox"
+              checked={form.menuiaEnabled}
+              onChange={(e) => setForm((v) => ({ ...v, menuiaEnabled: e.target.checked }))}
+            />
+            Ativar envio de WhatsApp/MenuIA para rifas
+          </label>
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <label className="grid gap-1 text-sm">
+              <span className="font-semibold">AUTHKEY</span>
+              <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" value={form.menuiaApiKey} onChange={(e) => setForm((v) => ({ ...v, menuiaApiKey: e.target.value }))} />
+            </label>
+            <label className="grid gap-1 text-sm">
+              <span className="font-semibold">APPKEY</span>
+              <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" value={form.menuiaStoreId} onChange={(e) => setForm((v) => ({ ...v, menuiaStoreId: e.target.value }))} />
+            </label>
+          </div>
+          <button className="mt-3 rounded-xl bg-ink px-4 py-2 text-sm font-bold text-white" type="button" onClick={() => void testMenuia()}>
+            Testar conexao MenuIA
+          </button>
+          <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2">
+            {[
+              ["whatsappOnReceived", "Reserva criada"],
+              ["whatsappOnPaymentConfirmed", "Pagamento aprovado"],
+              ["whatsappOnCanceled", "Reserva expirada ou cancelada"],
+              ["whatsappOnFinished", "Resultado do sorteio"]
+            ].map(([field, label]) => (
+              <label key={field} className="flex items-center gap-2 rounded-xl border border-black/10 px-3 py-2 dark:border-white/20">
+                <input
+                  type="checkbox"
+                  checked={Boolean(form[field as keyof typeof form])}
+                  onChange={(e) => setForm((value) => ({ ...value, [field]: e.target.checked }))}
+                />
+                Enviar: {label}
+              </label>
+            ))}
+          </div>
+        </section>
+
+        <section className="mt-4 rounded-3xl border border-blue-200 bg-blue-50/70 p-5 shadow-sm dark:border-blue-500/30 dark:bg-blue-950/20">
+          <p className="text-xs font-black uppercase tracking-[0.35em] text-blue-700">Comunicacao</p>
+          <h2 className="text-2xl font-black">E-mail</h2>
+          <p className="mt-1 text-sm opacity-75">
+            Preparado para enviar comprovantes, recibos e comunicados aos participantes cadastrados. A configuracao SMTP dedicada sera ativada em etapa propria.
+          </p>
+          <div className="mt-3 rounded-2xl bg-white/80 p-3 text-sm dark:bg-black/20">
+            Status atual: usando dados do cadastro do comprador e notificacoes internas da rifa.
+          </div>
+        </section>
+
+        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-black/10 bg-white/90 p-3 backdrop-blur dark:border-white/10 dark:bg-slate-950/90">
+          <div className="mx-auto flex max-w-4xl gap-2">
+            <button className="flex-1 rounded-xl bg-emerald-700 px-4 py-3 font-bold text-white" type="button" onClick={() => void save()}>
+              Salvar integracoes
+            </button>
+            <Link className="rounded-xl bg-ink px-4 py-3 font-bold text-white" href="/admin">Voltar</Link>
+          </div>
+        </div>
+      </main>
     );
   }
 

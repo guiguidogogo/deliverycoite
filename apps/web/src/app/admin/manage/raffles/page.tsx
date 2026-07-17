@@ -835,21 +835,24 @@ export default function AdminRafflesPage() {
             title="Mercado Pago"
             description="Receber Pix, confirmar pagamentos automaticamente e liberar numeros pagos."
             status="Pagamento online"
+            href="/admin/manage/settings#raffle-integrations"
           />
           <IntegrationCard
             title="WhatsApp / MenuIA"
             description="Enviar avisos de reserva, Pix pendente, pagamento aprovado, lembretes e resultado do sorteio."
             status="Mensagens"
+            href="/admin/manage/settings#raffle-integrations"
           />
           <IntegrationCard
             title="E-mail"
             description="Enviar comprovantes, recibos e comunicados para participantes cadastrados."
             status="Comunicacao"
+            href="/admin/manage/settings#raffle-integrations"
           />
         </div>
 
         <div className="mt-4 rounded-2xl bg-purple-50 p-4 text-sm text-purple-950">
-          Proximo passo: transformar estes cards em formularios proprios de integracao para rifas, sem misturar com configuracoes de lanchonete.
+          As integracoes de rifas agora ficam em uma tela propria, sem misturar delivery, cardapio, mesas ou impressao.
         </div>
       </section>
     </main>
@@ -874,12 +877,15 @@ function MetricCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-function IntegrationCard({ title, description, status }: { title: string; description: string; status: string }) {
+function IntegrationCard({ title, description, status, href }: { title: string; description: string; status: string; href: string }) {
   return (
     <div className="rounded-2xl border border-black/10 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-800">
       <p className="text-xs font-bold uppercase tracking-[0.2em] text-purple-700">{status}</p>
       <h3 className="mt-2 text-lg font-black">{title}</h3>
       <p className="mt-2 text-sm opacity-70">{description}</p>
+      <a className="mt-4 inline-flex rounded-xl bg-purple-700 px-4 py-2 text-sm font-bold text-white" href={href}>
+        Configurar
+      </a>
     </div>
   );
 }
