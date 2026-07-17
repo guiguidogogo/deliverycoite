@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { api } from "../lib/api";
+import { api, resolveAssetUrl } from "../lib/api";
 import type { PublicCompany } from "../lib/types";
 
 type Raffle = {
@@ -13,6 +13,8 @@ type Raffle = {
   description?: string | null;
   prize?: string | null;
   featuredImageUrl?: string | null;
+  videoUrl?: string | null;
+  videoUrls?: string[];
   pricePerNumber: number;
   reservationMinutes?: number;
   totalNumbers: number;
@@ -21,12 +23,22 @@ type Raffle = {
   availableNumbers: number;
   progressPercent: number;
   endsAt?: string | null;
+  drawMode?: "MANUAL" | "AUTOMATIC_CAIXA";
+  drawLotteryModality?: string | null;
+  drawContestNumber?: string | null;
+  drawStatus?: string | null;
+  drawBaseNumber?: string | null;
+  drawDigits?: number | null;
+  drawWinningNumber?: string | null;
+  drawOfficialDate?: string | null;
+  drawConfirmedAt?: string | null;
 };
 
 type RaffleNumber = {
   id: string;
   formattedNumber: string;
   status: "AVAILABLE" | "RESERVED" | "PENDING_PAYMENT" | "PAID" | "BLOCKED" | "CANCELLED";
+  isWinningNumber?: boolean;
 };
 
 type ReserveResponse = {
@@ -52,14 +64,50 @@ type RafflePixPayment = {
 
 type RaffleAccountSummary = {
   participant: {
+    id?: string;
     name: string;
     phone: string;
     email?: string | null;
   };
 };
 
+type RaffleLoginResponse = {
+  token: string;
+  participant: RaffleAccountSummary["participant"];
+};
+
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const RAFFLE_TOKEN_KEY = "hubregional:raffleParticipantToken";
+
+function formatRaffleDateTime(value?: string | null) {
+  if (!value) return "-";
+  return new Date(value).toLocaleString("pt-BR");
+}
+
+function formatRaffleDate(value?: string | null) {
+  if (!value) return "-";
+  return new Date(value).toLocaleDateString("pt-BR");
+}
+
+function lotteryLabel(value?: string | null) {
+  const labels: Record<string, string> = {
+    federal: "Loteria Federal",
+    megasena: "Mega-Sena",
+    lotofacil: "Lotofacil",
+    quina: "Quina",
+    lotomania: "Lotomania",
+    duplasena: "Dupla Sena",
+    diadesorte: "Dia de Sorte",
+    timemania: "Timemania",
+    supersete: "Super Sete",
+    maismilionaria: "+Milionaria"
+  };
+  return value ? labels[value] ?? value : "-";
+}
+
+function isDirectVideoUrl(url: string) {
+  return /\.(mp4|webm|ogg)(\?|#|$)/i.test(url);
+}
 
 async function publicRaffleJson<T>(path: string): Promise<T> {
   const separator = path.includes("?") ? "&" : "?";
@@ -105,7 +153,11 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
   const [numbersLoading, setNumbersLoading] = useState(false);
   const [loggedParticipant, setLoggedParticipant] = useState<RaffleAccountSummary["participant"] | null>(null);
   const [accountRequiredMessage, setAccountRequiredMessage] = useState("");
+  const [inlineLogin, setInlineLogin] = useState("");
+  const [inlinePassword, setInlinePassword] = useState("");
+  const [inlineLoginLoading, setInlineLoginLoading] = useState(false);
   const notifiedPaidOrders = useRef<Set<string>>(new Set());
+  const accountLoginRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -185,6 +237,11 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
   }, [pixPayment?.orderId, pixPayment?.paid, selected?.id]);
 
   const total = useMemo(() => selectedNumbers.length * (selected?.pricePerNumber ?? 0), [selectedNumbers, selected]);
+  const selectedVideoUrls = useMemo(() => {
+    if (!selected) return [];
+    const urls = selected.videoUrls?.filter(Boolean) ?? [];
+    return urls.length ? urls.slice(0, 5) : selected.videoUrl ? [selected.videoUrl] : [];
+  }, [selected]);
 
   function toggleNumber(number: RaffleNumber) {
     if (number.status !== "AVAILABLE") return;
@@ -206,6 +263,61 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
     } catch {
       toast.info(url);
     }
+  }
+
+  function applyParticipantLogin(payload: RaffleLoginResponse) {
+    localStorage.setItem(RAFFLE_TOKEN_KEY, payload.token);
+    setLoggedParticipant(payload.participant);
+    setParticipantName(payload.participant.name ?? "");
+    setParticipantPhone(payload.participant.phone ?? "");
+    setParticipantEmail(payload.participant.email ?? "");
+    setParticipantPassword("");
+    setAccountRequiredMessage("");
+  }
+
+  async function submitInlineLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!inlineLogin.trim() || !inlinePassword.trim()) {
+      toast.error("Informe e-mail/WhatsApp e senha para entrar");
+      return;
+    }
+
+    setInlineLoginLoading(true);
+    try {
+      const payload = await api<RaffleLoginResponse>("/public/raffles/auth/login", {
+        method: "POST",
+        body: JSON.stringify({
+          login: inlineLogin,
+          password: inlinePassword
+        })
+      });
+      applyParticipantLogin(payload);
+      setInlinePassword("");
+      toast.success("Conta acessada. Agora voce pode confirmar a reserva sem perder os numeros escolhidos.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Nao foi possivel entrar na conta");
+    } finally {
+      setInlineLoginLoading(false);
+    }
+  }
+
+  function openInlineLogin(message?: string) {
+    setAccountRequiredMessage(message || "Entre com sua conta para continuar a reserva sem perder os numeros selecionados.");
+    setInlineLogin(participantEmail || participantPhone || inlineLogin);
+    window.setTimeout(() => accountLoginRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
+  }
+
+  function isAccountAlreadyRegisteredMessage(message: string) {
+    const normalized = message.toLowerCase();
+    return (
+      normalized.includes("cadastro com este e-mail") ||
+      normalized.includes("cadastro com este email") ||
+      normalized.includes("ja existe") ||
+      normalized.includes("já existe") ||
+      normalized.includes("faca login") ||
+      normalized.includes("faça login") ||
+      normalized.includes("conta encontrada")
+    );
   }
 
   async function reserveNumbers() {
@@ -250,8 +362,8 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
       setNumbers(await publicRaffleJson<RaffleNumber[]>(`/public/raffles/${selected.id}/numbers`));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao reservar numeros";
-      if (message.toLowerCase().includes("faça login") || message.toLowerCase().includes("cadastro com este e-mail")) {
-        setAccountRequiredMessage(message);
+      if (isAccountAlreadyRegisteredMessage(message)) {
+        openInlineLogin(message);
       }
       toast.error(message);
     } finally {
@@ -343,6 +455,49 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
               </div>
             </div>
 
+            {selectedVideoUrls.length > 0 && (
+              <section className="mt-5 rounded-3xl border border-orange-200 bg-orange-50/80 p-4 text-orange-950">
+                <p className="text-xs font-black uppercase tracking-[0.35em] text-ember">Videos</p>
+                <h3 className="mt-1 text-xl font-black">Veja a campanha</h3>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  {selectedVideoUrls.map((url, index) => (
+                    <div key={`${url}-${index}`} className="overflow-hidden rounded-2xl border border-orange-200 bg-white">
+                      {isDirectVideoUrl(url) ? (
+                        <video controls className="aspect-video w-full bg-black object-cover" src={resolveAssetUrl(url)} />
+                      ) : (
+                        <a href={url} target="_blank" rel="noreferrer" className="flex min-h-28 items-center justify-between gap-3 p-4 font-bold text-ink">
+                          <span>Assistir video {index + 1}</span>
+                          <span className="rounded-full bg-ember px-3 py-1 text-xs text-white">Abrir</span>
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {selected.drawMode === "AUTOMATIC_CAIXA" && ["CONFIRMED", "NO_VALID_PARTICIPANT"].includes(selected.drawStatus ?? "") && (
+              <section className="mt-5 rounded-3xl border border-yellow-300 bg-yellow-50 p-4 text-yellow-950">
+                <p className="text-xs font-black uppercase tracking-[0.35em]">Apuracao oficial</p>
+                <h3 className="mt-2 text-2xl font-black">
+                  Numero ganhador: {selected.drawWinningNumber ?? "-"}
+                </h3>
+                <div className="mt-3 grid gap-2 text-sm md:grid-cols-2">
+                  <p><strong>Modalidade:</strong> {lotteryLabel(selected.drawLotteryModality)}</p>
+                  <p><strong>Concurso:</strong> {selected.drawContestNumber ?? "-"}</p>
+                  <p><strong>Numero-base:</strong> {selected.drawBaseNumber ?? "-"}</p>
+                  <p><strong>Digitos usados:</strong> {selected.drawDigits ?? "-"}</p>
+                  <p><strong>Data oficial:</strong> {formatRaffleDate(selected.drawOfficialDate)}</p>
+                  <p><strong>Confirmado em:</strong> {formatRaffleDateTime(selected.drawConfirmedAt)}</p>
+                </div>
+                {selected.drawStatus === "NO_VALID_PARTICIPANT" && (
+                  <p className="mt-3 rounded-xl bg-white/70 p-3 text-sm font-bold">
+                    O numero sorteado nao possuia participante pago/valido. Nenhum outro numero foi escolhido automaticamente.
+                  </p>
+                )}
+              </section>
+            )}
+
             <div className="mt-5 rounded-3xl border border-black/10 bg-slate-50 p-4">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -370,7 +525,10 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
                 <div className="grid max-h-[28rem] grid-cols-5 gap-2 overflow-y-auto pr-1 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12">
                   {numbers.map((number) => {
                     const active = selectedNumbers.includes(number.id);
-                    const tone = active
+                    const winning = number.isWinningNumber;
+                    const tone = winning
+                      ? "bg-yellow-300 text-yellow-950 ring-2 ring-yellow-500"
+                      : active
                       ? "bg-ink text-white ring-2 ring-ink/30"
                       : number.status === "AVAILABLE"
                         ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
@@ -381,7 +539,8 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
                             : "bg-slate-200 text-slate-500";
                     return (
                       <button key={number.id} disabled={number.status !== "AVAILABLE"} onClick={() => toggleNumber(number)} className={`rounded-xl px-2 py-2 text-sm font-bold ${tone}`}>
-                        {number.formattedNumber}
+                        <span>{number.formattedNumber}</span>
+                        {winning && <span className="mt-1 block text-[10px] font-black uppercase">🏆 ganhador</span>}
                       </button>
                     );
                   })}
@@ -421,17 +580,41 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
                     <div className="mb-3 rounded-2xl border border-blue-100 bg-blue-50 p-4">
                       <p className="text-sm font-bold text-blue-900">Ja tem cadastro?</p>
                       <p className="mt-1 text-sm text-slate-600">Entre na sua conta para usar seus dados salvos, ver rifas compradas e continuar novas reservas.</p>
-                      <Link href="/rifas/minha-conta" className="mt-3 inline-flex rounded-xl bg-ink px-4 py-2 text-sm font-bold text-white">
-                        Entrar na minha conta
-                      </Link>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openInlineLogin("Entre com sua conta para continuar esta reserva. Seus numeros selecionados ficam salvos nesta tela.")}
+                          className="inline-flex rounded-xl bg-ink px-4 py-2 text-sm font-bold text-white"
+                        >
+                          Entrar e continuar aqui
+                        </button>
+                        <Link href="/rifas/minha-conta" className="inline-flex rounded-xl border border-blue-200 bg-white px-4 py-2 text-sm font-bold text-blue-900">
+                          Ver minhas rifas
+                        </Link>
+                      </div>
                     </div>
                     {accountRequiredMessage && (
-                      <div className="mb-3 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
+                      <div ref={accountLoginRef} className="mb-3 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
                         <strong>Conta encontrada.</strong>
                         <p className="mt-1">{accountRequiredMessage}</p>
-                        <Link href="/rifas/minha-conta" className="mt-3 inline-flex rounded-xl bg-orange-600 px-4 py-2 text-sm font-bold text-white">
-                          Fazer login e continuar
-                        </Link>
+                        <form onSubmit={submitInlineLogin} className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+                          <input
+                            value={inlineLogin}
+                            onChange={(event) => setInlineLogin(event.target.value)}
+                            className="rounded-xl border border-orange-200 bg-white px-4 py-3 text-ink"
+                            placeholder="E-mail ou WhatsApp"
+                          />
+                          <input
+                            value={inlinePassword}
+                            onChange={(event) => setInlinePassword(event.target.value)}
+                            className="rounded-xl border border-orange-200 bg-white px-4 py-3 text-ink"
+                            placeholder="Senha"
+                            type="password"
+                          />
+                          <button disabled={inlineLoginLoading} className="rounded-xl bg-orange-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-60">
+                            {inlineLoginLoading ? "Entrando..." : "Entrar e continuar"}
+                          </button>
+                        </form>
                       </div>
                     )}
                     <div className="mt-3 grid gap-3 md:grid-cols-2">

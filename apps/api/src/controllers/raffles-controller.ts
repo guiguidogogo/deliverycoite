@@ -4,11 +4,18 @@ import jwt from "jsonwebtoken";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { createMercadoPagoPixPayment, getMercadoPagoPayment, type MercadoPagoPaymentResponse } from "../services/mercadopago.js";
+import {
+  isSupportedRaffleCaixaModality,
+  normalizeCaixaModality,
+  SUPPORTED_RAFFLE_CAIXA_MODALITIES
+} from "../services/caixa-lottery-service.js";
+import { processAutomaticRaffleById } from "../services/raffle-draw-service.js";
 import { env } from "../utils/env.js";
 import { prisma } from "../utils/prisma.js";
 import { getCompanyId } from "../utils/tenant.js";
 
 const statusSchema = z.enum(["DRAFT", "SCHEDULED", "ACTIVE", "PAUSED", "ENDED", "CANCELLED", "FINISHED"]);
+const drawModeSchema = z.enum(["MANUAL", "AUTOMATIC_CAIXA"]);
 
 const raffleSchema = z.object({
   title: z.string().trim().min(3, "Informe o titulo da rifa").max(120),
@@ -27,7 +34,12 @@ const raffleSchema = z.object({
   reservationMinutes: z.coerce.number().int().min(5, "A reserva precisa ter pelo menos 5 minutos").max(1440, "A reserva pode ter no maximo 24 horas").default(15),
   participantLimit: z.coerce.number().int().min(1).optional().nullable(),
   featuredImageUrl: z.string().trim().url().optional().nullable().or(z.literal("")),
-  videoUrl: z.string().trim().url().optional().nullable().or(z.literal(""))
+  videoUrl: z.string().trim().url().optional().nullable().or(z.literal("")),
+  videoUrls: z.array(z.string().trim().url()).max(5, "Informe no maximo 5 videos").optional(),
+  drawMode: drawModeSchema.default("MANUAL"),
+  drawLotteryModality: z.string().trim().max(40).optional().nullable().or(z.literal("")),
+  drawContestNumber: z.string().trim().max(20).optional().nullable().or(z.literal("")),
+  drawScheduledAt: z.coerce.date().optional().nullable()
 });
 
 const publicReserveSchema = z.object({
@@ -357,9 +369,121 @@ function validateRaffleNumbers(data: z.infer<typeof raffleSchema>) {
   return totalNumbers;
 }
 
-function serializeRaffle<T extends { pricePerNumber: Prisma.Decimal; _count?: Record<string, number> }>(raffle: T) {
+type RaffleDrawInput = Pick<
+  z.infer<typeof raffleSchema>,
+  "drawMode" | "drawLotteryModality" | "drawContestNumber" | "drawScheduledAt"
+>;
+
+function hasDrawPayload(data: Partial<RaffleDrawInput>) {
+  return (
+    data.drawMode !== undefined ||
+    data.drawLotteryModality !== undefined ||
+    data.drawContestNumber !== undefined ||
+    data.drawScheduledAt !== undefined
+  );
+}
+
+function normalizeDrawContestNumber(value?: string | null) {
+  const digits = onlyDigits(String(value ?? ""));
+  return digits || null;
+}
+
+function raffleDrawValidationError(path: string, message: string) {
+  return new z.ZodError([{
+    code: z.ZodIssueCode.custom,
+    path: [path],
+    message
+  }]);
+}
+
+function buildRaffleDrawData(
+  input: Partial<RaffleDrawInput>,
+  existing?: {
+    drawMode: string;
+    drawLotteryModality: string | null;
+    drawContestNumber: string | null;
+    drawScheduledAt: Date | null;
+  }
+) {
+  const mode = input.drawMode ?? existing?.drawMode ?? "MANUAL";
+  if (mode !== "AUTOMATIC_CAIXA") {
+    return {
+      drawMode: "MANUAL" as const,
+      drawStatus: "MANUAL" as const,
+      drawLotteryModality: null,
+      drawContestNumber: null,
+      drawScheduledAt: null,
+      drawLastAttemptAt: null,
+      drawAttemptCount: 0,
+      drawLastError: null,
+      drawBaseNumber: null,
+      drawDigits: null,
+      drawWinningNumber: null,
+      drawOfficialDate: null,
+      drawConfirmedAt: null,
+      drawWinnerParticipantId: null,
+      drawWinnerOrderId: null,
+      drawWinnerNumberId: null,
+      drawRawResponse: Prisma.JsonNull
+    };
+  }
+
+  const modality = normalizeCaixaModality(input.drawLotteryModality || existing?.drawLotteryModality || "federal");
+  if (!isSupportedRaffleCaixaModality(modality)) {
+    throw raffleDrawValidationError(
+      "drawLotteryModality",
+      `No momento, a apuracao automatica esta disponivel apenas para: ${SUPPORTED_RAFFLE_CAIXA_MODALITIES.join(", ")}.`
+    );
+  }
+
+  const scheduledAt = input.drawScheduledAt ?? existing?.drawScheduledAt ?? null;
+  if (!scheduledAt) {
+    throw raffleDrawValidationError("drawScheduledAt", "Informe a data e o horario previstos do sorteio.");
+  }
+
+  const contestNumber = normalizeDrawContestNumber(input.drawContestNumber ?? existing?.drawContestNumber);
+  return {
+    drawMode: "AUTOMATIC_CAIXA" as const,
+    drawLotteryModality: modality,
+    drawContestNumber: contestNumber,
+    drawScheduledAt: scheduledAt,
+    drawStatus: contestNumber ? ("SCHEDULED" as const) : ("WAITING_CONTEST" as const),
+    drawLastAttemptAt: null,
+    drawAttemptCount: 0,
+    drawLastError: null,
+    drawBaseNumber: null,
+    drawDigits: null,
+    drawWinningNumber: null,
+    drawOfficialDate: null,
+    drawConfirmedAt: null,
+    drawWinnerParticipantId: null,
+    drawWinnerOrderId: null,
+    drawWinnerNumberId: null,
+    drawRawResponse: Prisma.JsonNull
+  };
+}
+
+function normalizeRaffleVideoUrls(videoUrls?: string[] | null, fallback?: string | null) {
+  const values = [...(videoUrls ?? []), ...(fallback ? [fallback] : [])]
+    .map((url) => url.trim())
+    .filter(Boolean);
+  return Array.from(new Set(values)).slice(0, 5);
+}
+
+function getRaffleVideoUrls(raffle: { videoUrl?: string | null; media?: Array<{ type: string; url: string; sortOrder: number }> }) {
+  const mediaVideos = Array.isArray(raffle.media)
+    ? raffle.media
+        .filter((item) => item.type === "VIDEO")
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((item) => item.url)
+    : [];
+  return mediaVideos.length ? mediaVideos : raffle.videoUrl ? [raffle.videoUrl] : [];
+}
+
+function serializeRaffle<T extends { pricePerNumber: Prisma.Decimal; videoUrl?: string | null; media?: Array<{ type: string; url: string; sortOrder: number }>; _count?: Record<string, number> }>(raffle: T) {
   return {
     ...raffle,
+    videoUrls: getRaffleVideoUrls(raffle),
     pricePerNumber: Number(raffle.pricePerNumber),
     reservationMinutes: "reservationMinutes" in raffle && typeof raffle.reservationMinutes === "number"
       ? raffle.reservationMinutes
@@ -373,6 +497,7 @@ export async function listAdminRaffles(req: Request, res: Response) {
   const raffles = await prisma.raffle.findMany({
     where: { companyId },
     include: {
+      media: { select: { type: true, url: true, sortOrder: true }, orderBy: { sortOrder: "asc" } },
       _count: {
         select: {
           numbers: true,
@@ -429,6 +554,8 @@ export async function createAdminRaffle(req: Request, res: Response) {
   const body = raffleSchema.parse(req.body);
   const totalNumbers = validateRaffleNumbers(body);
   const slug = await uniqueRaffleSlug(companyId, body.title);
+  const videoUrls = normalizeRaffleVideoUrls(body.videoUrls, body.videoUrl);
+  const drawData = buildRaffleDrawData(body);
 
   const raffle = await prisma.$transaction(async (tx) => {
     const created = await tx.raffle.create({
@@ -452,10 +579,23 @@ export async function createAdminRaffle(req: Request, res: Response) {
         reservationMinutes: body.reservationMinutes,
         participantLimit: body.participantLimit ?? null,
         featuredImageUrl: body.featuredImageUrl || null,
-        videoUrl: body.videoUrl || null,
+        videoUrl: videoUrls[0] ?? null,
+        ...drawData,
         publishedAt: body.status === "ACTIVE" ? new Date() : null
       }
     });
+
+    if (videoUrls.length) {
+      await tx.raffleMedia.createMany({
+        data: videoUrls.map((url, index) => ({
+          companyId,
+          raffleId: created.id,
+          type: "VIDEO",
+          url,
+          sortOrder: index
+        }))
+      });
+    }
 
     const batchSize = 1000;
     for (let start = body.numberStart; start <= body.numberEnd; start += batchSize) {
@@ -486,7 +626,12 @@ export async function createAdminRaffle(req: Request, res: Response) {
       }
     });
 
-    return created;
+    return tx.raffle.findUniqueOrThrow({
+      where: { id: created.id },
+      include: {
+        media: { select: { type: true, url: true, sortOrder: true }, orderBy: { sortOrder: "asc" } }
+      }
+    });
   });
 
   return res.status(201).json(serializeRaffle(raffle));
@@ -496,6 +641,7 @@ export async function getAdminRaffle(req: Request, res: Response) {
   const raffle = await prisma.raffle.findFirst({
     where: { id: req.params.id, companyId: getCompanyId(req) },
     include: {
+      media: { select: { type: true, url: true, sortOrder: true }, orderBy: { sortOrder: "asc" } },
       _count: { select: { numbers: true, orders: true, participants: true } }
     }
   });
@@ -509,6 +655,13 @@ export async function updateAdminRaffle(req: Request, res: Response) {
   if (!existing) return res.status(404).json({ message: "Rifa nao encontrada" });
 
   const body = raffleSchema.partial().parse(req.body);
+  if (hasDrawPayload(body) && existing.drawStatus === "CONFIRMED") {
+    return res.status(409).json({
+      message: "Resultado automatico ja confirmado. Use uma correcao manual auditada para alterar a apuracao."
+    });
+  }
+  const shouldReplaceVideos = body.videoUrls !== undefined || body.videoUrl !== undefined;
+  const videoUrls = shouldReplaceVideos ? normalizeRaffleVideoUrls(body.videoUrls, body.videoUrl) : [];
   const data: Prisma.RaffleUpdateInput = {
     ...(body.title ? { title: body.title, slug: await uniqueRaffleSlug(companyId, body.title, existing.id) } : {}),
     ...(body.description !== undefined ? { description: body.description || null } : {}),
@@ -523,12 +676,37 @@ export async function updateAdminRaffle(req: Request, res: Response) {
     ...(body.reservationMinutes !== undefined ? { reservationMinutes: body.reservationMinutes } : {}),
     ...(body.participantLimit !== undefined ? { participantLimit: body.participantLimit ?? null } : {}),
     ...(body.featuredImageUrl !== undefined ? { featuredImageUrl: body.featuredImageUrl || null } : {}),
-    ...(body.videoUrl !== undefined ? { videoUrl: body.videoUrl || null } : {})
+    ...(shouldReplaceVideos ? { videoUrl: videoUrls[0] ?? null } : {})
   };
+  if (hasDrawPayload(body)) {
+    Object.assign(data, buildRaffleDrawData(body, existing));
+  }
 
-  const updated = await prisma.raffle.update({
-    where: { id: existing.id },
-    data
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.raffle.update({
+      where: { id: existing.id },
+      data
+    });
+    if (shouldReplaceVideos) {
+      await tx.raffleMedia.deleteMany({ where: { companyId, raffleId: existing.id, type: "VIDEO" } });
+      if (videoUrls.length) {
+        await tx.raffleMedia.createMany({
+          data: videoUrls.map((url, index) => ({
+            companyId,
+            raffleId: existing.id,
+            type: "VIDEO",
+            url,
+            sortOrder: index
+          }))
+        });
+      }
+    }
+    return tx.raffle.findUniqueOrThrow({
+      where: { id: existing.id },
+      include: {
+        media: { select: { type: true, url: true, sortOrder: true }, orderBy: { sortOrder: "asc" } }
+      }
+    });
   });
   return res.json(serializeRaffle(updated));
 }
@@ -547,6 +725,11 @@ export async function updateAdminRaffleStatus(req: Request, res: Response) {
     }
   });
   return res.json(serializeRaffle(updated));
+}
+
+export async function retryAdminRaffleDraw(req: Request, res: Response) {
+  const result = await processAutomaticRaffleById(req.params.id, getCompanyId(req));
+  return res.json(result);
 }
 
 export async function loginRaffleParticipant(req: Request, res: Response) {
@@ -745,6 +928,7 @@ export async function listPublicRaffles(req: Request, res: Response) {
       AND: [{ OR: [{ endsAt: null }, { endsAt: { gt: now } }] }]
     },
     include: {
+      media: { select: { type: true, url: true, sortOrder: true }, orderBy: { sortOrder: "asc" } },
       numbers: {
         select: { status: true }
       },
@@ -765,6 +949,8 @@ export async function listPublicRaffles(req: Request, res: Response) {
       description: raffle.description,
       prize: raffle.prize,
       featuredImageUrl: raffle.featuredImageUrl,
+      videoUrl: raffle.videoUrl,
+      videoUrls: getRaffleVideoUrls(raffle),
       pricePerNumber: Number(raffle.pricePerNumber),
       reservationMinutes: raffle.reservationMinutes,
       totalNumbers: raffle.totalNumbers,
@@ -783,6 +969,7 @@ export async function getPublicRaffle(req: Request, res: Response) {
   const raffle = await prisma.raffle.findFirst({
     where: { companyId, slug: req.params.slug, status: { in: ["ACTIVE", "PAUSED", "ENDED", "FINISHED"] } },
     include: {
+      media: { select: { type: true, url: true, sortOrder: true }, orderBy: { sortOrder: "asc" } },
       company: { select: { tradeName: true, logoUrl: true, whatsapp: true, instagram: true } }
     }
   });
@@ -792,7 +979,10 @@ export async function getPublicRaffle(req: Request, res: Response) {
 
 export async function listPublicRaffleNumbers(req: Request, res: Response) {
   const companyId = getCompanyId(req);
-  const raffle = await prisma.raffle.findFirst({ where: { id: req.params.id, companyId }, select: { id: true } });
+  const raffle = await prisma.raffle.findFirst({
+    where: { id: req.params.id, companyId },
+    select: { id: true, drawStatus: true, drawWinningNumber: true }
+  });
   if (!raffle) return res.status(404).json({ message: "Rifa nao encontrada" });
   await releaseExpiredReservations(companyId, raffle.id);
   const numbers = await prisma.raffleNumber.findMany({
@@ -800,7 +990,11 @@ export async function listPublicRaffleNumbers(req: Request, res: Response) {
     select: { id: true, number: true, formattedNumber: true, status: true, reservedUntil: true },
     orderBy: { number: "asc" }
   });
-  return res.json(numbers);
+  return res.json(numbers.map((number) => ({
+    ...number,
+    isWinningNumber: ["CONFIRMED", "NO_VALID_PARTICIPANT"].includes(raffle.drawStatus) &&
+      number.formattedNumber === raffle.drawWinningNumber
+  })));
 }
 
 export async function reservePublicRaffleNumbers(req: Request, res: Response) {
@@ -841,7 +1035,7 @@ export async function reservePublicRaffleNumbers(req: Request, res: Response) {
   const phone = onlyDigits(body.participant.phone);
   const cpf = body.participant.cpf ? onlyDigits(body.participant.cpf) : null;
   const email = body.participant.email.toLowerCase();
-  const existingParticipant = await prisma.raffleParticipant.findFirst({
+  const existingParticipants = await prisma.raffleParticipant.findMany({
     where: {
       companyId,
       OR: [
@@ -849,16 +1043,19 @@ export async function reservePublicRaffleNumbers(req: Request, res: Response) {
         { email }
       ]
     },
-    select: { id: true, passwordHash: true }
+    select: { id: true, passwordHash: true, createdAt: true },
+    orderBy: { createdAt: "asc" },
+    take: 10
   });
   const participantPayload = getRaffleParticipantPayload(req);
-  const isAuthenticatedParticipant = Boolean(
-    existingParticipant
-    && participantPayload?.raffleParticipantId === existingParticipant.id
-    && participantPayload.companyId === companyId
-  );
+  const authenticatedParticipant = participantPayload?.companyId === companyId
+    ? existingParticipants.find((participant) => participant.id === participantPayload.raffleParticipantId)
+    : null;
+  const accountWithPassword = existingParticipants.find((participant) => Boolean(participant.passwordHash));
+  const existingParticipant = authenticatedParticipant ?? accountWithPassword ?? existingParticipants[0] ?? null;
+  const isAuthenticatedParticipant = Boolean(authenticatedParticipant);
 
-  if (existingParticipant?.passwordHash && !isAuthenticatedParticipant) {
+  if (accountWithPassword && !isAuthenticatedParticipant) {
     return res.status(409).json({
       message: "Ja existe um cadastro com este e-mail ou telefone. Faça login em Minha conta para continuar sua compra.",
       code: "RAFFLE_ACCOUNT_EXISTS"

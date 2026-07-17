@@ -44,5 +44,20 @@ export const env = {
     if (derived) return derived;
 
     return "hubregional.com.br";
+  },
+  get caixaLotteryBaseUrl() {
+    return process.env.CAIXA_LOTTERY_BASE_URL ?? "https://servicebus2.caixa.gov.br/portaldeloterias/api";
+  },
+  get caixaLotteryTimeoutMs() {
+    return Number(process.env.CAIXA_LOTTERY_TIMEOUT_MS ?? 10000);
+  },
+  get raffleDrawJobEnabled() {
+    return (process.env.RAFFLE_DRAW_JOB_ENABLED ?? "false").toLowerCase() === "true";
+  },
+  get raffleDrawRetryIntervalMs() {
+    return Number(process.env.RAFFLE_DRAW_RETRY_INTERVAL_MS ?? 300000);
+  },
+  get raffleDrawMaxAttempts() {
+    return Number(process.env.RAFFLE_DRAW_MAX_ATTEMPTS ?? 288);
   }
 };
