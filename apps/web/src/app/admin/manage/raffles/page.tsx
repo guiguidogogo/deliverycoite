@@ -11,10 +11,14 @@ type Raffle = {
   slug: string;
   title: string;
   description?: string | null;
+  regulation?: string | null;
   prize?: string | null;
   status: "DRAFT" | "SCHEDULED" | "ACTIVE" | "PAUSED" | "ENDED" | "CANCELLED" | "FINISHED";
   startsAt?: string | null;
   endsAt?: string | null;
+  numberStart: number;
+  numberEnd: number;
+  numberDigits: number;
   totalNumbers: number;
   pricePerNumber: number;
   minimumQuantity: number;
@@ -100,6 +104,14 @@ function formatDateTime(value?: string | null) {
   return new Date(value).toLocaleString("pt-BR");
 }
 
+function toDateTimeLocal(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const offset = date.getTimezoneOffset();
+  return new Date(date.getTime() - offset * 60_000).toISOString().slice(0, 16);
+}
+
 function canRetryDraw(status?: string | null) {
   return ["SCHEDULED", "WAITING_CONTEST", "WAITING_RESULT", "ERROR"].includes(status ?? "");
 }
@@ -135,6 +147,7 @@ export default function AdminRafflesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [editingRaffleId, setEditingRaffleId] = useState<string | null>(null);
   const [selectedDrawRaffleId, setSelectedDrawRaffleId] = useState("");
   const [drawResult, setDrawResult] = useState<{
     raffleId: string;
@@ -149,6 +162,8 @@ export default function AdminRafflesPage() {
   } | null>(null);
 
   const totalNumbers = useMemo(() => Math.max(0, Number(form.numberEnd) - Number(form.numberStart) + 1), [form.numberEnd, form.numberStart]);
+  const editingRaffle = useMemo(() => raffles.find((raffle) => raffle.id === editingRaffleId) ?? null, [editingRaffleId, raffles]);
+  const isEditing = Boolean(editingRaffleId);
 
   async function load() {
     setLoading(true);
@@ -168,7 +183,7 @@ export default function AdminRafflesPage() {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (totalNumbers <= 0) {
+    if (!isEditing && totalNumbers <= 0) {
       toast.error("Revise a numeracao da rifa");
       return;
     }
@@ -176,28 +191,35 @@ export default function AdminRafflesPage() {
     try {
       const videoUrls = form.videoUrls.map((url) => url.trim()).filter(Boolean).slice(0, 5);
       const automaticDraw = form.drawMode === "AUTOMATIC_CAIXA";
-      await adminApi("/admin/raffles", {
-        method: "POST",
+      const payload = {
+        ...form,
+        videoUrl: videoUrls[0] ?? "",
+        videoUrls,
+        startsAt: form.startsAt ? new Date(form.startsAt).toISOString() : null,
+        endsAt: form.endsAt ? new Date(form.endsAt).toISOString() : null,
+        drawMode: form.drawMode,
+        drawLotteryModality: automaticDraw ? form.drawLotteryModality : null,
+        drawContestNumber: automaticDraw && form.drawContestNumber ? form.drawContestNumber : null,
+        drawScheduledAt: automaticDraw && form.drawScheduledAt ? new Date(form.drawScheduledAt).toISOString() : null
+      };
+      if (isEditing) {
+        delete (payload as Partial<typeof payload>).numberStart;
+        delete (payload as Partial<typeof payload>).numberEnd;
+        delete (payload as Partial<typeof payload>).numberDigits;
+      }
+      await adminApi(isEditing ? `/admin/raffles/${editingRaffleId}` : "/admin/raffles", {
+        method: isEditing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...form,
-          videoUrl: videoUrls[0] ?? "",
-          videoUrls,
-          startsAt: form.startsAt ? new Date(form.startsAt).toISOString() : null,
-          endsAt: form.endsAt ? new Date(form.endsAt).toISOString() : null,
-          drawMode: form.drawMode,
-          drawLotteryModality: automaticDraw ? form.drawLotteryModality : null,
-          drawContestNumber: automaticDraw && form.drawContestNumber ? form.drawContestNumber : null,
-          drawScheduledAt: automaticDraw && form.drawScheduledAt ? new Date(form.drawScheduledAt).toISOString() : null
-        })
+        body: JSON.stringify(payload)
       });
-      toast.success("Rifa criada com numeros disponiveis");
+      toast.success(isEditing ? "Rifa atualizada" : "Rifa criada com numeros disponiveis");
+      setEditingRaffleId(null);
       setForm(initialForm);
       await load();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao criar rifa";
+      const message = error instanceof Error ? error.message : isEditing ? "Falha ao atualizar rifa" : "Falha ao criar rifa";
       toast.error(message);
-      console.error("Erro ao criar rifa", error);
+      console.error("Erro ao salvar rifa", error);
     } finally {
       setSaving(false);
     }
@@ -218,6 +240,38 @@ export default function AdminRafflesPage() {
   }
 
   const update = <K extends keyof typeof initialForm>(field: K, value: (typeof initialForm)[K]) => setForm((current) => ({ ...current, [field]: value }));
+  const startEditing = (raffle: Raffle) => {
+    const videos = raffle.videoUrls?.length ? raffle.videoUrls : raffle.videoUrl ? [raffle.videoUrl] : [""];
+    setEditingRaffleId(raffle.id);
+    setForm({
+      title: raffle.title ?? "",
+      description: raffle.description ?? "",
+      regulation: raffle.regulation ?? "",
+      prize: raffle.prize ?? "",
+      status: raffle.status ?? "DRAFT",
+      startsAt: toDateTimeLocal(raffle.startsAt),
+      endsAt: toDateTimeLocal(raffle.endsAt),
+      numberStart: raffle.numberStart ?? 0,
+      numberEnd: raffle.numberEnd ?? Math.max(0, (raffle.totalNumbers ?? 100) - 1),
+      numberDigits: raffle.numberDigits ?? 2,
+      pricePerNumber: raffle.pricePerNumber ?? 1,
+      minimumQuantity: raffle.minimumQuantity ?? 1,
+      maximumQuantity: raffle.maximumQuantity ?? 10,
+      reservationMinutes: raffle.reservationMinutes ?? 15,
+      featuredImageUrl: raffle.featuredImageUrl ?? "",
+      videoUrl: raffle.videoUrl ?? "",
+      videoUrls: videos.slice(0, 5).concat(Array(Math.max(0, 1 - videos.length)).fill("")),
+      drawMode: raffle.drawMode ?? "MANUAL",
+      drawLotteryModality: raffle.drawLotteryModality ?? "federal",
+      drawContestNumber: raffle.drawContestNumber ?? "",
+      drawScheduledAt: toDateTimeLocal(raffle.drawScheduledAt)
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const cancelEditing = () => {
+    setEditingRaffleId(null);
+    setForm(initialForm);
+  };
   const updateVideoUrl = (index: number, value: string) => {
     setForm((current) => ({
       ...current,
@@ -444,7 +498,21 @@ export default function AdminRafflesPage() {
 
       <section id="campanhas" className="mt-6 grid gap-5 lg:grid-cols-[0.85fr_1.15fr]">
         <form onSubmit={submit} className="rounded-3xl border border-black/10 bg-white/85 p-5 shadow-sm dark:border-white/10 dark:bg-slate-900/70">
-          <h2 className="text-2xl font-bold">Nova rifa</h2>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-2xl font-bold">{isEditing ? "Editar rifa" : "Nova rifa"}</h2>
+              {isEditing && (
+                <p className="mt-1 text-sm text-orange-700">
+                  Editando: {editingRaffle?.title}. A numeracao fica bloqueada para preservar reservas e pagamentos.
+                </p>
+              )}
+            </div>
+            {isEditing && (
+              <button type="button" className="rounded-xl border px-3 py-2 text-sm font-bold" onClick={cancelEditing}>
+                Cancelar edicao
+              </button>
+            )}
+          </div>
           <div className="mt-4 grid gap-3">
             <Field label="Titulo"><input className="input" required value={form.title} onChange={(e) => update("title", e.target.value)} /></Field>
             <Field label="Premio"><input className="input" value={form.prize} onChange={(e) => update("prize", e.target.value)} /></Field>
@@ -503,12 +571,12 @@ export default function AdminRafflesPage() {
               <Field label="Encerramento"><input className="input" type="datetime-local" value={form.endsAt} onChange={(e) => update("endsAt", e.target.value)} /></Field>
             </div>
             <div className="grid gap-3 md:grid-cols-3">
-              <Field label="Numero inicial"><input className="input" type="number" min={0} value={form.numberStart} onChange={(e) => update("numberStart", Number(e.target.value))} /></Field>
-              <Field label="Numero final"><input className="input" type="number" min={1} value={form.numberEnd} onChange={(e) => update("numberEnd", Number(e.target.value))} /></Field>
-              <Field label="Digitos"><input className="input" type="number" min={1} max={8} value={form.numberDigits} onChange={(e) => update("numberDigits", Number(e.target.value))} /></Field>
+              <Field label="Numero inicial"><input className="input disabled:cursor-not-allowed disabled:opacity-60" type="number" min={0} disabled={isEditing} value={form.numberStart} onChange={(e) => update("numberStart", Number(e.target.value))} /></Field>
+              <Field label="Numero final"><input className="input disabled:cursor-not-allowed disabled:opacity-60" type="number" min={1} disabled={isEditing} value={form.numberEnd} onChange={(e) => update("numberEnd", Number(e.target.value))} /></Field>
+              <Field label="Digitos"><input className="input disabled:cursor-not-allowed disabled:opacity-60" type="number" min={1} max={8} disabled={isEditing} value={form.numberDigits} onChange={(e) => update("numberDigits", Number(e.target.value))} /></Field>
             </div>
             <p className="rounded-2xl bg-slate-100 px-3 py-2 text-sm dark:bg-slate-800">
-              Serao criados <strong>{totalNumbers}</strong> numeros. Exemplo: {String(form.numberStart).padStart(Number(form.numberDigits), "0")}
+              {isEditing ? "Numeracao atual" : "Serao criados"} <strong>{totalNumbers}</strong> numeros. Exemplo: {String(form.numberStart).padStart(Number(form.numberDigits), "0")}
             </p>
             <div className="grid gap-3 md:grid-cols-3">
               <Field label="Valor por numero"><input className="input" type="number" min={0.01} step="0.01" value={form.pricePerNumber} onChange={(e) => update("pricePerNumber", Number(e.target.value))} /></Field>
@@ -563,7 +631,7 @@ export default function AdminRafflesPage() {
             </Field>
           </div>
           <button disabled={saving} className="mt-5 w-full rounded-2xl bg-ember px-4 py-3 font-bold text-white disabled:opacity-60">
-            {saving ? "Criando..." : "Criar rifa"}
+            {saving ? "Salvando..." : isEditing ? "Salvar alteracoes" : "Criar rifa"}
           </button>
         </form>
 
@@ -587,6 +655,7 @@ export default function AdminRafflesPage() {
                   <strong className="rounded-full bg-emerald-100 px-3 py-1 text-sm text-emerald-700">{raffle._count?.numbers ?? raffle.totalNumbers} nums</strong>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
+                  <button className="rounded-xl bg-ink px-3 py-2 text-sm font-bold text-white" onClick={() => startEditing(raffle)}>Editar</button>
                   {raffle.status !== "ACTIVE" && <button className="rounded-xl bg-emerald-700 px-3 py-2 text-sm font-bold text-white" onClick={() => void changeStatus(raffle.id, "ACTIVE")}>Publicar</button>}
                   {raffle.status === "ACTIVE" && <button className="rounded-xl bg-amber-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void changeStatus(raffle.id, "PAUSED")}>Pausar</button>}
                   <button className="rounded-xl border px-3 py-2 text-sm font-bold" onClick={() => void changeStatus(raffle.id, "FINISHED")}>Finalizar</button>

@@ -655,6 +655,15 @@ export async function updateAdminRaffle(req: Request, res: Response) {
   if (!existing) return res.status(404).json({ message: "Rifa nao encontrada" });
 
   const body = raffleSchema.partial().parse(req.body);
+  const numberStructureChanged =
+    (body.numberStart !== undefined && body.numberStart !== existing.numberStart) ||
+    (body.numberEnd !== undefined && body.numberEnd !== existing.numberEnd) ||
+    (body.numberDigits !== undefined && body.numberDigits !== existing.numberDigits);
+  if (numberStructureChanged) {
+    return res.status(409).json({
+      message: "A numeracao da rifa nao pode ser alterada depois da criacao. Crie uma nova rifa para usar outra faixa de numeros."
+    });
+  }
   if (hasDrawPayload(body) && existing.drawStatus === "CONFIRMED") {
     return res.status(409).json({
       message: "Resultado automatico ja confirmado. Use uma correcao manual auditada para alterar a apuracao."
