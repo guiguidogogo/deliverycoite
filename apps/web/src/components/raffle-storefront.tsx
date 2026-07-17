@@ -186,8 +186,10 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
   const [inlineLogin, setInlineLogin] = useState("");
   const [inlinePassword, setInlinePassword] = useState("");
   const [inlineLoginLoading, setInlineLoginLoading] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
   const notifiedPaidOrders = useRef<Set<string>>(new Set());
   const accountLoginRef = useRef<HTMLDivElement | null>(null);
+  const numbersSectionRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -237,6 +239,7 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
     if (!selected) return;
     setSelectedNumbers([]);
     setPixPayment(null);
+    setCheckoutOpen(false);
     setNumbers([]);
     setNumbersLoading(true);
     publicRaffleJson<RaffleNumber[]>(`/public/raffles/${selected.id}/numbers`)
@@ -278,6 +281,19 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
     setSelectedNumbers((current) =>
       current.includes(number.id) ? current.filter((id) => id !== number.id) : [...current, number.id]
     );
+  }
+
+  function scrollToNumbers() {
+    numbersSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function openCheckout() {
+    if (selectedNumbers.length === 0) {
+      toast.error("Escolha pelo menos um numero para continuar");
+      scrollToNumbers();
+      return;
+    }
+    setCheckoutOpen(true);
   }
 
   function raffleUrl(raffle: Raffle) {
@@ -472,12 +488,19 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
           <section className="mt-8 rounded-[2rem] border border-white/10 bg-white p-5 text-ink md:p-7">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.35em] text-ember">Escolha seus numeros</p>
+                <p className="text-xs font-bold uppercase tracking-[0.35em] text-ember">Campanha</p>
                 <h2 className="text-3xl font-bold">{selected.title}</h2>
                 <p className="text-sm opacity-70">{selected.description || "Selecione apenas numeros disponiveis."}</p>
                 <p className="mt-2 break-all rounded-xl bg-slate-100 px-3 py-2 text-xs opacity-80">
                   Link de divulgacao: {typeof window === "undefined" ? `/rifas/${selected.slug}` : raffleUrl(selected)}
                 </p>
+                <button
+                  type="button"
+                  onClick={scrollToNumbers}
+                  className="mt-4 rounded-xl bg-ember px-5 py-3 font-bold text-white shadow-lg transition hover:-translate-y-0.5"
+                >
+                  Escolher numeros
+                </button>
               </div>
               <div className="rounded-2xl bg-slate-100 px-4 py-3 text-right">
                 <p className="text-xs opacity-60">Selecionado</p>
@@ -549,7 +572,7 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
               </section>
             )}
 
-            <div className="mt-5 rounded-3xl border border-black/10 bg-slate-50 p-4">
+            <div ref={numbersSectionRef} className="mt-5 scroll-mt-5 rounded-3xl border border-black/10 bg-slate-50 p-4">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.25em] text-ember">Numeros da sorte</p>
@@ -599,8 +622,55 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
               )}
             </div>
 
-            {selectedNumbers.length > 0 && (
-              <div className="mt-5 rounded-2xl border border-black/10 bg-slate-50 p-4">
+            {checkoutOpen && (
+              <div
+                className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm md:items-center md:p-6"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Resumo e pagamento da rifa"
+                onClick={() => setCheckoutOpen(false)}
+              >
+                <div
+                  className="max-h-[94vh] w-full max-w-3xl overflow-y-auto rounded-t-[2rem] bg-white p-4 text-ink shadow-2xl md:rounded-[2rem] md:p-6"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <div className="mb-5 flex items-start justify-between gap-4 border-b border-black/10 pb-4">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-[0.3em] text-ember">Resumo da compra</p>
+                      <h3 className="mt-1 text-2xl font-black">{selected.title}</h3>
+                      <p className="mt-1 text-sm text-slate-600">
+                        {pixPayment
+                          ? "Acompanhe abaixo a confirmacao do seu pagamento."
+                          : `${selectedNumbers.length} numero(s) escolhido(s) - ${BRL.format(total)}`}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCheckoutOpen(false)}
+                      className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-slate-100 text-xl font-bold"
+                      aria-label="Fechar resumo"
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  {selectedNumbers.length > 0 && (
+                    <div className="mb-4 rounded-2xl border border-orange-100 bg-orange-50 p-4">
+                      <p className="text-xs font-bold uppercase tracking-[0.25em] text-ember">Numeros escolhidos</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {numbers
+                          .filter((number) => selectedNumbers.includes(number.id))
+                          .map((number) => (
+                            <span key={number.id} className="rounded-lg bg-ink px-3 py-2 text-sm font-black text-white">
+                              {number.formattedNumber}
+                            </span>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedNumbers.length > 0 && (
+              <div className="rounded-2xl border border-black/10 bg-slate-50 p-4">
                 <p className="text-xs font-bold uppercase tracking-[0.3em] text-ember">Cadastro do participante</p>
                 {loggedParticipant ? (
                   <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
@@ -734,14 +804,65 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
               </div>
             )}
 
-            <div className="sticky bottom-3 mt-6 rounded-2xl bg-ink p-4 text-white shadow-xl">
+                  <div className="mt-6 rounded-2xl bg-ink p-4 text-white shadow-xl">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm opacity-70">
+                          {pixPayment
+                            ? pixPayment.paid
+                              ? "Pagamento confirmado e numeros garantidos."
+                              : "Finalize o Pix para confirmar seus numeros."
+                            : "Confira os numeros e conclua a reserva pelo Mercado Pago."}
+                        </p>
+                        <strong>
+                          {pixPayment
+                            ? pixPayment.paid
+                              ? "Compra concluida"
+                              : "Pagamento pendente"
+                            : `${selectedNumbers.length} numero(s) selecionado(s) - ${BRL.format(total)}`}
+                        </strong>
+                      </div>
+                      {pixPayment ? (
+                        <button
+                          type="button"
+                          className="rounded-xl bg-white px-5 py-3 font-bold text-ink"
+                          onClick={() => setCheckoutOpen(false)}
+                        >
+                          Fechar
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="rounded-xl bg-ember px-5 py-3 font-bold disabled:opacity-60"
+                          disabled={reserving}
+                          onClick={() => void reserveNumbers()}
+                        >
+                          {reserving ? "Gerando Pix..." : "Reservar e pagar Pix"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="sticky bottom-3 z-20 mt-6 rounded-2xl bg-ink p-4 text-white shadow-xl">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-sm opacity-70">Informe seus dados para reservar e pagar via Pix Mercado Pago.</p>
-                  <strong>{selectedNumbers.length} numero(s) selecionado(s) • {BRL.format(total)}</strong>
+                  <p className="text-sm opacity-70">
+                    {selectedNumbers.length > 0
+                      ? "Revise sua selecao antes de informar os dados e pagar."
+                      : "Escolha um ou mais numeros para continuar."}
+                  </p>
+                  <strong>{selectedNumbers.length} numero(s) selecionado(s) - {BRL.format(total)}</strong>
                 </div>
-                <button className="rounded-xl bg-ember px-5 py-3 font-bold disabled:opacity-60" disabled={reserving} onClick={() => void reserveNumbers()}>
-                  {reserving ? "Gerando Pix..." : "Reservar e pagar Pix"}
+                <button
+                  type="button"
+                  className="rounded-xl bg-ember px-5 py-3 font-bold disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={selectedNumbers.length === 0}
+                  onClick={openCheckout}
+                >
+                  Continuar para pagamento
                 </button>
               </div>
             </div>
