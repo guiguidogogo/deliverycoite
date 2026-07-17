@@ -153,6 +153,7 @@ import {
   loginRaffleParticipant,
   registerRaffleParticipant,
   reservePublicRaffleNumbers,
+  retryAdminRaffleDraw,
   updateAdminRaffle,
   updateAdminRaffleStatus
 } from "../controllers/raffles-controller.js";
@@ -305,6 +306,7 @@ route.get("/admin/raffles/orders", requireAnyPermission(["CATALOG", "REPORTS"]),
 route.get("/admin/raffles/:id", requireAnyPermission(["CATALOG", "REPORTS"]), getAdminRaffle);
 route.patch("/admin/raffles/:id", requirePermission("CATALOG"), updateAdminRaffle);
 route.patch("/admin/raffles/:id/status", requirePermission("CATALOG"), updateAdminRaffleStatus);
+route.post("/admin/raffles/:id/draw/retry", requirePermission("CATALOG"), retryAdminRaffleDraw);
 route.patch("/admin/me", updateCurrentStaff);
 route.patch("/admin/password", changeStaffPassword);
 route.get("/admin/orders", requirePermission("ORDERS"), listOrders);

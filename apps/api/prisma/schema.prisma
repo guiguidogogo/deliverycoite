@@ -135,6 +135,22 @@ enum RaffleMediaType {
   SHARE_BANNER
 }
 
+enum RaffleDrawMode {
+  MANUAL
+  AUTOMATIC_CAIXA
+}
+
+enum RaffleDrawStatus {
+  MANUAL
+  SCHEDULED
+  WAITING_CONTEST
+  WAITING_RESULT
+  PROCESSING
+  CONFIRMED
+  NO_VALID_PARTICIPANT
+  ERROR
+}
+
 model User {
   id             String          @id @default(cuid())
   name           String
@@ -603,6 +619,23 @@ model Raffle {
   videoUrl           String?
   publishedAt        DateTime?
   finishedAt         DateTime?
+  drawMode           RaffleDrawMode      @default(MANUAL)
+  drawLotteryModality String?
+  drawContestNumber  String?
+  drawScheduledAt    DateTime?
+  drawStatus         RaffleDrawStatus    @default(MANUAL)
+  drawLastAttemptAt  DateTime?
+  drawAttemptCount   Int                 @default(0)
+  drawLastError      String?
+  drawBaseNumber     String?
+  drawDigits         Int?
+  drawWinningNumber  String?
+  drawOfficialDate   DateTime?
+  drawConfirmedAt    DateTime?
+  drawRawResponse    Json?
+  drawWinnerParticipantId String?
+  drawWinnerOrderId  String?
+  drawWinnerNumberId String?
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
   numbers            RaffleNumber[]
@@ -616,6 +649,7 @@ model Raffle {
   @@unique([companyId, slug])
   @@index([companyId, status])
   @@index([companyId, startsAt, endsAt])
+  @@index([companyId, drawMode, drawStatus, drawScheduledAt])
 }
 
 model RaffleNumber {

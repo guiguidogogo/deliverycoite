@@ -4,11 +4,18 @@ import jwt from "jsonwebtoken";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { createMercadoPagoPixPayment, getMercadoPagoPayment, type MercadoPagoPaymentResponse } from "../services/mercadopago.js";
+import {
+  isSupportedRaffleCaixaModality,
+  normalizeCaixaModality,
+  SUPPORTED_RAFFLE_CAIXA_MODALITIES
+} from "../services/caixa-lottery-service.js";
+import { processAutomaticRaffleById } from "../services/raffle-draw-service.js";
 import { env } from "../utils/env.js";
 import { prisma } from "../utils/prisma.js";
 import { getCompanyId } from "../utils/tenant.js";
 
 const statusSchema = z.enum(["DRAFT", "SCHEDULED", "ACTIVE", "PAUSED", "ENDED", "CANCELLED", "FINISHED"]);
+const drawModeSchema = z.enum(["MANUAL", "AUTOMATIC_CAIXA"]);
 
 const raffleSchema = z.object({
   title: z.string().trim().min(3, "Informe o titulo da rifa").max(120),
@@ -28,7 +35,11 @@ const raffleSchema = z.object({
   participantLimit: z.coerce.number().int().min(1).optional().nullable(),
   featuredImageUrl: z.string().trim().url().optional().nullable().or(z.literal("")),
   videoUrl: z.string().trim().url().optional().nullable().or(z.literal("")),
-  videoUrls: z.array(z.string().trim().url()).max(5, "Informe no maximo 5 videos").optional()
+  videoUrls: z.array(z.string().trim().url()).max(5, "Informe no maximo 5 videos").optional(),
+  drawMode: drawModeSchema.default("MANUAL"),
+  drawLotteryModality: z.string().trim().max(40).optional().nullable().or(z.literal("")),
+  drawContestNumber: z.string().trim().max(20).optional().nullable().or(z.literal("")),
+  drawScheduledAt: z.coerce.date().optional().nullable()
 });
 
 const publicReserveSchema = z.object({
@@ -358,6 +369,100 @@ function validateRaffleNumbers(data: z.infer<typeof raffleSchema>) {
   return totalNumbers;
 }
 
+type RaffleDrawInput = Pick<
+  z.infer<typeof raffleSchema>,
+  "drawMode" | "drawLotteryModality" | "drawContestNumber" | "drawScheduledAt"
+>;
+
+function hasDrawPayload(data: Partial<RaffleDrawInput>) {
+  return (
+    data.drawMode !== undefined ||
+    data.drawLotteryModality !== undefined ||
+    data.drawContestNumber !== undefined ||
+    data.drawScheduledAt !== undefined
+  );
+}
+
+function normalizeDrawContestNumber(value?: string | null) {
+  const digits = onlyDigits(String(value ?? ""));
+  return digits || null;
+}
+
+function raffleDrawValidationError(path: string, message: string) {
+  return new z.ZodError([{
+    code: z.ZodIssueCode.custom,
+    path: [path],
+    message
+  }]);
+}
+
+function buildRaffleDrawData(
+  input: Partial<RaffleDrawInput>,
+  existing?: {
+    drawMode: string;
+    drawLotteryModality: string | null;
+    drawContestNumber: string | null;
+    drawScheduledAt: Date | null;
+  }
+) {
+  const mode = input.drawMode ?? existing?.drawMode ?? "MANUAL";
+  if (mode !== "AUTOMATIC_CAIXA") {
+    return {
+      drawMode: "MANUAL" as const,
+      drawStatus: "MANUAL" as const,
+      drawLotteryModality: null,
+      drawContestNumber: null,
+      drawScheduledAt: null,
+      drawLastAttemptAt: null,
+      drawAttemptCount: 0,
+      drawLastError: null,
+      drawBaseNumber: null,
+      drawDigits: null,
+      drawWinningNumber: null,
+      drawOfficialDate: null,
+      drawConfirmedAt: null,
+      drawWinnerParticipantId: null,
+      drawWinnerOrderId: null,
+      drawWinnerNumberId: null,
+      drawRawResponse: Prisma.JsonNull
+    };
+  }
+
+  const modality = normalizeCaixaModality(input.drawLotteryModality || existing?.drawLotteryModality || "federal");
+  if (!isSupportedRaffleCaixaModality(modality)) {
+    throw raffleDrawValidationError(
+      "drawLotteryModality",
+      `No momento, a apuracao automatica esta disponivel apenas para: ${SUPPORTED_RAFFLE_CAIXA_MODALITIES.join(", ")}.`
+    );
+  }
+
+  const scheduledAt = input.drawScheduledAt ?? existing?.drawScheduledAt ?? null;
+  if (!scheduledAt) {
+    throw raffleDrawValidationError("drawScheduledAt", "Informe a data e o horario previstos do sorteio.");
+  }
+
+  const contestNumber = normalizeDrawContestNumber(input.drawContestNumber ?? existing?.drawContestNumber);
+  return {
+    drawMode: "AUTOMATIC_CAIXA" as const,
+    drawLotteryModality: modality,
+    drawContestNumber: contestNumber,
+    drawScheduledAt: scheduledAt,
+    drawStatus: contestNumber ? ("SCHEDULED" as const) : ("WAITING_CONTEST" as const),
+    drawLastAttemptAt: null,
+    drawAttemptCount: 0,
+    drawLastError: null,
+    drawBaseNumber: null,
+    drawDigits: null,
+    drawWinningNumber: null,
+    drawOfficialDate: null,
+    drawConfirmedAt: null,
+    drawWinnerParticipantId: null,
+    drawWinnerOrderId: null,
+    drawWinnerNumberId: null,
+    drawRawResponse: Prisma.JsonNull
+  };
+}
+
 function normalizeRaffleVideoUrls(videoUrls?: string[] | null, fallback?: string | null) {
   const values = [...(videoUrls ?? []), ...(fallback ? [fallback] : [])]
     .map((url) => url.trim())
@@ -450,6 +555,7 @@ export async function createAdminRaffle(req: Request, res: Response) {
   const totalNumbers = validateRaffleNumbers(body);
   const slug = await uniqueRaffleSlug(companyId, body.title);
   const videoUrls = normalizeRaffleVideoUrls(body.videoUrls, body.videoUrl);
+  const drawData = buildRaffleDrawData(body);
 
   const raffle = await prisma.$transaction(async (tx) => {
     const created = await tx.raffle.create({
@@ -474,6 +580,7 @@ export async function createAdminRaffle(req: Request, res: Response) {
         participantLimit: body.participantLimit ?? null,
         featuredImageUrl: body.featuredImageUrl || null,
         videoUrl: videoUrls[0] ?? null,
+        ...drawData,
         publishedAt: body.status === "ACTIVE" ? new Date() : null
       }
     });
@@ -548,6 +655,11 @@ export async function updateAdminRaffle(req: Request, res: Response) {
   if (!existing) return res.status(404).json({ message: "Rifa nao encontrada" });
 
   const body = raffleSchema.partial().parse(req.body);
+  if (hasDrawPayload(body) && existing.drawStatus === "CONFIRMED") {
+    return res.status(409).json({
+      message: "Resultado automatico ja confirmado. Use uma correcao manual auditada para alterar a apuracao."
+    });
+  }
   const shouldReplaceVideos = body.videoUrls !== undefined || body.videoUrl !== undefined;
   const videoUrls = shouldReplaceVideos ? normalizeRaffleVideoUrls(body.videoUrls, body.videoUrl) : [];
   const data: Prisma.RaffleUpdateInput = {
@@ -566,6 +678,9 @@ export async function updateAdminRaffle(req: Request, res: Response) {
     ...(body.featuredImageUrl !== undefined ? { featuredImageUrl: body.featuredImageUrl || null } : {}),
     ...(shouldReplaceVideos ? { videoUrl: videoUrls[0] ?? null } : {})
   };
+  if (hasDrawPayload(body)) {
+    Object.assign(data, buildRaffleDrawData(body, existing));
+  }
 
   const updated = await prisma.$transaction(async (tx) => {
     await tx.raffle.update({
@@ -610,6 +725,11 @@ export async function updateAdminRaffleStatus(req: Request, res: Response) {
     }
   });
   return res.json(serializeRaffle(updated));
+}
+
+export async function retryAdminRaffleDraw(req: Request, res: Response) {
+  const result = await processAutomaticRaffleById(req.params.id, getCompanyId(req));
+  return res.json(result);
 }
 
 export async function loginRaffleParticipant(req: Request, res: Response) {
@@ -859,7 +979,10 @@ export async function getPublicRaffle(req: Request, res: Response) {
 
 export async function listPublicRaffleNumbers(req: Request, res: Response) {
   const companyId = getCompanyId(req);
-  const raffle = await prisma.raffle.findFirst({ where: { id: req.params.id, companyId }, select: { id: true } });
+  const raffle = await prisma.raffle.findFirst({
+    where: { id: req.params.id, companyId },
+    select: { id: true, drawStatus: true, drawWinningNumber: true }
+  });
   if (!raffle) return res.status(404).json({ message: "Rifa nao encontrada" });
   await releaseExpiredReservations(companyId, raffle.id);
   const numbers = await prisma.raffleNumber.findMany({
@@ -867,7 +990,11 @@ export async function listPublicRaffleNumbers(req: Request, res: Response) {
     select: { id: true, number: true, formattedNumber: true, status: true, reservedUntil: true },
     orderBy: { number: "asc" }
   });
-  return res.json(numbers);
+  return res.json(numbers.map((number) => ({
+    ...number,
+    isWinningNumber: ["CONFIRMED", "NO_VALID_PARTICIPANT"].includes(raffle.drawStatus) &&
+      number.formattedNumber === raffle.drawWinningNumber
+  })));
 }
 
 export async function reservePublicRaffleNumbers(req: Request, res: Response) {

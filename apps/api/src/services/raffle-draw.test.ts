@@ -1,0 +1,22 @@
+import assert from "node:assert/strict";
+import {
+  extractWinningDigits,
+  getSaoPauloDateKey,
+  isSupportedRaffleCaixaModality,
+  normalizeCaixaModality
+} from "./caixa-lottery-service.js";
+
+assert.equal(normalizeCaixaModality(" Federal "), "federal");
+assert.equal(isSupportedRaffleCaixaModality("federal"), true);
+assert.equal(isSupportedRaffleCaixaModality("megasena"), false);
+
+assert.equal(extractWinningDigits("12345", 2), "45");
+assert.equal(extractWinningDigits("12345", 3), "345");
+assert.equal(extractWinningDigits("12345", 4), "2345");
+assert.equal(extractWinningDigits("12345", 5), "12345");
+assert.equal(extractWinningDigits("00045", 4), "0045");
+assert.equal(extractWinningDigits("45", 4), "0045");
+
+assert.equal(getSaoPauloDateKey(new Date("2026-07-14T03:00:00.000Z")), "2026-07-14");
+
+console.log("raffle draw service tests passed");

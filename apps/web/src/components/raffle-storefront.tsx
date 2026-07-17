@@ -23,12 +23,22 @@ type Raffle = {
   availableNumbers: number;
   progressPercent: number;
   endsAt?: string | null;
+  drawMode?: "MANUAL" | "AUTOMATIC_CAIXA";
+  drawLotteryModality?: string | null;
+  drawContestNumber?: string | null;
+  drawStatus?: string | null;
+  drawBaseNumber?: string | null;
+  drawDigits?: number | null;
+  drawWinningNumber?: string | null;
+  drawOfficialDate?: string | null;
+  drawConfirmedAt?: string | null;
 };
 
 type RaffleNumber = {
   id: string;
   formattedNumber: string;
   status: "AVAILABLE" | "RESERVED" | "PENDING_PAYMENT" | "PAID" | "BLOCKED" | "CANCELLED";
+  isWinningNumber?: boolean;
 };
 
 type ReserveResponse = {
@@ -68,6 +78,32 @@ type RaffleLoginResponse = {
 
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const RAFFLE_TOKEN_KEY = "hubregional:raffleParticipantToken";
+
+function formatRaffleDateTime(value?: string | null) {
+  if (!value) return "-";
+  return new Date(value).toLocaleString("pt-BR");
+}
+
+function formatRaffleDate(value?: string | null) {
+  if (!value) return "-";
+  return new Date(value).toLocaleDateString("pt-BR");
+}
+
+function lotteryLabel(value?: string | null) {
+  const labels: Record<string, string> = {
+    federal: "Loteria Federal",
+    megasena: "Mega-Sena",
+    lotofacil: "Lotofacil",
+    quina: "Quina",
+    lotomania: "Lotomania",
+    duplasena: "Dupla Sena",
+    diadesorte: "Dia de Sorte",
+    timemania: "Timemania",
+    supersete: "Super Sete",
+    maismilionaria: "+Milionaria"
+  };
+  return value ? labels[value] ?? value : "-";
+}
 
 function isDirectVideoUrl(url: string) {
   return /\.(mp4|webm|ogg)(\?|#|$)/i.test(url);
@@ -440,6 +476,28 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
               </section>
             )}
 
+            {selected.drawMode === "AUTOMATIC_CAIXA" && ["CONFIRMED", "NO_VALID_PARTICIPANT"].includes(selected.drawStatus ?? "") && (
+              <section className="mt-5 rounded-3xl border border-yellow-300 bg-yellow-50 p-4 text-yellow-950">
+                <p className="text-xs font-black uppercase tracking-[0.35em]">Apuracao oficial</p>
+                <h3 className="mt-2 text-2xl font-black">
+                  Numero ganhador: {selected.drawWinningNumber ?? "-"}
+                </h3>
+                <div className="mt-3 grid gap-2 text-sm md:grid-cols-2">
+                  <p><strong>Modalidade:</strong> {lotteryLabel(selected.drawLotteryModality)}</p>
+                  <p><strong>Concurso:</strong> {selected.drawContestNumber ?? "-"}</p>
+                  <p><strong>Numero-base:</strong> {selected.drawBaseNumber ?? "-"}</p>
+                  <p><strong>Digitos usados:</strong> {selected.drawDigits ?? "-"}</p>
+                  <p><strong>Data oficial:</strong> {formatRaffleDate(selected.drawOfficialDate)}</p>
+                  <p><strong>Confirmado em:</strong> {formatRaffleDateTime(selected.drawConfirmedAt)}</p>
+                </div>
+                {selected.drawStatus === "NO_VALID_PARTICIPANT" && (
+                  <p className="mt-3 rounded-xl bg-white/70 p-3 text-sm font-bold">
+                    O numero sorteado nao possuia participante pago/valido. Nenhum outro numero foi escolhido automaticamente.
+                  </p>
+                )}
+              </section>
+            )}
+
             <div className="mt-5 rounded-3xl border border-black/10 bg-slate-50 p-4">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -467,7 +525,10 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
                 <div className="grid max-h-[28rem] grid-cols-5 gap-2 overflow-y-auto pr-1 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12">
                   {numbers.map((number) => {
                     const active = selectedNumbers.includes(number.id);
-                    const tone = active
+                    const winning = number.isWinningNumber;
+                    const tone = winning
+                      ? "bg-yellow-300 text-yellow-950 ring-2 ring-yellow-500"
+                      : active
                       ? "bg-ink text-white ring-2 ring-ink/30"
                       : number.status === "AVAILABLE"
                         ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
@@ -478,7 +539,8 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
                             : "bg-slate-200 text-slate-500";
                     return (
                       <button key={number.id} disabled={number.status !== "AVAILABLE"} onClick={() => toggleNumber(number)} className={`rounded-xl px-2 py-2 text-sm font-bold ${tone}`}>
-                        {number.formattedNumber}
+                        <span>{number.formattedNumber}</span>
+                        {winning && <span className="mt-1 block text-[10px] font-black uppercase">🏆 ganhador</span>}
                       </button>
                     );
                   })}

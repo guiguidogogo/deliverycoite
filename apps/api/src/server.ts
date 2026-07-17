@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { app } from "./app.js";
+import { startRaffleDrawJob } from "./jobs/raffle-draw-job.js";
 import { attachRealtimeServer } from "./services/realtime.js";
 import { env } from "./utils/env.js";
 import { prisma } from "./utils/prisma.js";
@@ -59,6 +60,7 @@ async function bootstrap() {
 
   const server = http.createServer(app);
   attachRealtimeServer(server);
+  startRaffleDrawJob();
 
   server.listen(env.port, "0.0.0.0", () => {
     console.log(`API online na porta ${env.port}`);
