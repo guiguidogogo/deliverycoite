@@ -109,6 +109,36 @@ function isDirectVideoUrl(url: string) {
   return /\.(mp4|webm|ogg)(\?|#|$)/i.test(url);
 }
 
+function getYouTubeEmbedUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, "");
+    let videoId = "";
+
+    if (host === "youtu.be") {
+      videoId = parsed.pathname.split("/").filter(Boolean)[0] ?? "";
+    } else if (host === "youtube.com" || host === "m.youtube.com" || host === "music.youtube.com") {
+      if (parsed.pathname.startsWith("/watch")) {
+        videoId = parsed.searchParams.get("v") ?? "";
+      } else if (parsed.pathname.startsWith("/shorts/") || parsed.pathname.startsWith("/embed/")) {
+        videoId = parsed.pathname.split("/").filter(Boolean)[1] ?? "";
+      }
+    }
+
+    if (!videoId) return null;
+    const params = new URLSearchParams({
+      autoplay: "1",
+      mute: "1",
+      playsinline: "1",
+      rel: "0",
+      modestbranding: "1"
+    });
+    return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?${params.toString()}`;
+  } catch {
+    return null;
+  }
+}
+
 async function publicRaffleJson<T>(path: string): Promise<T> {
   const separator = path.includes("?") ? "&" : "?";
   const response = await fetch(`/api${path}${separator}_=${Date.now()}`, {
@@ -460,19 +490,40 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
                 <p className="text-xs font-black uppercase tracking-[0.35em] text-ember">Videos</p>
                 <h3 className="mt-1 text-xl font-black">Veja a campanha</h3>
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  {selectedVideoUrls.map((url, index) => (
-                    <div key={`${url}-${index}`} className="overflow-hidden rounded-2xl border border-orange-200 bg-white">
-                      {isDirectVideoUrl(url) ? (
-                        <video controls className="aspect-video w-full bg-black object-cover" src={resolveAssetUrl(url)} />
-                      ) : (
-                        <a href={url} target="_blank" rel="noreferrer" className="flex min-h-28 items-center justify-between gap-3 p-4 font-bold text-ink">
-                          <span>Assistir video {index + 1}</span>
-                          <span className="rounded-full bg-ember px-3 py-1 text-xs text-white">Abrir</span>
-                        </a>
-                      )}
-                    </div>
-                  ))}
+                  {selectedVideoUrls.map((url, index) => {
+                    const youtubeEmbedUrl = getYouTubeEmbedUrl(url);
+                    return (
+                      <div key={`${url}-${index}`} className="overflow-hidden rounded-2xl border border-orange-200 bg-white shadow-sm">
+                        {youtubeEmbedUrl ? (
+                          <iframe
+                            className="aspect-video w-full bg-black"
+                            src={youtubeEmbedUrl}
+                            title={`Video da campanha ${index + 1}`}
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                            allowFullScreen
+                          />
+                        ) : isDirectVideoUrl(url) ? (
+                          <video
+                            autoPlay
+                            muted
+                            playsInline
+                            controls
+                            className="aspect-video w-full bg-black object-cover"
+                            src={resolveAssetUrl(url)}
+                          />
+                        ) : (
+                          <a href={url} target="_blank" rel="noreferrer" className="flex min-h-28 items-center justify-between gap-3 p-4 font-bold text-ink">
+                            <span>Assistir video {index + 1}</span>
+                            <span className="rounded-full bg-ember px-3 py-1 text-xs text-white">Abrir</span>
+                          </a>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
+                <p className="mt-3 text-xs text-orange-900/70">
+                  Videos do YouTube iniciam automaticamente sem som quando o navegador permitir. Toque no player para ativar o audio.
+                </p>
               </section>
             )}
 
