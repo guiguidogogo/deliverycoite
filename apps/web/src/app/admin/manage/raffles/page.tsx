@@ -25,6 +25,7 @@ type Raffle = {
   maximumQuantity: number;
   reservationMinutes: number;
   featuredImageUrl?: string | null;
+  imageUrls?: string[];
   videoUrl?: string | null;
   videoUrls?: string[];
   drawMode?: "MANUAL" | "AUTOMATIC_CAIXA";
@@ -132,6 +133,7 @@ const initialForm = {
   maximumQuantity: 10,
   reservationMinutes: 15,
   featuredImageUrl: "",
+  imageUrls: [""],
   videoUrl: "",
   videoUrls: [""],
   drawMode: "MANUAL" as "MANUAL" | "AUTOMATIC_CAIXA",
@@ -189,10 +191,13 @@ export default function AdminRafflesPage() {
     }
     setSaving(true);
     try {
+      const imageUrls = form.imageUrls.map((url) => url.trim()).filter(Boolean).slice(0, 5);
       const videoUrls = form.videoUrls.map((url) => url.trim()).filter(Boolean).slice(0, 5);
       const automaticDraw = form.drawMode === "AUTOMATIC_CAIXA";
       const payload = {
         ...form,
+        featuredImageUrl: imageUrls[0] ?? "",
+        imageUrls,
         videoUrl: videoUrls[0] ?? "",
         videoUrls,
         startsAt: form.startsAt ? new Date(form.startsAt).toISOString() : null,
@@ -241,6 +246,7 @@ export default function AdminRafflesPage() {
 
   const update = <K extends keyof typeof initialForm>(field: K, value: (typeof initialForm)[K]) => setForm((current) => ({ ...current, [field]: value }));
   const startEditing = (raffle: Raffle) => {
+    const images = raffle.imageUrls?.length ? raffle.imageUrls : raffle.featuredImageUrl ? [raffle.featuredImageUrl] : [""];
     const videos = raffle.videoUrls?.length ? raffle.videoUrls : raffle.videoUrl ? [raffle.videoUrl] : [""];
     setEditingRaffleId(raffle.id);
     setForm({
@@ -258,7 +264,8 @@ export default function AdminRafflesPage() {
       minimumQuantity: raffle.minimumQuantity ?? 1,
       maximumQuantity: raffle.maximumQuantity ?? 10,
       reservationMinutes: raffle.reservationMinutes ?? 15,
-      featuredImageUrl: raffle.featuredImageUrl ?? "",
+      featuredImageUrl: images[0] ?? "",
+      imageUrls: images.slice(0, 5).concat(Array(Math.max(0, 1 - images.length)).fill("")),
       videoUrl: raffle.videoUrl ?? "",
       videoUrls: videos.slice(0, 5).concat(Array(Math.max(0, 1 - videos.length)).fill("")),
       drawMode: raffle.drawMode ?? "MANUAL",
@@ -271,6 +278,21 @@ export default function AdminRafflesPage() {
   const cancelEditing = () => {
     setEditingRaffleId(null);
     setForm(initialForm);
+  };
+  const updateImageUrl = (index: number, value: string) => {
+    setForm((current) => {
+      const imageUrls = current.imageUrls.map((url, currentIndex) => currentIndex === index ? value : url);
+      return { ...current, imageUrls, featuredImageUrl: imageUrls[0] ?? "" };
+    });
+  };
+  const addImageUrl = () => {
+    setForm((current) => current.imageUrls.length >= 5 ? current : { ...current, imageUrls: [...current.imageUrls, ""] });
+  };
+  const removeImageUrl = (index: number) => {
+    setForm((current) => {
+      const imageUrls = current.imageUrls.length <= 1 ? [""] : current.imageUrls.filter((_, currentIndex) => currentIndex !== index);
+      return { ...current, imageUrls, featuredImageUrl: imageUrls[0] ?? "" };
+    });
   };
   const updateVideoUrl = (index: number, value: string) => {
     setForm((current) => ({
@@ -287,7 +309,7 @@ export default function AdminRafflesPage() {
       videoUrls: current.videoUrls.length <= 1 ? [""] : current.videoUrls.filter((_, currentIndex) => currentIndex !== index)
     }));
   };
-  const uploadRaffleImage = async (file?: File | null) => {
+  const uploadRaffleImage = async (index: number, file?: File | null) => {
     if (!file) return;
     if (!file.type.startsWith("image/")) {
       toast.error("Envie uma imagem valida para a rifa");
@@ -310,7 +332,7 @@ export default function AdminRafflesPage() {
       const payload = await readApiJson<{ url?: string; message?: string }>(response);
       if (!response.ok) throw new Error(payload.message ?? "Falha ao enviar imagem");
       if (!payload.url) throw new Error("Upload sem URL de retorno");
-      update("featuredImageUrl", payload.url);
+      updateImageUrl(index, payload.url);
       toast.success("Imagem da rifa enviada");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao enviar imagem");
@@ -520,24 +542,44 @@ export default function AdminRafflesPage() {
             <Field label="Premio"><input className="input" value={form.prize} onChange={(e) => update("prize", e.target.value)} /></Field>
             <Field label="Descricao"><textarea className="input min-h-24" value={form.description} onChange={(e) => update("description", e.target.value)} /></Field>
             <Field label="Regulamento"><textarea className="input min-h-28" value={form.regulation} onChange={(e) => update("regulation", e.target.value)} /></Field>
-            <Field label="Imagem principal">
+            <Field label="Fotos da rifa (ate 5)">
               <div className="grid gap-2 rounded-2xl border border-black/10 p-3 dark:border-white/10">
-                <input className="input" placeholder="URL da imagem ou envie um arquivo abaixo" value={form.featuredImageUrl} onChange={(e) => update("featuredImageUrl", e.target.value)} />
-                <input
-                  className="input"
-                  type="file"
-                  accept="image/*"
-                  disabled={uploadingImage}
-                  onChange={(event) => void uploadRaffleImage(event.target.files?.[0])}
-                />
+                {form.imageUrls.map((url, index) => (
+                  <div key={index} className="grid gap-2 rounded-2xl bg-slate-50 p-3 dark:bg-slate-800">
+                    <div className="grid gap-2 md:grid-cols-[1fr_auto]">
+                      <input className="input" placeholder={`URL da foto ${index + 1}`} value={url} onChange={(event) => updateImageUrl(index, event.target.value)} />
+                      <button
+                        type="button"
+                        className="rounded-xl border border-red-200 px-3 py-2 text-sm font-bold text-red-600 disabled:opacity-40"
+                        disabled={form.imageUrls.length <= 1}
+                        onClick={() => removeImageUrl(index)}
+                      >
+                        Remover
+                      </button>
+                    </div>
+                    <input
+                      className="input"
+                      type="file"
+                      accept="image/*"
+                      disabled={uploadingImage}
+                      onChange={(event) => void uploadRaffleImage(index, event.target.files?.[0])}
+                    />
+                    {url && (
+                      <img
+                        src={resolveAssetUrl(url)}
+                        alt={`Previa da foto ${index + 1}`}
+                        className="h-32 w-full rounded-2xl object-cover"
+                      />
+                    )}
+                  </div>
+                ))}
                 {uploadingImage && <span className="text-xs font-bold text-orange-700">Enviando imagem...</span>}
-                {form.featuredImageUrl && (
-                  <img
-                    src={resolveAssetUrl(form.featuredImageUrl)}
-                    alt="Previa da rifa"
-                    className="h-32 w-full rounded-2xl object-cover"
-                  />
-                )}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs opacity-70">A primeira foto sera a capa. Na vitrine, elas alternam automaticamente.</span>
+                  <button type="button" className="rounded-xl bg-ink px-3 py-2 text-sm font-bold text-white disabled:opacity-50" disabled={form.imageUrls.length >= 5} onClick={addImageUrl}>
+                    + Adicionar foto
+                  </button>
+                </div>
               </div>
             </Field>
             <Field label="Videos da rifa (ate 5)">

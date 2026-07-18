@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { randomInt } from "node:crypto";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { createMercadoPagoPixPayment, getMercadoPagoPayment, type MercadoPagoPaymentResponse } from "../services/mercadopago.js";
@@ -10,6 +11,7 @@ import {
   SUPPORTED_RAFFLE_CAIXA_MODALITIES
 } from "../services/caixa-lottery-service.js";
 import { processAutomaticRaffleById } from "../services/raffle-draw-service.js";
+import { dispatchWhatsappMessage } from "../services/whatsapp.js";
 import { env } from "../utils/env.js";
 import { prisma } from "../utils/prisma.js";
 import { getCompanyId } from "../utils/tenant.js";
@@ -34,6 +36,7 @@ const raffleSchema = z.object({
   reservationMinutes: z.coerce.number().int().min(5, "A reserva precisa ter pelo menos 5 minutos").max(1440, "A reserva pode ter no maximo 24 horas").default(15),
   participantLimit: z.coerce.number().int().min(1).optional().nullable(),
   featuredImageUrl: z.string().trim().url().optional().nullable().or(z.literal("")),
+  imageUrls: z.array(z.string().trim().url()).max(5, "Informe no maximo 5 imagens").optional(),
   videoUrl: z.string().trim().url().optional().nullable().or(z.literal("")),
   videoUrls: z.array(z.string().trim().url()).max(5, "Informe no maximo 5 videos").optional(),
   drawMode: drawModeSchema.default("MANUAL"),
@@ -64,6 +67,16 @@ const raffleParticipantRegisterSchema = z.object({
   email: z.string().trim().email("Informe um e-mail valido").max(180),
   cpf: z.string().trim().max(20).optional().nullable(),
   password: z.string().min(6, "Crie uma senha com pelo menos 6 digitos").max(72)
+});
+
+const raffleParticipantPasswordRequestSchema = z.object({
+  login: z.string().trim().min(3, "Informe e-mail ou WhatsApp")
+});
+
+const raffleParticipantPasswordResetSchema = z.object({
+  login: z.string().trim().min(3, "Informe e-mail ou WhatsApp"),
+  code: z.string().trim().length(6, "Informe o codigo de 6 digitos"),
+  newPassword: z.string().min(6, "A nova senha deve ter pelo menos 6 digitos").max(72)
 });
 
 const DEFAULT_RAFFLE_RESERVATION_MINUTES = 15;
@@ -470,6 +483,23 @@ function normalizeRaffleVideoUrls(videoUrls?: string[] | null, fallback?: string
   return Array.from(new Set(values)).slice(0, 5);
 }
 
+function normalizeRaffleImageUrls(imageUrls?: string[] | null, fallback?: string | null) {
+  const values = [...(imageUrls ?? []), ...(fallback ? [fallback] : [])]
+    .map((url) => url.trim())
+    .filter(Boolean);
+  return Array.from(new Set(values)).slice(0, 5);
+}
+
+function getRaffleImageUrls(raffle: { featuredImageUrl?: string | null; media?: Array<{ type: string; url: string; sortOrder: number }> }) {
+  const mediaImages = Array.isArray(raffle.media)
+    ? raffle.media
+        .filter((item) => item.type === "IMAGE")
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((item) => item.url)
+    : [];
+  return mediaImages.length ? mediaImages : raffle.featuredImageUrl ? [raffle.featuredImageUrl] : [];
+}
+
 function getRaffleVideoUrls(raffle: { videoUrl?: string | null; media?: Array<{ type: string; url: string; sortOrder: number }> }) {
   const mediaVideos = Array.isArray(raffle.media)
     ? raffle.media
@@ -483,6 +513,7 @@ function getRaffleVideoUrls(raffle: { videoUrl?: string | null; media?: Array<{ 
 function serializeRaffle<T extends { pricePerNumber: Prisma.Decimal; videoUrl?: string | null; media?: Array<{ type: string; url: string; sortOrder: number }>; _count?: Record<string, number> }>(raffle: T) {
   return {
     ...raffle,
+    imageUrls: getRaffleImageUrls(raffle),
     videoUrls: getRaffleVideoUrls(raffle),
     pricePerNumber: Number(raffle.pricePerNumber),
     reservationMinutes: "reservationMinutes" in raffle && typeof raffle.reservationMinutes === "number"
@@ -554,6 +585,7 @@ export async function createAdminRaffle(req: Request, res: Response) {
   const body = raffleSchema.parse(req.body);
   const totalNumbers = validateRaffleNumbers(body);
   const slug = await uniqueRaffleSlug(companyId, body.title);
+  const imageUrls = normalizeRaffleImageUrls(body.imageUrls, body.featuredImageUrl);
   const videoUrls = normalizeRaffleVideoUrls(body.videoUrls, body.videoUrl);
   const drawData = buildRaffleDrawData(body);
 
@@ -578,22 +610,32 @@ export async function createAdminRaffle(req: Request, res: Response) {
         maximumQuantity: body.maximumQuantity,
         reservationMinutes: body.reservationMinutes,
         participantLimit: body.participantLimit ?? null,
-        featuredImageUrl: body.featuredImageUrl || null,
+        featuredImageUrl: imageUrls[0] ?? null,
         videoUrl: videoUrls[0] ?? null,
         ...drawData,
         publishedAt: body.status === "ACTIVE" ? new Date() : null
       }
     });
 
-    if (videoUrls.length) {
+    const media = [
+      ...imageUrls.map((url, index) => ({
+        companyId,
+        raffleId: created.id,
+        type: "IMAGE" as const,
+        url,
+        sortOrder: index
+      })),
+      ...videoUrls.map((url, index) => ({
+        companyId,
+        raffleId: created.id,
+        type: "VIDEO" as const,
+        url,
+        sortOrder: index
+      }))
+    ];
+    if (media.length) {
       await tx.raffleMedia.createMany({
-        data: videoUrls.map((url, index) => ({
-          companyId,
-          raffleId: created.id,
-          type: "VIDEO",
-          url,
-          sortOrder: index
-        }))
+        data: media
       });
     }
 
@@ -669,6 +711,8 @@ export async function updateAdminRaffle(req: Request, res: Response) {
       message: "Resultado automatico ja confirmado. Use uma correcao manual auditada para alterar a apuracao."
     });
   }
+  const shouldReplaceImages = body.imageUrls !== undefined || body.featuredImageUrl !== undefined;
+  const imageUrls = shouldReplaceImages ? normalizeRaffleImageUrls(body.imageUrls, body.featuredImageUrl) : [];
   const shouldReplaceVideos = body.videoUrls !== undefined || body.videoUrl !== undefined;
   const videoUrls = shouldReplaceVideos ? normalizeRaffleVideoUrls(body.videoUrls, body.videoUrl) : [];
   const data: Prisma.RaffleUpdateInput = {
@@ -684,7 +728,7 @@ export async function updateAdminRaffle(req: Request, res: Response) {
     ...(body.maximumQuantity !== undefined ? { maximumQuantity: body.maximumQuantity } : {}),
     ...(body.reservationMinutes !== undefined ? { reservationMinutes: body.reservationMinutes } : {}),
     ...(body.participantLimit !== undefined ? { participantLimit: body.participantLimit ?? null } : {}),
-    ...(body.featuredImageUrl !== undefined ? { featuredImageUrl: body.featuredImageUrl || null } : {}),
+    ...(shouldReplaceImages ? { featuredImageUrl: imageUrls[0] ?? null } : {}),
     ...(shouldReplaceVideos ? { videoUrl: videoUrls[0] ?? null } : {})
   };
   if (hasDrawPayload(body)) {
@@ -696,6 +740,20 @@ export async function updateAdminRaffle(req: Request, res: Response) {
       where: { id: existing.id },
       data
     });
+    if (shouldReplaceImages) {
+      await tx.raffleMedia.deleteMany({ where: { companyId, raffleId: existing.id, type: "IMAGE" } });
+      if (imageUrls.length) {
+        await tx.raffleMedia.createMany({
+          data: imageUrls.map((url, index) => ({
+            companyId,
+            raffleId: existing.id,
+            type: "IMAGE",
+            url,
+            sortOrder: index
+          }))
+        });
+      }
+    }
     if (shouldReplaceVideos) {
       await tx.raffleMedia.deleteMany({ where: { companyId, raffleId: existing.id, type: "VIDEO" } });
       if (videoUrls.length) {
@@ -781,6 +839,140 @@ export async function loginRaffleParticipant(req: Request, res: Response) {
       cpf: updated.cpf
     }
   });
+}
+
+export async function requestRaffleParticipantPasswordReset(req: Request, res: Response) {
+  const companyId = getCompanyId(req);
+  const body = raffleParticipantPasswordRequestSchema.parse(req.body);
+  const rawLogin = body.login.toLowerCase();
+  const phone = onlyDigits(body.login);
+
+  const participant = await prisma.raffleParticipant.findFirst({
+    where: {
+      companyId,
+      OR: [
+        ...(phone.length >= 8 ? [{ phone }] : []),
+        { email: rawLogin }
+      ]
+    }
+  });
+
+  if (participant?.passwordHash) {
+    const code = String(randomInt(100000, 1000000));
+    const codeHash = await bcrypt.hash(code, 10);
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    const resetLog = await prisma.raffleAuditLog.create({
+      data: {
+        companyId,
+        action: "RAFFLE_PASSWORD_RESET_REQUESTED",
+        entity: "RaffleParticipant",
+        entityId: participant.id,
+        newValue: {
+          codeHash,
+          expiresAt: expiresAt.toISOString(),
+          usedAt: null
+        }
+      }
+    });
+
+    try {
+      const settings = await prisma.setting.findFirstOrThrow({ where: { companyId } });
+      const message = [
+        `Ola, ${participant.name}!`,
+        `Seu codigo para redefinir a senha e: ${code}`,
+        "Ele expira em 15 minutos.",
+        "Se voce nao solicitou, ignore esta mensagem."
+      ].join("\n");
+      const sent = await dispatchWhatsappMessage(settings, participant.phone, message, participant.phone);
+      if (sent.channel !== "MENUAI") {
+        throw new Error("Envio automatico do WhatsApp indisponivel");
+      }
+    } catch (error) {
+      await prisma.raffleAuditLog.delete({ where: { id: resetLog.id } }).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  return res.json({ message: "Se os dados estiverem corretos, o codigo sera enviado pelo WhatsApp" });
+}
+
+export async function resetRaffleParticipantPassword(req: Request, res: Response) {
+  const companyId = getCompanyId(req);
+  const body = raffleParticipantPasswordResetSchema.parse(req.body);
+  const rawLogin = body.login.toLowerCase();
+  const phone = onlyDigits(body.login);
+
+  const participant = await prisma.raffleParticipant.findFirst({
+    where: {
+      companyId,
+      OR: [
+        ...(phone.length >= 8 ? [{ phone }] : []),
+        { email: rawLogin }
+      ]
+    }
+  });
+
+  if (!participant) {
+    return res.status(400).json({ message: "Codigo invalido ou expirado" });
+  }
+
+  const resetLogs = await prisma.raffleAuditLog.findMany({
+    where: {
+      companyId,
+      action: "RAFFLE_PASSWORD_RESET_REQUESTED",
+      entity: "RaffleParticipant",
+      entityId: participant.id,
+      createdAt: { gt: new Date(Date.now() - 15 * 60 * 1000) }
+    },
+    orderBy: { createdAt: "desc" },
+    take: 5
+  });
+
+  let reset: (typeof resetLogs)[number] | null = null;
+  let resetValue: { codeHash: string; expiresAt: string; usedAt?: string | null } | null = null;
+  for (const candidate of resetLogs) {
+    const value = candidate.newValue as { codeHash?: unknown; expiresAt?: unknown; usedAt?: unknown } | null;
+    if (
+      !value ||
+      typeof value.codeHash !== "string" ||
+      typeof value.expiresAt !== "string" ||
+      value.usedAt ||
+      new Date(value.expiresAt).getTime() <= Date.now()
+    ) {
+      continue;
+    }
+    if (await bcrypt.compare(body.code, value.codeHash)) {
+      reset = candidate;
+      resetValue = {
+        codeHash: value.codeHash,
+        expiresAt: value.expiresAt,
+        usedAt: null
+      };
+      break;
+    }
+  }
+
+  if (!reset) {
+    return res.status(400).json({ message: "Codigo invalido ou expirado" });
+  }
+
+  await prisma.$transaction([
+    prisma.raffleParticipant.update({
+      where: { id: participant.id },
+      data: { passwordHash: await bcrypt.hash(body.newPassword, 10) }
+    }),
+    prisma.raffleAuditLog.update({
+      where: { id: reset.id },
+      data: {
+        newValue: {
+          ...resetValue!,
+          usedAt: new Date().toISOString()
+        }
+      }
+    })
+  ]);
+
+  return res.json({ message: "Senha alterada" });
 }
 
 export async function registerRaffleParticipant(req: Request, res: Response) {

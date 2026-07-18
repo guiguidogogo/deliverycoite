@@ -108,6 +108,10 @@ export function RaffleAccountPage() {
   const [token, setToken] = useState("");
   const [account, setAccount] = useState<RaffleAccountPayload | null>(null);
   const [loading, setLoading] = useState(false);
+  const [recoveringPassword, setRecoveringPassword] = useState(false);
+  const [resetCode, setResetCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
   const [payingOrderId, setPayingOrderId] = useState("");
   const notifiedPaidOrders = useRef<Set<string>>(new Set());
 
@@ -218,6 +222,55 @@ export function RaffleAccountPage() {
       }
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function requestPasswordReset() {
+    if (!login.trim()) {
+      toast.error("Informe seu e-mail ou WhatsApp");
+      return;
+    }
+
+    setResetLoading(true);
+    try {
+      const response = await api<{ message: string }>("/public/raffles/auth/password/request", {
+        method: "POST",
+        body: JSON.stringify({ login })
+      });
+      setRecoveringPassword(true);
+      toast.success(response.message);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Nao foi possivel enviar o codigo");
+    } finally {
+      setResetLoading(false);
+    }
+  }
+
+  async function confirmPasswordReset() {
+    if (resetCode.trim().length !== 6 || newPassword.length < 6) {
+      toast.error("Informe o codigo de 6 digitos e uma nova senha com pelo menos 6 caracteres");
+      return;
+    }
+
+    setResetLoading(true);
+    try {
+      await api("/public/raffles/auth/password/reset", {
+        method: "POST",
+        body: JSON.stringify({
+          login,
+          code: resetCode,
+          newPassword
+        })
+      });
+      setRecoveringPassword(false);
+      setResetCode("");
+      setNewPassword("");
+      setPassword("");
+      toast.success("Senha alterada. Entre com sua nova senha.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Nao foi possivel alterar a senha");
+    } finally {
+      setResetLoading(false);
     }
   }
 
@@ -333,6 +386,58 @@ export function RaffleAccountPage() {
                 <button disabled={loading} className="rounded-xl bg-ink px-5 py-3 font-bold text-white disabled:opacity-60">
                   {loading ? "Entrando..." : "Entrar"}
                 </button>
+                {!recoveringPassword ? (
+                  <button
+                    type="button"
+                    disabled={resetLoading}
+                    onClick={() => void requestPasswordReset()}
+                    className="rounded-xl px-4 py-2 text-sm font-bold text-ember underline decoration-orange-300 underline-offset-4 disabled:opacity-60"
+                  >
+                    {resetLoading ? "Enviando codigo..." : "Esqueci minha senha"}
+                  </button>
+                ) : (
+                  <div className="grid gap-3 rounded-2xl border border-orange-200 bg-orange-50 p-4">
+                    <p className="text-sm text-orange-950">
+                      Digite o codigo de 6 digitos enviado ao seu WhatsApp. Ele vale por 15 minutos.
+                    </p>
+                    <input
+                      value={resetCode}
+                      onChange={(event) => setResetCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                      className="rounded-xl border border-orange-200 bg-white px-4 py-3"
+                      placeholder="Codigo de 6 digitos"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                    />
+                    <input
+                      value={newPassword}
+                      onChange={(event) => setNewPassword(event.target.value)}
+                      className="rounded-xl border border-orange-200 bg-white px-4 py-3"
+                      placeholder="Nova senha"
+                      type="password"
+                      autoComplete="new-password"
+                    />
+                    <button
+                      type="button"
+                      disabled={resetLoading}
+                      onClick={() => void confirmPasswordReset()}
+                      className="rounded-xl bg-ember px-5 py-3 font-bold text-white disabled:opacity-60"
+                    >
+                      {resetLoading ? "Alterando..." : "Alterar senha"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={resetLoading}
+                      onClick={() => {
+                        setRecoveringPassword(false);
+                        setResetCode("");
+                        setNewPassword("");
+                      }}
+                      className="text-sm font-bold text-slate-600"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                )}
               </form>
             ) : (
               <form onSubmit={submitRegister} className="mt-5 grid gap-3">

@@ -152,7 +152,9 @@ import {
   listPublicRaffles,
   loginRaffleParticipant,
   registerRaffleParticipant,
+  requestRaffleParticipantPasswordReset,
   reservePublicRaffleNumbers,
+  resetRaffleParticipantPassword,
   retryAdminRaffleDraw,
   updateAdminRaffle,
   updateAdminRaffleStatus
@@ -225,6 +227,8 @@ route.get("/marketplace/summary", marketplaceSummary);
 route.get("/public/raffles", listPublicRaffles);
 route.post("/public/raffles/auth/login", loginRaffleParticipant);
 route.post("/public/raffles/auth/register", registerRaffleParticipant);
+route.post("/public/raffles/auth/password/request", requestRaffleParticipantPasswordReset);
+route.post("/public/raffles/auth/password/reset", resetRaffleParticipantPassword);
 route.get("/public/raffles/account/me", getRaffleParticipantAccount);
 route.get("/public/raffles/:slug", getPublicRaffle);
 route.get("/public/raffles/:id/numbers", listPublicRaffleNumbers);
