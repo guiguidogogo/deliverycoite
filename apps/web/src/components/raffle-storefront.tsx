@@ -62,6 +62,14 @@ type RaffleAccountSummary = {
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const RAFFLE_TOKEN_KEY = "hubregional:raffleParticipantToken";
 
+function raffleImages(raffle: Raffle) {
+  const images = [
+    ...(raffle.imageUrls ?? []),
+    ...(raffle.featuredImageUrl ? [raffle.featuredImageUrl] : [])
+  ].filter(Boolean);
+  return Array.from(new Set(images));
+}
+
 async function publicRaffleJson<T>(path: string): Promise<T> {
   const separator = path.includes("?") ? "&" : "?";
   const response = await fetch(`/api${path}${separator}_=${Date.now()}`, {
@@ -123,9 +131,21 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
       }
 
       const payload = await publicRaffleJson<Raffle[]>("/public/raffles");
-      setRaffles(payload);
-      if (!initialSlug && payload[0]) {
-        setSelected(payload[0]);
+      const hydrated = await Promise.all(payload.map(async (raffle) => {
+        try {
+          const detail = await publicRaffleJson<Raffle>(`/public/raffles/${raffle.slug}`);
+          return {
+            ...raffle,
+            featuredImageUrl: detail.featuredImageUrl ?? raffle.featuredImageUrl,
+            imageUrls: raffleImages(detail).length ? raffleImages(detail) : raffleImages(raffle)
+          };
+        } catch {
+          return raffle;
+        }
+      }));
+      setRaffles(hydrated);
+      if (!initialSlug && hydrated[0]) {
+        setSelected(hydrated[0]);
       }
     };
 
@@ -198,8 +218,8 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
   }, [pixPayment?.orderId, pixPayment?.paid, selected?.id]);
 
   useEffect(() => {
-    if (!raffles.some((raffle) => (raffle.imageUrls?.filter(Boolean).length ?? 0) > 1)) return;
-    const interval = window.setInterval(() => setCarouselStep((current) => current + 1), 4000);
+    if (!raffles.some((raffle) => raffleImages(raffle).length > 1)) return;
+    const interval = window.setInterval(() => setCarouselStep((current) => current + 1), 3500);
     return () => window.clearInterval(interval);
   }, [raffles]);
 
@@ -338,16 +358,25 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
               <button key={raffle.id} onClick={() => setSelected(raffle)} className={`overflow-hidden rounded-[1.8rem] border text-left transition hover:-translate-y-1 ${selected?.id === raffle.id ? "border-orange-400 bg-orange-500/15" : "border-white/10 bg-white/10"}`}>
                 <div className="relative h-52 bg-slate-800">
                   {(() => {
-                    const images = raffle.imageUrls?.filter(Boolean).length ? raffle.imageUrls.filter(Boolean) : raffle.featuredImageUrl ? [raffle.featuredImageUrl] : [];
-                    const activeImage = images[carouselStep % Math.max(images.length, 1)];
-                    return activeImage
-                      ? <img key={activeImage} src={resolveAssetUrl(activeImage)} alt={`${raffle.title} - foto ${(carouselStep % images.length) + 1}`} className="h-full w-full object-cover" />
-                      : <div className="grid h-full place-items-center font-display text-4xl opacity-50">RIFA</div>;
+                    const images = raffleImages(raffle);
+                    if (!images.length) {
+                      return <div className="grid h-full place-items-center font-display text-4xl opacity-50">RIFA</div>;
+                    }
+                    const activeIndex = carouselStep % images.length;
+                    return images.map((image, index) => (
+                      <img
+                        key={image}
+                        src={resolveAssetUrl(image)}
+                        alt={`${raffle.title} - foto ${index + 1}`}
+                        loading={index === 0 ? "eager" : "lazy"}
+                        className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-700 ${index === activeIndex ? "opacity-100" : "opacity-0"}`}
+                      />
+                    ));
                   })()}
-                  {(raffle.imageUrls?.filter(Boolean).length ?? 0) > 1 && (
+                  {raffleImages(raffle).length > 1 && (
                     <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5" aria-label="Fotos da rifa">
-                      {raffle.imageUrls!.filter(Boolean).map((_, index) => (
-                        <span key={index} className={`h-1.5 rounded-full shadow ${index === carouselStep % raffle.imageUrls!.filter(Boolean).length ? "w-5 bg-white" : "w-1.5 bg-white/55"}`} />
+                      {raffleImages(raffle).map((_, index, images) => (
+                        <span key={index} className={`h-1.5 rounded-full shadow transition-all ${index === carouselStep % images.length ? "w-5 bg-white" : "w-1.5 bg-white/55"}`} />
                       ))}
                     </div>
                   )}
