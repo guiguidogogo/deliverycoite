@@ -13,6 +13,7 @@ import {
 import { processAutomaticRaffleById } from "../services/raffle-draw-service.js";
 import { dispatchWhatsappMessage } from "../services/whatsapp.js";
 import { env } from "../utils/env.js";
+import { isAllowedImageUrl, optionalImageUrl } from "../utils/image-url.js";
 import { prisma } from "../utils/prisma.js";
 import { getCompanyId } from "../utils/tenant.js";
 
@@ -35,8 +36,10 @@ const raffleSchema = z.object({
   maximumQuantity: z.coerce.number().int().min(1).max(1000).default(10),
   reservationMinutes: z.coerce.number().int().min(5, "A reserva precisa ter pelo menos 5 minutos").max(1440, "A reserva pode ter no maximo 24 horas").default(15),
   participantLimit: z.coerce.number().int().min(1).optional().nullable(),
-  featuredImageUrl: z.string().trim().url().optional().nullable().or(z.literal("")),
-  imageUrls: z.array(z.string().trim().url()).max(5, "Informe no maximo 5 imagens").optional(),
+  featuredImageUrl: optionalImageUrl(),
+  imageUrls: z.array(
+    z.string().trim().refine(isAllowedImageUrl, "Informe uma URL de imagem valida")
+  ).max(5, "Informe no maximo 5 imagens").optional(),
   videoUrl: z.string().trim().url().optional().nullable().or(z.literal("")),
   videoUrls: z.array(z.string().trim().url()).max(5, "Informe no maximo 5 videos").optional(),
   drawMode: drawModeSchema.default("MANUAL"),
