@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { api } from "../lib/api";
+import { api, resolveAssetUrl } from "../lib/api";
 import type { PublicCompany } from "../lib/types";
 
 type Raffle = {
@@ -13,6 +13,7 @@ type Raffle = {
   description?: string | null;
   prize?: string | null;
   featuredImageUrl?: string | null;
+  imageUrls?: string[];
   pricePerNumber: number;
   reservationMinutes?: number;
   totalNumbers: number;
@@ -105,7 +106,9 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
   const [numbersLoading, setNumbersLoading] = useState(false);
   const [loggedParticipant, setLoggedParticipant] = useState<RaffleAccountSummary["participant"] | null>(null);
   const [accountRequiredMessage, setAccountRequiredMessage] = useState("");
+  const [carouselStep, setCarouselStep] = useState(0);
   const notifiedPaidOrders = useRef<Set<string>>(new Set());
+  const numbersSectionRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -164,6 +167,14 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
   }, [selected]);
 
   useEffect(() => {
+    if (!initialSlug || !selected || selected.slug !== initialSlug) return;
+    const timer = window.setTimeout(() => {
+      numbersSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [initialSlug, selected]);
+
+  useEffect(() => {
     if (!pixPayment?.orderId || pixPayment.paid) return;
     const interval = window.setInterval(() => {
       api<{ paid: boolean; paymentStatus: string; status: string }>(`/public/raffles/orders/${pixPayment.orderId}/mercadopago/status`)
@@ -184,6 +195,12 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
     return () => window.clearInterval(interval);
   }, [pixPayment?.orderId, pixPayment?.paid, selected?.id]);
 
+  useEffect(() => {
+    if (!raffles.some((raffle) => (raffle.imageUrls?.filter(Boolean).length ?? 0) > 1)) return;
+    const interval = window.setInterval(() => setCarouselStep((current) => current + 1), 4000);
+    return () => window.clearInterval(interval);
+  }, [raffles]);
+
   const total = useMemo(() => selectedNumbers.length * (selected?.pricePerNumber ?? 0), [selectedNumbers, selected]);
 
   function toggleNumber(number: RaffleNumber) {
@@ -191,6 +208,15 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
     setSelectedNumbers((current) =>
       current.includes(number.id) ? current.filter((id) => id !== number.id) : [...current, number.id]
     );
+  }
+
+  function scrollToNumbers() {
+    numbersSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function goToRaffle(raffle: Raffle) {
+    setSelected(raffle);
+    window.setTimeout(scrollToNumbers, selected?.id === raffle.id ? 0 : 150);
   }
 
   function raffleUrl(raffle: Raffle) {
@@ -299,8 +325,21 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
           <div className="mt-5 grid gap-4 md:grid-cols-2">
             {raffles.map((raffle) => (
               <button key={raffle.id} onClick={() => setSelected(raffle)} className={`overflow-hidden rounded-[1.8rem] border text-left transition hover:-translate-y-1 ${selected?.id === raffle.id ? "border-orange-400 bg-orange-500/15" : "border-white/10 bg-white/10"}`}>
-                <div className="h-52 bg-slate-800">
-                  {raffle.featuredImageUrl ? <img src={raffle.featuredImageUrl} alt={raffle.title} className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center font-display text-4xl opacity-50">RIFA</div>}
+                <div className="relative h-52 bg-slate-800">
+                  {(() => {
+                    const images = raffle.imageUrls?.filter(Boolean).length ? raffle.imageUrls.filter(Boolean) : raffle.featuredImageUrl ? [raffle.featuredImageUrl] : [];
+                    const activeImage = images[carouselStep % Math.max(images.length, 1)];
+                    return activeImage
+                      ? <img key={activeImage} src={resolveAssetUrl(activeImage)} alt={`${raffle.title} - foto ${(carouselStep % images.length) + 1}`} className="h-full w-full object-cover" />
+                      : <div className="grid h-full place-items-center font-display text-4xl opacity-50">RIFA</div>;
+                  })()}
+                  {(raffle.imageUrls?.filter(Boolean).length ?? 0) > 1 && (
+                    <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5" aria-label="Fotos da rifa">
+                      {raffle.imageUrls!.filter(Boolean).map((_, index) => (
+                        <span key={index} className={`h-1.5 rounded-full shadow ${index === carouselStep % raffle.imageUrls!.filter(Boolean).length ? "w-5 bg-white" : "w-1.5 bg-white/55"}`} />
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="p-5">
                   <h3 className="text-2xl font-bold">{raffle.title}</h3>
@@ -313,8 +352,16 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
                     <span>{raffle.availableNumbers} disponiveis</span>
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">
-                    <Link href={`/rifas/${raffle.slug}`} onClick={(event) => event.stopPropagation()} className="rounded-xl bg-white px-4 py-2 text-sm font-bold text-ink">
-                      Abrir pagina
+                    <Link
+                      href={`/rifas/${raffle.slug}#numeros-da-rifa`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        event.preventDefault();
+                        goToRaffle(raffle);
+                      }}
+                      className="rounded-xl bg-white px-4 py-2 text-sm font-bold text-ink"
+                    >
+                      Ir para rifa
                     </Link>
                     <button type="button" onClick={(event) => { event.stopPropagation(); copyRaffleUrl(raffle); }} className="rounded-xl border border-white/25 px-4 py-2 text-sm font-bold text-white">
                       Copiar link
@@ -343,7 +390,7 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
               </div>
             </div>
 
-            <div className="mt-5 rounded-3xl border border-black/10 bg-slate-50 p-4">
+            <div id="numeros-da-rifa" ref={numbersSectionRef} className="mt-5 scroll-mt-5 rounded-3xl border border-black/10 bg-slate-50 p-4">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.25em] text-ember">Numeros da sorte</p>

@@ -20,6 +20,7 @@ type Raffle = {
   maximumQuantity: number;
   reservationMinutes: number;
   featuredImageUrl?: string | null;
+  imageUrls?: string[];
   _count?: { numbers: number; orders: number; participants: number };
 };
 
@@ -59,6 +60,7 @@ const initialForm = {
   maximumQuantity: 10,
   reservationMinutes: 15,
   featuredImageUrl: "",
+  imageUrls: [""],
   videoUrl: ""
 };
 
@@ -68,6 +70,8 @@ export default function AdminRafflesPage() {
   const [form, setForm] = useState(initialForm);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [editingImageRaffleId, setEditingImageRaffleId] = useState("");
+  const [editingImageUrls, setEditingImageUrls] = useState<string[]>([""]);
 
   const totalNumbers = useMemo(() => Math.max(0, Number(form.numberEnd) - Number(form.numberStart) + 1), [form.numberEnd, form.numberStart]);
 
@@ -95,11 +99,14 @@ export default function AdminRafflesPage() {
     }
     setSaving(true);
     try {
+      const imageUrls = form.imageUrls.map((url) => url.trim()).filter(Boolean).slice(0, 5);
       await adminApi("/admin/raffles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
+          featuredImageUrl: imageUrls[0] ?? "",
+          imageUrls,
           startsAt: form.startsAt ? new Date(form.startsAt).toISOString() : null,
           endsAt: form.endsAt ? new Date(form.endsAt).toISOString() : null
         })
@@ -131,6 +138,37 @@ export default function AdminRafflesPage() {
   }
 
   const update = (field: keyof typeof initialForm, value: string | number) => setForm((current) => ({ ...current, [field]: value }));
+  const updateFormImage = (index: number, value: string) => {
+    setForm((current) => ({
+      ...current,
+      imageUrls: current.imageUrls.map((url, currentIndex) => currentIndex === index ? value : url)
+    }));
+  };
+  const addFormImage = () => setForm((current) => current.imageUrls.length >= 5 ? current : { ...current, imageUrls: [...current.imageUrls, ""] });
+  const removeFormImage = (index: number) => setForm((current) => ({
+    ...current,
+    imageUrls: current.imageUrls.length <= 1 ? [""] : current.imageUrls.filter((_, currentIndex) => currentIndex !== index)
+  }));
+  const startEditingImages = (raffle: Raffle) => {
+    const images = raffle.imageUrls?.length ? raffle.imageUrls : raffle.featuredImageUrl ? [raffle.featuredImageUrl] : [""];
+    setEditingImageRaffleId(raffle.id);
+    setEditingImageUrls(images.slice(0, 5));
+  };
+  const saveEditingImages = async () => {
+    const imageUrls = editingImageUrls.map((url) => url.trim()).filter(Boolean).slice(0, 5);
+    try {
+      await adminApi(`/admin/raffles/${editingImageRaffleId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ featuredImageUrl: imageUrls[0] ?? "", imageUrls })
+      });
+      toast.success("Fotos da rifa atualizadas");
+      setEditingImageRaffleId("");
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao atualizar fotos");
+    }
+  };
   const paidOrders = orders.filter((order) => order.paymentStatus === "APPROVED" || order.status === "PAID").length;
   const pendingOrders = orders.filter((order) => ["RESERVED", "PENDING_PAYMENT"].includes(order.status)).length;
   const raffleUrl = (raffle: Raffle) => {
@@ -174,7 +212,18 @@ export default function AdminRafflesPage() {
             <Field label="Premio"><input className="input" value={form.prize} onChange={(e) => update("prize", e.target.value)} /></Field>
             <Field label="Descricao"><textarea className="input min-h-24" value={form.description} onChange={(e) => update("description", e.target.value)} /></Field>
             <Field label="Regulamento"><textarea className="input min-h-28" value={form.regulation} onChange={(e) => update("regulation", e.target.value)} /></Field>
-            <Field label="Imagem principal"><input className="input" placeholder="https://..." value={form.featuredImageUrl} onChange={(e) => update("featuredImageUrl", e.target.value)} /></Field>
+            <Field label="Fotos da rifa (ate 5)">
+              <div className="grid gap-2">
+                {form.imageUrls.map((url, index) => (
+                  <div key={index} className="grid gap-2 md:grid-cols-[1fr_auto]">
+                    <input className="input" placeholder={`URL da foto ${index + 1}`} value={url} onChange={(event) => updateFormImage(index, event.target.value)} />
+                    <button type="button" className="rounded-xl border border-red-200 px-3 py-2 text-sm font-bold text-red-600 disabled:opacity-40" disabled={form.imageUrls.length <= 1} onClick={() => removeFormImage(index)}>Remover</button>
+                  </div>
+                ))}
+                <button type="button" className="rounded-xl bg-ink px-3 py-2 text-sm font-bold text-white disabled:opacity-50" disabled={form.imageUrls.length >= 5} onClick={addFormImage}>+ Adicionar foto</button>
+                <span className="text-xs opacity-70">A primeira foto sera a capa. As demais alternam automaticamente na vitrine.</span>
+              </div>
+            </Field>
             <div className="grid gap-3 md:grid-cols-2">
               <Field label="Inicio"><input className="input" type="datetime-local" value={form.startsAt} onChange={(e) => update("startsAt", e.target.value)} /></Field>
               <Field label="Encerramento"><input className="input" type="datetime-local" value={form.endsAt} onChange={(e) => update("endsAt", e.target.value)} /></Field>
@@ -237,8 +286,24 @@ export default function AdminRafflesPage() {
                   {raffle.status !== "ACTIVE" && <button className="rounded-xl bg-emerald-700 px-3 py-2 text-sm font-bold text-white" onClick={() => void changeStatus(raffle.id, "ACTIVE")}>Publicar</button>}
                   {raffle.status === "ACTIVE" && <button className="rounded-xl bg-amber-600 px-3 py-2 text-sm font-bold text-white" onClick={() => void changeStatus(raffle.id, "PAUSED")}>Pausar</button>}
                   <button className="rounded-xl border px-3 py-2 text-sm font-bold" onClick={() => void changeStatus(raffle.id, "FINISHED")}>Finalizar</button>
+                  <button type="button" className="rounded-xl border border-orange-300 px-3 py-2 text-sm font-bold" onClick={() => startEditingImages(raffle)}>Editar fotos</button>
                   <span className="rounded-xl bg-slate-100 px-3 py-2 font-mono text-xs dark:bg-slate-800">/rifas/{raffle.slug}</span>
                 </div>
+                {editingImageRaffleId === raffle.id && (
+                  <div className="mt-3 grid gap-2 rounded-2xl bg-orange-50 p-3 text-ink">
+                    {editingImageUrls.map((url, index) => (
+                      <div key={index} className="grid gap-2 md:grid-cols-[1fr_auto]">
+                        <input className="input bg-white" placeholder={`URL da foto ${index + 1}`} value={url} onChange={(event) => setEditingImageUrls((current) => current.map((item, currentIndex) => currentIndex === index ? event.target.value : item))} />
+                        <button type="button" className="rounded-xl border border-red-200 px-3 py-2 text-sm font-bold text-red-600" onClick={() => setEditingImageUrls((current) => current.length <= 1 ? [""] : current.filter((_, currentIndex) => currentIndex !== index))}>Remover</button>
+                      </div>
+                    ))}
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" className="rounded-xl border px-3 py-2 text-sm font-bold disabled:opacity-50" disabled={editingImageUrls.length >= 5} onClick={() => setEditingImageUrls((current) => [...current, ""])}>+ Foto</button>
+                      <button type="button" className="rounded-xl bg-ember px-3 py-2 text-sm font-bold text-white" onClick={() => void saveEditingImages()}>Salvar fotos</button>
+                      <button type="button" className="rounded-xl px-3 py-2 text-sm font-bold" onClick={() => setEditingImageRaffleId("")}>Cancelar</button>
+                    </div>
+                  </div>
+                )}
                 <div className="mt-3 rounded-2xl border border-orange-200 bg-orange-50 p-3 text-sm text-orange-950">
                   <p className="text-xs font-black uppercase tracking-[0.25em] text-orange-700">Divulgacao</p>
                   <p className="mt-1 break-all font-mono text-xs">{raffleUrl(raffle)}</p>
