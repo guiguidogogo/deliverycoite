@@ -107,6 +107,7 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
   const [loggedParticipant, setLoggedParticipant] = useState<RaffleAccountSummary["participant"] | null>(null);
   const [accountRequiredMessage, setAccountRequiredMessage] = useState("");
   const [carouselStep, setCarouselStep] = useState(0);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
   const notifiedPaidOrders = useRef<Set<string>>(new Set());
   const numbersSectionRef = useRef<HTMLDivElement | null>(null);
 
@@ -158,6 +159,7 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
     if (!selected) return;
     setSelectedNumbers([]);
     setPixPayment(null);
+    setCheckoutOpen(false);
     setNumbers([]);
     setNumbersLoading(true);
     publicRaffleJson<RaffleNumber[]>(`/public/raffles/${selected.id}/numbers`)
@@ -212,6 +214,15 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
 
   function scrollToNumbers() {
     numbersSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function openCheckout() {
+    if (selectedNumbers.length === 0) {
+      toast.error("Escolha pelo menos um numero para continuar");
+      scrollToNumbers();
+      return;
+    }
+    setCheckoutOpen(true);
   }
 
   function goToRaffle(raffle: Raffle) {
@@ -384,9 +395,14 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
                   Link de divulgacao: {typeof window === "undefined" ? `/rifas/${selected.slug}` : raffleUrl(selected)}
                 </p>
               </div>
-              <div className="rounded-2xl bg-slate-100 px-4 py-3 text-right">
+              <div className="flex flex-col items-stretch gap-2 sm:items-end">
+                <div className="rounded-2xl bg-slate-100 px-4 py-3 text-right">
                 <p className="text-xs opacity-60">Selecionado</p>
                 <strong>{selectedNumbers.length} numero(s) • {BRL.format(total)}</strong>
+                </div>
+                <button type="button" onClick={scrollToNumbers} className="rounded-xl bg-ink px-4 py-2 text-sm font-bold text-white">
+                  Escolher numeros
+                </button>
               </div>
             </div>
 
@@ -436,7 +452,39 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
               )}
             </div>
 
-            {selectedNumbers.length > 0 && (
+            {checkoutOpen && (
+              <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm md:items-center md:p-6" onClick={() => setCheckoutOpen(false)}>
+                <div className="max-h-[92vh] w-full overflow-y-auto rounded-t-[2rem] bg-white p-5 shadow-2xl md:max-w-3xl md:rounded-[2rem] md:p-7" onClick={(event) => event.stopPropagation()}>
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.3em] text-ember">Resumo da compra</p>
+                      <h3 className="text-2xl font-bold">{selected.title}</h3>
+                      <p className="mt-1 text-sm text-slate-500">Confira seus numeros e prossiga para o pagamento.</p>
+                    </div>
+                    <button type="button" onClick={() => setCheckoutOpen(false)} className="rounded-xl bg-slate-100 px-4 py-2 font-bold text-slate-700">
+                      Fechar
+                    </button>
+                  </div>
+
+                  <div className="mt-4 rounded-2xl bg-ink p-4 text-white">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm opacity-70">Numeros escolhidos</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {numbers
+                            .filter((number) => selectedNumbers.includes(number.id))
+                            .map((number) => (
+                              <span key={number.id} className="rounded-lg bg-white/15 px-3 py-1 text-sm font-bold">
+                                {number.formattedNumber}
+                              </span>
+                            ))}
+                        </div>
+                      </div>
+                      <strong className="text-xl">{BRL.format(total)}</strong>
+                    </div>
+                  </div>
+
+                  {selectedNumbers.length > 0 && (
               <div className="mt-5 rounded-2xl border border-black/10 bg-slate-50 p-4">
                 <p className="text-xs font-bold uppercase tracking-[0.3em] text-ember">Cadastro do participante</p>
                 {loggedParticipant ? (
@@ -555,6 +603,23 @@ export function RaffleStorefront({ company, initialSlug }: { company: PublicComp
                 </div>
                 <button className="rounded-xl bg-ember px-5 py-3 font-bold disabled:opacity-60" disabled={reserving} onClick={() => void reserveNumbers()}>
                   {reserving ? "Gerando Pix..." : "Reservar e pagar Pix"}
+                </button>
+              </div>
+            </div>
+                </div>
+              </div>
+            )}
+
+            <div className="sticky bottom-3 mt-6 rounded-2xl bg-ink p-4 text-white shadow-xl">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm opacity-70">
+                    {selectedNumbers.length > 0 ? "Confira os numeros escolhidos e continue para o pagamento." : "Escolha um ou mais numeros disponiveis."}
+                  </p>
+                  <strong>{selectedNumbers.length} numero(s) selecionado(s) &bull; {BRL.format(total)}</strong>
+                </div>
+                <button type="button" className="rounded-xl bg-ember px-5 py-3 font-bold disabled:cursor-not-allowed disabled:opacity-50" disabled={selectedNumbers.length === 0} onClick={openCheckout}>
+                  Continuar para pagamento
                 </button>
               </div>
             </div>
