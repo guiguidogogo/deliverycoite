@@ -33,6 +33,21 @@ export class CaixaLotteryError extends Error {
   }
 }
 
+export function isTransientCaixaHttpStatus(status: number) {
+  return status === 404 || status === 408 || status === 429 || status >= 500;
+}
+
+function caixaRequestHeaders() {
+  return {
+    accept: "application/json, text/plain, */*",
+    "accept-language": "pt-BR,pt;q=0.9",
+    "cache-control": "no-cache",
+    pragma: "no-cache",
+    referer: "https://loterias.caixa.gov.br/",
+    "user-agent": env.caixaLotteryUserAgent
+  };
+}
+
 export function normalizeCaixaModality(value?: string | null) {
   return (value ?? "")
     .trim()
@@ -149,9 +164,16 @@ export async function fetchCaixaLotteryResult(modalityInput: string, contestNumb
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), env.caixaLotteryTimeoutMs);
   try {
-    const response = await fetch(url, { signal: controller.signal, headers: { accept: "application/json" } });
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: caixaRequestHeaders()
+    });
     if (!response.ok) {
-      throw new CaixaLotteryError(`CAIXA retornou HTTP ${response.status}.`, response.status >= 500 || response.status === 404);
+      const detail =
+        response.status === 403
+          ? "A CAIXA recusou a consulta automatica deste servidor (HTTP 403). O sistema interrompeu as repeticoes; tente novamente mais tarde."
+          : `CAIXA retornou HTTP ${response.status}.`;
+      throw new CaixaLotteryError(detail, isTransientCaixaHttpStatus(response.status));
     }
 
     const text = await response.text();

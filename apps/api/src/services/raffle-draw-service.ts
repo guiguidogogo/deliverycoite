@@ -10,6 +10,7 @@ import { env } from "../utils/env.js";
 import { prisma } from "../utils/prisma.js";
 
 const PROCESSABLE_DRAW_STATUSES = ["SCHEDULED", "WAITING_CONTEST", "WAITING_RESULT", "ERROR"] as const;
+const AUTOMATIC_RETRY_DRAW_STATUSES = ["SCHEDULED", "WAITING_CONTEST", "WAITING_RESULT"] as const;
 
 function publicParticipantName(name?: string | null) {
   if (!name) return null;
@@ -55,7 +56,8 @@ async function markDrawError(raffleId: string, error: unknown) {
     where: { id: raffleId },
     select: { drawAttemptCount: true }
   });
-  const shouldRetry = (raffle?.drawAttemptCount ?? 0) < env.raffleDrawMaxAttempts;
+  const transient = !(error instanceof CaixaLotteryError) || error.transient;
+  const shouldRetry = transient && (raffle?.drawAttemptCount ?? 0) < env.raffleDrawMaxAttempts;
   await prisma.raffle.update({
     where: { id: raffleId },
     data: {
@@ -200,7 +202,7 @@ export async function processDueAutomaticRaffles(limit = 20) {
   const raffles = await prisma.raffle.findMany({
     where: {
       drawMode: "AUTOMATIC_CAIXA",
-      drawStatus: { in: [...PROCESSABLE_DRAW_STATUSES] },
+      drawStatus: { in: [...AUTOMATIC_RETRY_DRAW_STATUSES] },
       drawScheduledAt: { lte: new Date() },
       OR: [{ drawLastAttemptAt: null }, { drawLastAttemptAt: { lte: retryBefore } }],
       drawAttemptCount: { lt: env.raffleDrawMaxAttempts }

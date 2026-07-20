@@ -51,6 +51,12 @@ export const env = {
   get caixaLotteryTimeoutMs() {
     return Number(process.env.CAIXA_LOTTERY_TIMEOUT_MS ?? 10000);
   },
+  get caixaLotteryUserAgent() {
+    return (
+      process.env.CAIXA_LOTTERY_USER_AGENT ??
+      "Mozilla/5.0 (compatible; HubRegional/1.0; +https://hubregional.com.br)"
+    );
+  },
   get raffleDrawJobEnabled() {
     return (process.env.RAFFLE_DRAW_JOB_ENABLED ?? "false").toLowerCase() === "true";
   },
