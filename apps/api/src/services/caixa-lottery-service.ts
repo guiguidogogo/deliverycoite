@@ -38,7 +38,7 @@ export function isTransientCaixaHttpStatus(status: number) {
 }
 
 function caixaRequestHeaders() {
-  return {
+  const headers: Record<string, string> = {
     accept: "application/json, text/plain, */*",
     "accept-language": "pt-BR,pt;q=0.9",
     "cache-control": "no-cache",
@@ -46,6 +46,10 @@ function caixaRequestHeaders() {
     referer: "https://loterias.caixa.gov.br/",
     "user-agent": env.caixaLotteryUserAgent
   };
+  if (env.caixaLotteryRelayToken) {
+    headers["x-caixa-relay-token"] = env.caixaLotteryRelayToken;
+  }
+  return headers;
 }
 
 export function normalizeCaixaModality(value?: string | null) {

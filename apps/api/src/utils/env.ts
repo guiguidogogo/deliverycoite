@@ -57,6 +57,9 @@ export const env = {
       "Mozilla/5.0 (compatible; HubRegional/1.0; +https://hubregional.com.br)"
     );
   },
+  get caixaLotteryRelayToken() {
+    return process.env.CAIXA_LOTTERY_RELAY_TOKEN?.trim() ?? "";
+  },
   get raffleDrawJobEnabled() {
     return (process.env.RAFFLE_DRAW_JOB_ENABLED ?? "false").toLowerCase() === "true";
   },
