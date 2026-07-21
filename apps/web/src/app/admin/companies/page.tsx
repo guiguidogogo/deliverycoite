@@ -68,6 +68,7 @@ export default function CompaniesPage() {
           <h1 className="font-display text-4xl">Empresas</h1>
         </div>
         <div className="flex gap-2">
+          <a className="rounded-xl bg-violet-700 px-4 py-2 text-white" href="/admin/apps">Gerenciador de Apps</a>
           <Link className="rounded-xl bg-ink px-4 py-2 text-white" href="/admin/companies/new">Nova empresa</Link>
         </div>
       </div>
@@ -110,6 +111,7 @@ export default function CompaniesPage() {
                 <p className="mt-1 text-xs opacity-60">Admin: {company.users[0]?.email ?? "Nao encontrado"}</p>
               </div>
               <div className="flex gap-2">
+                <a className="rounded-xl bg-violet-700 px-3 py-2 text-sm text-white" href={`/admin/apps?companyId=${company.id}`}>Vender app</a>
                 <button className={`rounded-xl px-3 py-2 text-sm text-white ${company.active ? "bg-red-600" : "bg-emerald-600"}`} onClick={() => void toggle(company)}>
                   {company.active ? "Desativar" : "Ativar"}
                 </button>

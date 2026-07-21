@@ -173,6 +173,19 @@ import { driverAuth } from "../middlewares/driver-auth.js";
 import { persistentImageUpload } from "../utils/upload.js";
 import { asyncHandler } from "../utils/async-handler.js";
 import { resolveCompany } from "../utils/tenant.js";
+import {
+  acknowledgePairing,
+  activatePairing,
+  createAppSubscription,
+  createPairing,
+  getPairing,
+  getPairingQr,
+  getPairingStatus,
+  listAppSubscriptions,
+  regenerateActivationCode,
+  updateAppDevice,
+  updateAppSubscription
+} from "../controllers/apps-controller.js";
 
 export const router = Router();
 router.use(asyncHandler(resolveCompany));
@@ -193,6 +206,12 @@ const route = {
 };
 
 route.post("/auth/login", login);
+route.post("/pairings", createPairing);
+route.get("/pairings/:code", getPairing);
+route.get("/pairings/:code/qr", getPairingQr);
+route.post("/pairings/:code/activate", activatePairing);
+route.get("/pairings/:code/status", getPairingStatus);
+route.post("/pairings/:code/ack", acknowledgePairing);
 route.get("/marketplace/assets/:id", getPersistentImage);
 route.get("/marketplace/companies", listMarketplaceCompanies);
 route.get("/marketplace/summary", marketplaceSummary);
@@ -261,6 +280,11 @@ route.post("/admin/companies", requireSuperAdmin, createCompany);
 route.get("/admin/companies/:id", requireSuperAdmin, getCompany);
 route.patch("/admin/companies/:id", requireSuperAdmin, updateCompany);
 route.patch("/admin/companies/:id/status", requireSuperAdmin, updateCompanyStatus);
+route.get("/admin/apps", requireSuperAdmin, listAppSubscriptions);
+route.post("/admin/apps", requireSuperAdmin, createAppSubscription);
+route.patch("/admin/apps/:id", requireSuperAdmin, updateAppSubscription);
+route.post("/admin/apps/:id/activation-code", requireSuperAdmin, regenerateActivationCode);
+route.patch("/admin/apps/:id/devices/:deviceId", requireSuperAdmin, updateAppDevice);
 route.get("/admin/settings", requirePermission("SETTINGS"), getSettings);
 route.patch("/admin/me", updateCurrentStaff);
 route.patch("/admin/password", changeStaffPassword);

@@ -44,5 +44,15 @@ export const env = {
     if (derived) return derived;
 
     return "hubregional.com.br";
+  },
+  get iptvCredentialsKey() {
+    const value = (process.env.IPTV_CREDENTIALS_KEY ?? "").trim();
+    if (value.length < 32) {
+      throw new Error("IPTV_CREDENTIALS_KEY deve possuir pelo menos 32 caracteres");
+    }
+    return value;
+  },
+  get iptvPairingWebUrl() {
+    return (process.env.IPTV_PAIRING_WEB_URL ?? `https://${this.rootDomain}`).replace(/\/$/, "");
   }
 };
