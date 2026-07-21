@@ -52,9 +52,14 @@ async function bootstrap() {
   loadEnvFile();
   const environment = (process.env.APP_ENV ?? process.env.NODE_ENV ?? "").toLowerCase();
   if (environment !== "production") {
-    console.log("DEV detected: applying migrations and seed before starting the API.");
+    console.log("DEV detected: applying migrations before starting the API.");
     runPackageScript("migrate:multiempresa:test");
-    runPackageScript("prisma:seed");
+    if (process.env.RUN_SEED_ON_START === "true") {
+      console.log("RUN_SEED_ON_START enabled: applying development seed.");
+      runPackageScript("prisma:seed");
+    } else {
+      console.log("Development seed skipped. Set RUN_SEED_ON_START=true to run it explicitly.");
+    }
   }
   await prisma.$connect();
 
