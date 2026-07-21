@@ -68,5 +68,15 @@ export const env = {
   },
   get raffleDrawMaxAttempts() {
     return Number(process.env.RAFFLE_DRAW_MAX_ATTEMPTS ?? 288);
+  },
+  get iptvCredentialsKey() {
+    const value = (process.env.IPTV_CREDENTIALS_KEY ?? "").trim();
+    if (value.length < 32) {
+      throw new Error("IPTV_CREDENTIALS_KEY deve possuir pelo menos 32 caracteres");
+    }
+    return value;
+  },
+  get iptvPairingWebUrl() {
+    return (process.env.IPTV_PAIRING_WEB_URL ?? `https://${this.rootDomain}`).replace(/\/$/, "");
   }
 };

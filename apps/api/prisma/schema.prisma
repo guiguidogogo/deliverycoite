@@ -151,6 +151,17 @@ enum RaffleDrawStatus {
   ERROR
 }
 
+enum AppProduct {
+  GUIGUI_PLAYER
+}
+
+enum AppPairingStatus {
+  PENDING
+  PAIRED
+  ACKNOWLEDGED
+  EXPIRED
+}
+
 model User {
   id             String          @id @default(cuid())
   name           String
@@ -259,6 +270,7 @@ model Company {
   raffleOrders           RaffleOrder[]
   rafflePayments         RafflePayment[]
   raffleAuditLogs        RaffleAuditLog[]
+  appSubscriptions       AppSubscription[]
 }
 
 model CompanyBusinessHour {
@@ -285,6 +297,72 @@ model CompanyBusinessHourPeriod {
   updatedAt      DateTime            @updatedAt
 
   @@index([businessHourId])
+}
+
+model AppSubscription {
+  id                 String          @id @default(cuid())
+  companyId          String
+  company            Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  product            AppProduct      @default(GUIGUI_PLAYER)
+  active             Boolean         @default(true)
+  startsAt           DateTime        @default(now())
+  expiresAt          DateTime?
+  maxDevices         Int             @default(1)
+  activationCodeHash String          @unique
+  credentials        AppIptvCredentials?
+  devices            AppDevice[]
+  pairings           AppPairing[]
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  @@index([companyId, active])
+  @@index([product, active, expiresAt])
+}
+
+model AppIptvCredentials {
+  id                   String          @id @default(cuid())
+  subscriptionId       String          @unique
+  subscription         AppSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  serverEncrypted      String
+  usernameEncrypted    String
+  passwordEncrypted    String
+  updatedAt            DateTime        @updatedAt
+  createdAt            DateTime        @default(now())
+}
+
+model AppDevice {
+  id             String          @id @default(cuid())
+  subscriptionId String
+  subscription   AppSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  deviceIdHash   String
+  label          String?
+  active         Boolean         @default(true)
+  activatedAt    DateTime        @default(now())
+  lastSeenAt     DateTime        @default(now())
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@unique([subscriptionId, deviceIdHash])
+  @@index([subscriptionId, active])
+  @@index([deviceIdHash])
+}
+
+model AppPairing {
+  id             String            @id @default(cuid())
+  code           String            @unique
+  deviceIdHash   String
+  status         AppPairingStatus  @default(PENDING)
+  subscriptionId String?
+  subscription   AppSubscription?  @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  expiresAt      DateTime
+  pairedAt       DateTime?
+  acknowledgedAt DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([deviceIdHash, status])
+  @@index([subscriptionId, status])
+  @@index([expiresAt])
 }
 
 model StaffRole {
