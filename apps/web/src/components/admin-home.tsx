@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { adminApi, type AdminUser } from "../lib/admin-api";
 import { AdminPanel } from "./admin-panel";
 import { RaffleAdminPanel } from "./raffle-admin-panel";
+import { IptvAdminPanel } from "./iptv-admin-panel";
 
 type AdminUserWithCompany = AdminUser & {
   company?: {
@@ -22,6 +23,12 @@ function isRaffleCompany(user: AdminUserWithCompany | null) {
   const category = user?.company?.category?.trim().toLowerCase() ?? "";
 
   return businessType === "RAFFLE" || category.includes("rifa");
+}
+
+function isIptvCompany(user: AdminUserWithCompany | null) {
+  const businessType = user?.company?.businessType?.trim().toUpperCase();
+  const category = user?.company?.category?.trim().toLowerCase() ?? "";
+  return businessType === "IPTV" || category === "app";
 }
 
 export function AdminHome() {
@@ -45,6 +52,10 @@ export function AdminHome() {
 
   if (isRaffleCompany(user)) {
     return <RaffleAdminPanel />;
+  }
+
+  if (isIptvCompany(user)) {
+    return <IptvAdminPanel />;
   }
 
   return <AdminPanel />;

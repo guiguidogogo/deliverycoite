@@ -202,6 +202,7 @@ import {
   acknowledgePairing,
   activatePairing,
   createAppSubscription,
+  getMyAppSubscription,
   createPairing,
   getPairing,
   getPairingQr,
@@ -209,6 +210,7 @@ import {
   listAppSubscriptions,
   regenerateActivationCode,
   updateAppDevice,
+  updateMyAppDevice,
   updateAppSubscription
 } from "../controllers/apps-controller.js";
 
@@ -313,6 +315,8 @@ route.post("/printer-agent/test", getPrinterAgentTestReceipt);
 
 router.use(auth());
 route.get("/admin/me", getCurrentStaff);
+route.get("/admin/my-app", getMyAppSubscription);
+route.patch("/admin/my-app/devices/:deviceId", updateMyAppDevice);
 route.get("/admin/companies/subdomain", requireSuperAdmin, generateCompanySubdomain);
 route.post("/admin/companies/upload", requireSuperAdmin, persistentImageUpload.single("image"), uploadPersistentImage);
 route.get("/admin/companies", requireSuperAdmin, listCompanies);

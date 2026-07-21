@@ -11,6 +11,8 @@ type Session = {
   company: {
     tradeName: string;
     subdomain: string;
+    businessType?: string;
+    category?: string | null;
   } | null;
 };
 export function AdminSessionBar() {
@@ -48,7 +50,7 @@ export function AdminSessionBar() {
     <aside className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-2 border-b border-black/10 bg-white/95 px-4 py-2 text-sm shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-950/95">
       <div>
         <strong>{session.role === "SUPER_ADMIN" ? "HubRegional • Painel Master" : session.company?.tradeName}</strong>
-        {session.company && (
+        {session.company && session.company.businessType !== "IPTV" && session.company.category?.trim().toLowerCase() !== "app" && (
           <span className="ml-2 opacity-60">
             {session.company.subdomain}.{rootDomain}
           </span>

@@ -114,6 +114,40 @@ export async function listAppSubscriptions(req: Request, res: Response) {
   return res.json(subscriptions.map(publicSubscription));
 }
 
+export async function getMyAppSubscription(req: Request, res: Response) {
+  const companyId = req.user?.companyId;
+  if (!companyId) return res.status(403).json({ message: "Acesso disponivel somente para empresas" });
+
+  const company = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: { businessType: true, category: true }
+  });
+  const isIptv = company?.businessType === "IPTV" || company?.category.trim().toLowerCase() === "app";
+  if (!isIptv) return res.status(403).json({ message: "Esta empresa nao pertence ao modulo IPTV" });
+
+  const subscription = await prisma.appSubscription.findFirst({
+    where: { companyId, product: "GUIGUI_PLAYER" },
+    include: subscriptionInclude,
+    orderBy: { createdAt: "desc" }
+  });
+  return res.json(subscription ? publicSubscription(subscription) : null);
+}
+
+export async function updateMyAppDevice(req: Request, res: Response) {
+  const companyId = req.user?.companyId;
+  if (!companyId) return res.status(403).json({ message: "Acesso disponivel somente para empresas" });
+  const body = z.object({ active: z.boolean() }).parse(req.body);
+  const device = await prisma.appDevice.findFirst({
+    where: { id: req.params.deviceId, subscription: { companyId, product: "GUIGUI_PLAYER" } }
+  });
+  if (!device) return res.status(404).json({ message: "Aparelho nao encontrado" });
+  return res.json(await prisma.appDevice.update({
+    where: { id: device.id },
+    data: { active: body.active },
+    select: { id: true, label: true, active: true, activatedAt: true, lastSeenAt: true }
+  }));
+}
+
 export async function createAppSubscription(req: Request, res: Response) {
   const body = createSubscriptionSchema.parse(req.body);
   const company = await prisma.company.findUnique({ where: { id: body.companyId }, select: { id: true } });

@@ -26,12 +26,12 @@ export default function NewCompanyPage() {
         includeAdmin
         submitLabel="Criar empresa e administrador"
         onSubmit={async (value) => {
-          const company = await adminApi<{ id: string }>("/admin/companies", {
+          const company = await adminApi<{ id: string; businessType: string }>("/admin/companies", {
             method: "POST",
             body: JSON.stringify(value)
           });
           toast.success("Empresa e administrador criados");
-          router.push(`/admin/companies/${company.id}`);
+          router.push(company.businessType === "IPTV" ? `/admin/apps?companyId=${company.id}` : `/admin/companies/${company.id}`);
         }}
       />
     </main>

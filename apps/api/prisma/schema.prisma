@@ -90,6 +90,7 @@ enum BusinessType {
   CLINIC
   SERVICES
   RAFFLE
+  IPTV
 }
 
 enum RaffleStatus {

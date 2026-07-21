@@ -15,7 +15,8 @@ const businessTypes = [
   "MARKET",
   "CLINIC",
   "SERVICES",
-  "RAFFLE"
+  "RAFFLE",
+  "IPTV"
 ] as const;
 
 const optionalText = z.preprocess(
@@ -143,12 +144,17 @@ function companyData(data: z.infer<typeof companySchema>) {
       message: "Este subdominio e reservado pelo sistema"
     }]);
   }
-  const category = data.category?.trim() || "Lanches";
-  const businessType = category.toLowerCase() === "rifas" ? "RAFFLE" : data.businessType;
+  const selectedCategory = data.category?.trim() || "Lanches";
+  const categoryKey = selectedCategory.toLowerCase();
+  const isIptv = data.businessType === "IPTV" || categoryKey === "app";
+  const isRaffle = !isIptv && (data.businessType === "RAFFLE" || categoryKey === "rifas");
+  const category = isIptv ? "App" : isRaffle ? "Rifas" : selectedCategory;
+  const businessType = isIptv ? "IPTV" : isRaffle ? "RAFFLE" : data.businessType;
   return {
     ...data,
     businessType,
     category,
+    ...(isIptv ? { marketplaceVisible: false, featured: false, isOpen: false } : {}),
     cnpj: onlyDigits(data.cnpj),
     phone: onlyDigits(data.phone),
     whatsapp: onlyDigits(data.whatsapp),
@@ -343,9 +349,11 @@ export async function updateCompany(req: Request, res: Response) {
   if (!existing) return res.status(404).json({ message: "Empresa nao encontrada" });
   const body = companySchema.partial().parse(req.body);
   const nextCategory = body.category ?? existing.category;
-  const nextBusinessType = nextCategory.toLowerCase() === "rifas"
-    ? "RAFFLE"
-    : (body.businessType ?? existing.businessType);
+  const nextBusinessType = nextCategory.toLowerCase() === "app"
+    ? "IPTV"
+    : nextCategory.toLowerCase() === "rifas"
+      ? "RAFFLE"
+      : (body.businessType ?? existing.businessType);
   const merged = companyData({
     companyName: body.companyName ?? existing.companyName,
     tradeName: body.tradeName ?? existing.tradeName,

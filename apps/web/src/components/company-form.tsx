@@ -22,7 +22,7 @@ export type CompanyFormValue = {
   active: boolean;
   marketplaceVisible: boolean;
   featured: boolean;
-  businessType: "FOOD" | "EVENTS" | "BARBERSHOP" | "BEAUTY_SALON" | "PHARMACY" | "MARKET" | "CLINIC" | "SERVICES" | "RAFFLE";
+  businessType: "FOOD" | "EVENTS" | "BARBERSHOP" | "BEAUTY_SALON" | "PHARMACY" | "MARKET" | "CLINIC" | "SERVICES" | "RAFFLE" | "IPTV";
   category: string;
   city: string;
   isOpen: boolean;
@@ -79,6 +79,7 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
   const [subdomainEdited, setSubdomainEdited] = useState(false);
   const [uploading, setUploading] = useState<"logoUrl" | "faviconUrl" | null>(null);
   const rootDomain = getBrowserRootDomain();
+  const isIptv = form.businessType === "IPTV" || form.category.trim().toLowerCase() === "app";
 
   useEffect(() => {
     setForm({ ...emptyCompany, ...initialValue });
@@ -275,8 +276,8 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
       </section>
 
       <section className="rounded-2xl border border-black/10 bg-white/85 p-5 dark:border-white/10 dark:bg-slate-900/70">
-        <h2 className="text-xl font-bold">Marketplace regional</h2>
-        <p className="text-sm opacity-70">Informações exibidas no catálogo público do HubRegional.</p>
+        <h2 className="text-xl font-bold">Categoria e módulo</h2>
+        <p className="text-sm opacity-70">Escolha App e IPTV para usar a administração exclusiva do GuiGuiPlayer.</p>
         <div className="mt-4 grid gap-3 md:grid-cols-2">
           <label className="grid gap-1 text-sm">
             <span className="font-semibold">Categoria</span>
@@ -286,10 +287,15 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
               onChange={(event) => setForm((value) => ({
                 ...value,
                 category: event.target.value,
-                businessType: event.target.value === "Rifas" ? "RAFFLE" : value.businessType
+                businessType: event.target.value === "App"
+                  ? "IPTV"
+                  : event.target.value === "Rifas"
+                    ? "RAFFLE"
+                    : value.businessType === "IPTV" || value.businessType === "RAFFLE" ? "FOOD" : value.businessType,
+                ...(event.target.value === "App" ? { marketplaceVisible: false, featured: false, isOpen: false } : {})
               }))}
             >
-              {["Lanches", "Pizzaria", "Açaí", "Marmitas", "Sushi", "Conveniência", "Farmácia", "Mercado", "Rifas"].map((category) => (
+              {["Lanches", "Pizzaria", "Açaí", "Marmitas", "Sushi", "Conveniência", "Farmácia", "Mercado", "Rifas", "App"].map((category) => (
                 <option key={category} value={category}>{category}</option>
               ))}
             </select>
@@ -302,12 +308,18 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
               onChange={(event) => setForm((value) => ({
                 ...value,
                 businessType: event.target.value as CompanyFormValue["businessType"],
-                category: event.target.value === "RAFFLE" ? "Rifas" : value.category
+                category: event.target.value === "IPTV"
+                  ? "App"
+                  : event.target.value === "RAFFLE"
+                    ? "Rifas"
+                    : value.category === "App" || value.category === "Rifas" ? "Lanches" : value.category,
+                ...(event.target.value === "IPTV" ? { marketplaceVisible: false, featured: false, isOpen: false } : {})
               }))}
             >
               <option value="FOOD">Delivery / Restaurante</option>
               <option value="EVENTS">Shows e Eventos</option>
               <option value="RAFFLE">Rifas</option>
+              <option value="IPTV">IPTV</option>
               <option value="BARBERSHOP">Barbearia</option>
               <option value="BEAUTY_SALON">Salao de beleza</option>
               <option value="PHARMACY">Farmacia</option>
@@ -316,11 +328,17 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
               <option value="SERVICES">Servicos</option>
             </select>
           </label>
+          {isIptv ? (
+            <div className="rounded-2xl border border-violet-300 bg-violet-50 p-4 text-sm text-violet-950 md:col-span-2 dark:border-violet-700 dark:bg-violet-950 dark:text-violet-50">
+              <p className="font-bold">Administração GuiGuiPlayer</p>
+              <p className="mt-1">Esta empresa não aparecerá como loja no marketplace. O administrador verá somente licença, configuração IPTV e aparelhos vinculados.</p>
+            </div>
+          ) : <>
           {input("city", "Cidade", { required: true })}
           {input("deliveryFee", "Taxa de entrega (R$)", { type: "number", required: true })}
           {input("deliveryTimeMin", "Tempo médio (minutos)", { type: "number", required: true })}
           {input("rating", "Avaliação inicial", { type: "number", required: true })}
-          <div className="grid gap-2">
+          <div className="grid gap-2 md:col-span-2">
             <label className="flex items-center gap-2 rounded-xl border border-black/10 px-3 py-2 dark:border-white/20">
               <input
                 type="checkbox"
@@ -346,6 +364,7 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
               Loja aberta no marketplace
             </label>
           </div>
+          </>}
         </div>
       </section>
 
@@ -379,7 +398,7 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
         </p>
       </section>
 
-      <section className="rounded-2xl border border-black/10 bg-white/85 p-5 dark:border-white/10 dark:bg-slate-900/70">
+      {!isIptv && <section className="rounded-2xl border border-black/10 bg-white/85 p-5 dark:border-white/10 dark:bg-slate-900/70">
         <h2 className="text-xl font-bold">Mercado Pago</h2>
         <p className="text-sm opacity-70">Credenciais e ativacao do pagamento online desta empresa.</p>
         <div className="mt-4 grid gap-3">
@@ -394,7 +413,7 @@ export function CompanyForm({ initialValue, includeAdmin = false, submitLabel, o
           {input("mercadoPagoPublicKey", "Public Key", { placeholder: "APP_USR-..." })}
           {input("mercadoPagoAccessToken", "Access Token", { type: "password", placeholder: "APP_USR-..." })}
         </div>
-      </section>
+      </section>}
 
       {includeAdmin && (
         <section className="rounded-2xl border border-black/10 bg-white/85 p-5 dark:border-white/10 dark:bg-slate-900/70">
