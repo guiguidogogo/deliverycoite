@@ -381,16 +381,33 @@ export async function regenerateActivationCode(req: Request, res: Response) {
 }
 
 export async function updateAppDevice(req: Request, res: Response) {
-  const body = z.object({ active: z.boolean() }).parse(req.body);
+  const body = z.object({
+    active: z.boolean().optional(),
+    label: z.string().trim().min(1).max(80).optional()
+  }).refine((value) => value.active !== undefined || value.label !== undefined, {
+    message: "Informe ao menos uma alteracao"
+  }).parse(req.body);
   const device = await prisma.appDevice.findUnique({ where: { id: req.params.deviceId } });
   if (!device || device.subscriptionId !== req.params.id) {
     return res.status(404).json({ message: "Aparelho nao encontrado" });
   }
   return res.json(await prisma.appDevice.update({
     where: { id: device.id },
-    data: { active: body.active },
+    data: {
+      ...(body.active !== undefined ? { active: body.active } : {}),
+      ...(body.label !== undefined ? { label: body.label } : {})
+    },
     select: { id: true, label: true, active: true, activatedAt: true, lastSeenAt: true }
   }));
+}
+
+export async function deleteAppDevice(req: Request, res: Response) {
+  const device = await prisma.appDevice.findUnique({ where: { id: req.params.deviceId } });
+  if (!device || device.subscriptionId !== req.params.id) {
+    return res.status(404).json({ message: "Aparelho nao encontrado" });
+  }
+  await prisma.appDevice.delete({ where: { id: device.id } });
+  return res.status(204).send();
 }
 
 export async function deleteAppSubscription(req: Request, res: Response) {

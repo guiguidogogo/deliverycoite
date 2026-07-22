@@ -203,6 +203,7 @@ import {
   activatePairing,
   createAppSubscription,
   createMyAppSubscriber,
+  deleteAppDevice,
   deleteAppSubscription,
   deleteMyAppSubscriber,
   getMyAppSubscription,
@@ -345,6 +346,7 @@ route.delete("/admin/apps/:id", requireSuperAdmin, deleteAppSubscription);
 route.post("/admin/apps/:id/activation-code", requireSuperAdmin, regenerateActivationCode);
 route.post("/admin/apps/:id/manual-pair", requireSuperAdmin, manuallyPairAppSubscription);
 route.patch("/admin/apps/:id/devices/:deviceId", requireSuperAdmin, updateAppDevice);
+route.delete("/admin/apps/:id/devices/:deviceId", requireSuperAdmin, deleteAppDevice);
 route.get("/admin/settings", requirePermission("SETTINGS"), getSettings);
 route.get("/admin/business-hours", requirePermission("SETTINGS"), getAdminBusinessHours);
 route.put("/admin/business-hours", requirePermission("SETTINGS"), updateAdminBusinessHours);

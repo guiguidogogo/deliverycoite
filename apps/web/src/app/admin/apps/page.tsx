@@ -38,6 +38,8 @@ export default function AppsManagerPage() {
   const [editMaxDevices, setEditMaxDevices] = useState("1");
   const [manualPairingId, setManualPairingId] = useState<string | null>(null);
   const [tvCode, setTvCode] = useState("");
+  const [editingDeviceId, setEditingDeviceId] = useState<string | null>(null);
+  const [deviceLabel, setDeviceLabel] = useState("");
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -164,6 +166,41 @@ export default function AppsManagerPage() {
     }
   }
 
+  function openDeviceEditor(device: Device, fallbackLabel: string) {
+    setEditingDeviceId(device.id);
+    setDeviceLabel(device.label?.trim() || fallbackLabel);
+  }
+
+  async function saveDevice(subscriptionId: string, device: Device) {
+    const label = deviceLabel.trim();
+    if (!label) return toast.error("Informe um nome para identificar o aparelho");
+    try {
+      await adminApi(`/admin/apps/${subscriptionId}/devices/${device.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ label })
+      });
+      setEditingDeviceId(null);
+      setDeviceLabel("");
+      toast.success("Nome do aparelho atualizado");
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao editar aparelho");
+    }
+  }
+
+  async function deleteDevice(subscriptionId: string, device: Device, fallbackLabel: string) {
+    const name = device.label?.trim() || fallbackLabel;
+    if (!window.confirm(`Excluir ${name}? Esta TV perdera o acesso e precisara ser vinculada novamente.`)) return;
+    try {
+      await adminApi(`/admin/apps/${subscriptionId}/devices/${device.id}`, { method: "DELETE" });
+      if (editingDeviceId === device.id) setEditingDeviceId(null);
+      toast.success("Aparelho excluido");
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao excluir aparelho");
+    }
+  }
+
   return (
     <main className="mx-auto max-w-6xl p-4 md:p-8">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -276,13 +313,37 @@ export default function AppsManagerPage() {
             {subscription.devices.length > 0 && (
               <div className="mt-4 border-t border-black/10 pt-3 dark:border-white/10">
                 <p className="mb-2 text-sm font-semibold">Aparelhos vinculados</p>
-                <div className="flex flex-wrap gap-2">
-                  {subscription.devices.map((device) => (
-                    <button key={device.id} className={`rounded-xl border px-3 py-2 text-xs ${device.active ? "border-emerald-500" : "opacity-60"}`} onClick={() => void toggleDevice(subscription.id, device)}>
-                      {device.label || "Roku"} · {device.active ? "Ativo" : "Bloqueado"}<br />
-                      <span className="opacity-60">ultimo acesso {new Date(device.lastSeenAt).toLocaleString("pt-BR")}</span>
-                    </button>
-                  ))}
+                <div className="grid gap-3 md:grid-cols-2">
+                  {subscription.devices.map((device, index) => {
+                    const fallbackLabel = `Roku ${index + 1}`;
+                    const displayLabel = device.label?.trim() || fallbackLabel;
+                    return <div key={device.id} className={`rounded-xl border p-4 ${device.active ? "border-emerald-500/70" : "border-red-400/60 opacity-75"}`}>
+                      {editingDeviceId === device.id ? (
+                        <div>
+                          <label className="text-xs font-semibold">Nome para identificar este aparelho
+                            <input className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-slate-950" maxLength={80} value={deviceLabel} onChange={(event) => setDeviceLabel(event.target.value)} placeholder="Ex.: TV da sala" />
+                          </label>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white" onClick={() => void saveDevice(subscription.id, device)}>Salvar</button>
+                            <button className="rounded-lg border px-3 py-2 text-xs" onClick={() => setEditingDeviceId(null)}>Cancelar</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-start justify-between gap-2">
+                            <div><p className="font-semibold">{displayLabel}</p><p className={`text-xs font-semibold ${device.active ? "text-emerald-700" : "text-red-600"}`}>{device.active ? "Ativo" : "Bloqueado"}</p></div>
+                            <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-600">Aparelho {index + 1}</span>
+                          </div>
+                          <p className="mt-2 text-xs opacity-60">Ultimo acesso: {new Date(device.lastSeenAt).toLocaleString("pt-BR")}</p>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white" onClick={() => openDeviceEditor(device, fallbackLabel)}>Editar nome</button>
+                            <button className={`rounded-lg px-3 py-2 text-xs font-semibold text-white ${device.active ? "bg-amber-600" : "bg-emerald-600"}`} onClick={() => void toggleDevice(subscription.id, device)}>{device.active ? "Bloquear" : "Desbloquear"}</button>
+                            <button className="rounded-lg border border-red-600 px-3 py-2 text-xs font-semibold text-red-700" onClick={() => void deleteDevice(subscription.id, device, fallbackLabel)}>Excluir</button>
+                          </div>
+                        </>
+                      )}
+                    </div>;
+                  })}
                 </div>
               </div>
             )}
