@@ -23,6 +23,7 @@ export type CaixaLotteryResult = {
   officialDateKey: string;
   officialDate: Date | null;
   baseNumber: string;
+  source: "CAIXA_JSON" | "EXTERNAL_COLLECTOR";
   raw: unknown;
 };
 
@@ -204,6 +205,7 @@ export async function fetchCaixaLotteryResult(modalityInput: string, contestNumb
       officialDateKey: official.dateKey,
       officialDate: official.date,
       baseNumber,
+      source: "CAIXA_JSON",
       raw
     };
   } catch (error) {

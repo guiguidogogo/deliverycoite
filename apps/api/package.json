@@ -15,6 +15,7 @@
     "migrate:multiempresa:test": "tsx scripts/run-multiempresa-test-migration.ts",
     "prisma:seed": "tsx prisma/seed.ts",
     "test:business-hours": "tsx src/services/business-hours.test.ts",
+    "test:raffle-draw": "tsx src/services/raffle-draw.test.ts && tsx src/services/lottery-result-webhook.test.ts",
     "lint": "eslint ."
   },
   "prisma": {

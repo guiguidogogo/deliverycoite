@@ -44,6 +44,7 @@ type Raffle = {
   drawWinnerParticipantId?: string | null;
   drawWinnerOrderId?: string | null;
   drawWinnerNumberId?: string | null;
+  drawRawResponse?: { source?: string; payload?: unknown } | null;
   _count?: { numbers: number; orders: number; participants: number };
 };
 
@@ -115,6 +116,12 @@ function toDateTimeLocal(value?: string | null) {
 
 function canRetryDraw(status?: string | null) {
   return ["SCHEDULED", "WAITING_CONTEST", "WAITING_RESULT", "ERROR"].includes(status ?? "");
+}
+
+function drawSourceLabel(source?: string) {
+  if (source === "EXTERNAL_COLLECTOR") return "Coletor externo autenticado";
+  if (source === "CAIXA_JSON") return "Consulta direta CAIXA";
+  return source || "-";
 }
 
 const initialForm = {
@@ -725,6 +732,7 @@ export default function AdminRafflesPage() {
                       <p><span className="font-bold">Tentativas:</span> {raffle.drawAttemptCount ?? 0}</p>
                       <p><span className="font-bold">Ultima tentativa:</span> {formatDateTime(raffle.drawLastAttemptAt)}</p>
                       <p><span className="font-bold">Confirmado:</span> {formatDateTime(raffle.drawConfirmedAt)}</p>
+                      <p><span className="font-bold">Origem:</span> {drawSourceLabel(raffle.drawRawResponse?.source)}</p>
                     </div>
                     {raffle.drawWinningNumber && (
                       <p className="mt-2 rounded-xl bg-white/70 p-2 font-bold">

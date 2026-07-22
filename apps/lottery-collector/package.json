@@ -1,0 +1,16 @@
+{
+  "name": "@delivery/lottery-collector",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.mjs",
+    "start": "node src/index.mjs",
+    "send:once": "node src/index.mjs --once",
+    "send:force": "node src/index.mjs --once --force",
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

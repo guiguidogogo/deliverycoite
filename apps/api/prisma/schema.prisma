@@ -964,6 +964,29 @@ model RaffleAuditLog {
   @@index([companyId, raffleId])
 }
 
+model LotteryResultInbox {
+  id              String   @id @default(cuid())
+  eventId         String   @unique
+  schemaVersion   Int      @default(1)
+  modality        String
+  contestNumber   String
+  officialDateKey String
+  officialDate    DateTime
+  prizes          Json
+  firstPrize      String
+  source          String
+  fetchedAt       DateTime
+  payloadHash     String
+  rawPayload      Json
+  receivedAt      DateTime @default(now())
+  processedAt     DateTime?
+  processingError String?
+
+  @@unique([modality, contestNumber])
+  @@index([modality, officialDateKey])
+  @@index([processedAt])
+}
+
 model CustomerAddress {
   id         String   @id @default(cuid())
   companyId  String

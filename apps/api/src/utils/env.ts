@@ -78,5 +78,14 @@ export const env = {
   },
   get iptvPairingWebUrl() {
     return (process.env.IPTV_PAIRING_WEB_URL ?? `https://${this.rootDomain}`).replace(/\/$/, "");
+  },
+  get lotteryCollectorWebhookEnabled() {
+    return (process.env.LOTTERY_COLLECTOR_WEBHOOK_ENABLED ?? "false").toLowerCase() === "true";
+  },
+  get lotteryWebhookSecret() {
+    return process.env.LOTTERY_WEBHOOK_SECRET ?? "";
+  },
+  get lotteryWebhookMaxAgeSeconds() {
+    return Number(process.env.LOTTERY_WEBHOOK_MAX_AGE_SECONDS ?? 300);
   }
 };

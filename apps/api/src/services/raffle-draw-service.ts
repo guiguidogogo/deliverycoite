@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import {
+  type CaixaLotteryResult,
   CaixaLotteryError,
   extractWinningDigits,
   fetchCaixaLotteryResult,
@@ -39,6 +40,37 @@ async function findWinningNumber(companyId: string, raffleId: string, formattedN
   });
 }
 
+async function findStoredLotteryResult(
+  modality: CaixaLotteryResult["modality"],
+  officialDateKey: string,
+  contestNumber?: string | null
+): Promise<CaixaLotteryResult | null> {
+  const normalizedContest = contestNumber?.replace(/\D/g, "") || undefined;
+  const stored = await prisma.lotteryResultInbox.findMany({
+    where: {
+      modality,
+      officialDateKey,
+      ...(normalizedContest ? { contestNumber: normalizedContest } : {})
+    },
+    orderBy: { receivedAt: "desc" },
+    take: 2
+  });
+  if (!normalizedContest && stored.length > 1) {
+    throw new CaixaLotteryError("Existe mais de um concurso da modalidade nesta data. Informe o concurso para evitar uma apuracao ambigua.", false);
+  }
+  const result = stored[0];
+  if (!result) return null;
+  return {
+    modality,
+    contestNumber: result.contestNumber,
+    officialDateKey: result.officialDateKey,
+    officialDate: result.officialDate,
+    baseNumber: result.firstPrize,
+    source: "EXTERNAL_COLLECTOR",
+    raw: result.rawPayload
+  };
+}
+
 async function markDrawWaiting(raffleId: string, message: string) {
   await prisma.raffle.update({
     where: { id: raffleId },
@@ -68,7 +100,11 @@ async function markDrawError(raffleId: string, error: unknown) {
   return { status: shouldRetry ? "WAITING_RESULT" : "ERROR", message };
 }
 
-export async function processAutomaticRaffleById(raffleId: string, companyId?: string) {
+export async function processAutomaticRaffleById(
+  raffleId: string,
+  companyId?: string,
+  suppliedResult?: CaixaLotteryResult
+) {
   const locked = await prisma.raffle.updateMany({
     where: {
       id: raffleId,
@@ -102,9 +138,17 @@ export async function processAutomaticRaffleById(raffleId: string, companyId?: s
     }
 
     const modality = normalizeCaixaModality(raffle.drawLotteryModality);
-    const result = await fetchCaixaLotteryResult(modality, raffle.drawContestNumber);
     const scheduledDateKey = getSaoPauloDateKey(raffle.drawScheduledAt);
+    const storedResult = suppliedResult
+      ? null
+      : await findStoredLotteryResult(modality, scheduledDateKey, raffle.drawContestNumber);
+    const result = suppliedResult
+      ?? storedResult
+      ?? await fetchCaixaLotteryResult(modality, raffle.drawContestNumber);
 
+    if (result.modality !== modality) {
+      throw new CaixaLotteryError("O resultado recebido pertence a outra modalidade.", false);
+    }
     if (raffle.drawContestNumber && result.contestNumber !== raffle.drawContestNumber.replace(/\D/g, "")) {
       throw new CaixaLotteryError("A CAIXA retornou concurso diferente do solicitado.", false);
     }
@@ -162,6 +206,7 @@ export async function processAutomaticRaffleById(raffleId: string, companyId?: s
             baseNumber: result.baseNumber,
             winningNumber,
             officialDate: result.officialDateKey,
+            source: result.source,
             winnerNumberId: number?.id ?? null,
             hasValidParticipant: validWinner
           }
@@ -181,7 +226,10 @@ export async function processAutomaticRaffleById(raffleId: string, companyId?: s
           drawWinningNumber: winningNumber,
           drawOfficialDate: result.officialDate,
           drawConfirmedAt: now,
-          drawRawResponse: result.raw as Prisma.InputJsonValue,
+          drawRawResponse: {
+            source: result.source,
+            payload: result.raw as Prisma.InputJsonValue
+          },
           drawWinnerParticipantId: validWinner ? number?.reservedByParticipantId ?? null : null,
           drawWinnerOrderId: validWinner ? number?.orderId ?? null : null,
           drawWinnerNumberId: validWinner ? number?.id ?? null : null,
@@ -195,6 +243,39 @@ export async function processAutomaticRaffleById(raffleId: string, companyId?: s
   } catch (error) {
     return markDrawError(raffleId, error);
   }
+}
+
+export async function processAutomaticRafflesFromResult(result: CaixaLotteryResult, limit = 500) {
+  const candidates = await prisma.raffle.findMany({
+    where: {
+      drawMode: "AUTOMATIC_CAIXA",
+      drawLotteryModality: result.modality,
+      drawStatus: { in: [...PROCESSABLE_DRAW_STATUSES] },
+      drawConfirmedAt: null,
+      drawScheduledAt: { not: null, lte: new Date() },
+      OR: [
+        { drawContestNumber: null },
+        { drawContestNumber: result.contestNumber }
+      ]
+    },
+    orderBy: { drawScheduledAt: "asc" },
+    take: limit,
+    select: { id: true, companyId: true, drawScheduledAt: true }
+  });
+
+  const matching = candidates.filter(
+    (raffle) => raffle.drawScheduledAt && getSaoPauloDateKey(raffle.drawScheduledAt) === result.officialDateKey
+  );
+  const summary = { matched: matching.length, confirmed: 0, noValidParticipant: 0, failed: 0 };
+
+  for (const raffle of matching) {
+    const processed = await processAutomaticRaffleById(raffle.id, raffle.companyId, result);
+    if (processed.status === "CONFIRMED") summary.confirmed += 1;
+    else if (processed.status === "NO_VALID_PARTICIPANT") summary.noValidParticipant += 1;
+    else if (processed.status !== "SKIPPED") summary.failed += 1;
+  }
+
+  return summary;
 }
 
 export async function processDueAutomaticRaffles(limit = 20) {
