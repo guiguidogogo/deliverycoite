@@ -5,6 +5,10 @@ let timer: NodeJS.Timeout | null = null;
 let running = false;
 
 export function startRaffleDrawJob() {
+  if (env.lotteryCollectorWebhookEnabled) {
+    console.log("[raffle-draw] consulta direta desativada; coletor externo ativo");
+    return;
+  }
   if (!env.raffleDrawJobEnabled) {
     console.log("[raffle-draw] job automatico desativado");
     return;
