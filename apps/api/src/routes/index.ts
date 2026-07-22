@@ -202,16 +202,24 @@ import {
   acknowledgePairing,
   activatePairing,
   createAppSubscription,
+  createMyAppSubscriber,
+  deleteAppSubscription,
+  deleteMyAppSubscriber,
   getMyAppSubscription,
   createPairing,
   getPairing,
   getPairingQr,
   getPairingStatus,
   listAppSubscriptions,
+  listMyAppSubscribers,
+  manuallyPairAppSubscription,
   regenerateActivationCode,
+  regenerateMySubscriberActivationCode,
   updateAppDevice,
   updateMyAppDevice,
-  updateAppSubscription
+  updateMyAppSubscriber,
+  updateAppSubscription,
+  validateAppDevice
 } from "../controllers/apps-controller.js";
 
 export const router = Router();
@@ -242,6 +250,7 @@ route.get("/pairings/:code/qr", getPairingQr);
 route.post("/pairings/:code/activate", activatePairing);
 route.get("/pairings/:code/status", getPairingStatus);
 route.post("/pairings/:code/ack", acknowledgePairing);
+route.post("/devices/validate", validateAppDevice);
 route.get("/marketplace/assets/:id", getPersistentImage);
 route.get("/marketplace/companies", listMarketplaceCompanies);
 route.get("/marketplace/summary", marketplaceSummary);
@@ -316,6 +325,11 @@ route.post("/printer-agent/test", getPrinterAgentTestReceipt);
 router.use(auth());
 route.get("/admin/me", getCurrentStaff);
 route.get("/admin/my-app", getMyAppSubscription);
+route.get("/admin/my-app/subscribers", listMyAppSubscribers);
+route.post("/admin/my-app/subscribers", createMyAppSubscriber);
+route.patch("/admin/my-app/subscribers/:subscriberId", updateMyAppSubscriber);
+route.delete("/admin/my-app/subscribers/:subscriberId", deleteMyAppSubscriber);
+route.post("/admin/my-app/subscribers/:subscriberId/activation-code", regenerateMySubscriberActivationCode);
 route.patch("/admin/my-app/devices/:deviceId", updateMyAppDevice);
 route.get("/admin/companies/subdomain", requireSuperAdmin, generateCompanySubdomain);
 route.post("/admin/companies/upload", requireSuperAdmin, persistentImageUpload.single("image"), uploadPersistentImage);
@@ -327,7 +341,9 @@ route.patch("/admin/companies/:id/status", requireSuperAdmin, updateCompanyStatu
 route.get("/admin/apps", requireSuperAdmin, listAppSubscriptions);
 route.post("/admin/apps", requireSuperAdmin, createAppSubscription);
 route.patch("/admin/apps/:id", requireSuperAdmin, updateAppSubscription);
+route.delete("/admin/apps/:id", requireSuperAdmin, deleteAppSubscription);
 route.post("/admin/apps/:id/activation-code", requireSuperAdmin, regenerateActivationCode);
+route.post("/admin/apps/:id/manual-pair", requireSuperAdmin, manuallyPairAppSubscription);
 route.patch("/admin/apps/:id/devices/:deviceId", requireSuperAdmin, updateAppDevice);
 route.get("/admin/settings", requirePermission("SETTINGS"), getSettings);
 route.get("/admin/business-hours", requirePermission("SETTINGS"), getAdminBusinessHours);

@@ -33,6 +33,11 @@ export default function AppsManagerPage() {
   const [credentials, setCredentials] = useState(emptyCredentials);
   const [activationCode, setActivationCode] = useState("");
   const [editingCredentialsId, setEditingCredentialsId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDuration, setEditDuration] = useState("keep");
+  const [editMaxDevices, setEditMaxDevices] = useState("1");
+  const [manualPairingId, setManualPairingId] = useState<string | null>(null);
+  const [tvCode, setTvCode] = useState("");
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -104,6 +109,48 @@ export default function AppsManagerPage() {
     setCredentials(emptyCredentials);
   }
 
+  function openEditor(subscription: Subscription) {
+    setEditingId(subscription.id);
+    setEditDuration("keep");
+    setEditMaxDevices(String(subscription.maxDevices));
+  }
+
+  async function saveEditor(subscription: Subscription) {
+    const body: { maxDevices: number; durationDays?: number | null } = { maxDevices: Number(editMaxDevices) };
+    if (editDuration !== "keep") body.durationDays = editDuration === "lifetime" ? null : Number(editDuration);
+    await patchSubscription(subscription.id, body, editDuration === "keep" ? "Limite de aparelhos atualizado" : "Licenca e validade atualizadas");
+    setEditingId(null);
+  }
+
+  async function deleteSubscription(subscription: Subscription) {
+    if (!window.confirm(`Excluir definitivamente a licenca de ${subscription.company.tradeName}? Os aparelhos vinculados perderao o acesso.`)) return;
+    try {
+      await adminApi(`/admin/apps/${subscription.id}`, { method: "DELETE" });
+      toast.success("Licenca excluida");
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao excluir licenca");
+    }
+  }
+
+  async function manualPair(subscription: Subscription) {
+    const pairingCode = tvCode.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (pairingCode.length < 4) return toast.error("Informe o codigo exibido na TV");
+    try {
+      const result = await adminApi<{ activationCode: string }>(`/admin/apps/${subscription.id}/manual-pair`, {
+        method: "POST",
+        body: JSON.stringify({ pairingCode })
+      });
+      setActivationCode(result.activationCode);
+      setTvCode("");
+      setManualPairingId(null);
+      toast.success("TV vinculada e novo codigo de 12 caracteres gerado");
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao vincular a TV");
+    }
+  }
+
   async function toggleDevice(subscriptionId: string, device: Device) {
     try {
       await adminApi(`/admin/apps/${subscriptionId}/devices/${device.id}`, {
@@ -149,7 +196,7 @@ export default function AppsManagerPage() {
           <label className="text-sm">Tempo de uso
             <select className="mt-1 w-full rounded-xl border bg-transparent px-3 py-2" value={durationDays} onChange={(event) => setDurationDays(event.target.value)}>
               <option value="7">7 dias</option><option value="15">15 dias</option><option value="30">30 dias</option>
-              <option value="90">90 dias</option><option value="365">1 ano</option><option value="lifetime">Sem vencimento</option>
+              <option value="60">60 dias</option><option value="90">90 dias</option><option value="180">6 meses</option><option value="365">1 ano</option><option value="lifetime">Vitalicio</option>
             </select>
           </label>
           <label className="text-sm">Quantidade de aparelhos
@@ -178,12 +225,44 @@ export default function AppsManagerPage() {
                 <p className="text-sm opacity-70">Aparelhos: {subscription.devices.filter((item) => item.active).length}/{subscription.maxDevices} · IPTV {subscription.configured ? "configurada" : "pendente"}</p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <button className="rounded-xl bg-blue-700 px-3 py-2 text-sm text-white" onClick={() => void patchSubscription(subscription.id, { durationDays: 30, active: true }, "Licenca renovada por 30 dias")}>Renovar 30 dias</button>
+                <button className="rounded-xl bg-blue-700 px-3 py-2 text-sm text-white" onClick={() => openEditor(subscription)}>Editar</button>
                 <button className="rounded-xl bg-amber-600 px-3 py-2 text-sm text-white" onClick={() => void regenerate(subscription.id)}>Novo codigo</button>
                 <button className="rounded-xl bg-slate-700 px-3 py-2 text-sm text-white" onClick={() => { setEditingCredentialsId(subscription.id); setCredentials(emptyCredentials); }}>Alterar IPTV</button>
+                <button className="rounded-xl bg-violet-700 px-3 py-2 text-sm text-white" onClick={() => { setManualPairingId(subscription.id); setTvCode(""); }}>Vincular codigo da TV</button>
                 <button className={`rounded-xl px-3 py-2 text-sm text-white ${subscription.active ? "bg-red-600" : "bg-emerald-600"}`} onClick={() => void patchSubscription(subscription.id, { active: !subscription.active }, subscription.active ? "Licenca bloqueada" : "Licenca ativada")}>{subscription.active ? "Bloquear" : "Ativar"}</button>
+                <button className="rounded-xl border border-red-600 px-3 py-2 text-sm font-semibold text-red-700" onClick={() => void deleteSubscription(subscription)}>Excluir</button>
               </div>
             </div>
+
+            {editingId === subscription.id && (
+              <div className="mt-4 rounded-xl border border-blue-300 bg-blue-50/70 p-4 dark:border-blue-800 dark:bg-blue-950/30">
+                <p className="font-semibold">Editar licença</p>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <label className="text-sm">Renovar validade
+                    <select className="mt-1 w-full rounded-xl border bg-white px-3 py-2 text-slate-950" value={editDuration} onChange={(event) => setEditDuration(event.target.value)}>
+                      <option value="keep">Manter validade atual</option><option value="7">7 dias de teste</option><option value="30">30 dias</option><option value="60">60 dias</option><option value="90">90 dias</option><option value="180">6 meses</option><option value="365">1 ano</option><option value="lifetime">Vitalicio</option>
+                    </select>
+                  </label>
+                  <label className="text-sm">Quantidade maxima de aparelhos
+                    <input className="mt-1 w-full rounded-xl border bg-white px-3 py-2 text-slate-950" type="number" min="1" max="20" value={editMaxDevices} onChange={(event) => setEditMaxDevices(event.target.value)} />
+                  </label>
+                </div>
+                <button className="mt-3 rounded-xl bg-blue-700 px-4 py-2 text-white" onClick={() => void saveEditor(subscription)}>Salvar alterações</button>
+                <button className="ml-2 rounded-xl border px-4 py-2" onClick={() => setEditingId(null)}>Cancelar</button>
+              </div>
+            )}
+
+            {manualPairingId === subscription.id && (
+              <div className="mt-4 rounded-xl border border-violet-300 bg-violet-50/70 p-4 dark:border-violet-800 dark:bg-violet-950/30">
+                <p className="font-semibold">Vincular uma Roku manualmente</p>
+                <p className="mt-1 text-sm opacity-70">Digite o codigo curto que esta aparecendo na TV. A Roku sera vinculada a esta licenca e um novo codigo de acesso de 12 caracteres sera exibido.</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <input className="min-w-64 flex-1 rounded-xl border bg-white px-4 py-3 font-mono text-xl font-bold uppercase tracking-widest text-slate-950" placeholder="CODIGO DA TV" value={tvCode} maxLength={12} onChange={(event) => setTvCode(event.target.value.toUpperCase())} />
+                  <button className="rounded-xl bg-violet-700 px-5 py-3 font-semibold text-white" onClick={() => void manualPair(subscription)}>Vincular e gerar codigo</button>
+                  <button className="rounded-xl border px-4 py-2" onClick={() => setManualPairingId(null)}>Cancelar</button>
+                </div>
+              </div>
+            )}
 
             {editingCredentialsId === subscription.id && (
               <div className="mt-4 rounded-xl border border-black/10 p-4 dark:border-white/10">

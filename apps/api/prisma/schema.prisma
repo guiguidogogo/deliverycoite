@@ -163,6 +163,16 @@ enum AppPairingStatus {
   EXPIRED
 }
 
+enum AppSubscriberPlan {
+  TRIAL_7_DAYS
+  DAYS_30
+  DAYS_60
+  DAYS_90
+  MONTHS_6
+  YEAR_1
+  LIFETIME
+}
+
 model User {
   id             String          @id @default(cuid())
   name           String
@@ -313,11 +323,34 @@ model AppSubscription {
   credentials        AppIptvCredentials?
   devices            AppDevice[]
   pairings           AppPairing[]
+  subscribers        AppSubscriber[]
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
 
   @@index([companyId, active])
   @@index([product, active, expiresAt])
+}
+
+model AppSubscriber {
+  id                      String            @id @default(cuid())
+  subscriptionId          String
+  subscription            AppSubscription   @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  name                    String
+  phone                   String?
+  active                  Boolean           @default(true)
+  plan                    AppSubscriberPlan @default(TRIAL_7_DAYS)
+  startsAt                DateTime          @default(now())
+  expiresAt               DateTime?
+  maxDevices              Int               @default(1)
+  activationCodeHash      String            @unique
+  activationCodeEncrypted String
+  devices                 AppDevice[]
+  pairings                AppPairing[]
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
+
+  @@index([subscriptionId, active])
+  @@index([subscriptionId, expiresAt])
 }
 
 model AppIptvCredentials {
@@ -335,6 +368,8 @@ model AppDevice {
   id             String          @id @default(cuid())
   subscriptionId String
   subscription   AppSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  subscriberId   String?
+  subscriber     AppSubscriber?  @relation(fields: [subscriberId], references: [id], onDelete: Cascade)
   deviceIdHash   String
   label          String?
   active         Boolean         @default(true)
@@ -346,6 +381,7 @@ model AppDevice {
   @@unique([subscriptionId, deviceIdHash])
   @@index([subscriptionId, active])
   @@index([deviceIdHash])
+  @@index([subscriberId, active])
 }
 
 model AppPairing {
@@ -355,6 +391,11 @@ model AppPairing {
   status         AppPairingStatus  @default(PENDING)
   subscriptionId String?
   subscription   AppSubscription?  @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  subscriberId   String?
+  subscriber     AppSubscriber?    @relation(fields: [subscriberId], references: [id], onDelete: SetNull)
+  serverEncrypted   String?
+  usernameEncrypted String?
+  passwordEncrypted String?
   expiresAt      DateTime
   pairedAt       DateTime?
   acknowledgedAt DateTime?
@@ -363,6 +404,7 @@ model AppPairing {
 
   @@index([deviceIdHash, status])
   @@index([subscriptionId, status])
+  @@index([subscriberId, status])
   @@index([expiresAt])
 }
 
