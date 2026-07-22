@@ -7,6 +7,8 @@ import { env } from "../utils/env.js";
 import { decryptIptvValue, encryptIptvValue, hashOpaqueValue } from "../utils/iptv-security.js";
 
 const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const FREE_TRIAL_DAYS = 3;
+const FREE_TRIAL_DURATION_MS = FREE_TRIAL_DAYS * 24 * 60 * 60 * 1000;
 
 const credentialsSchema = z.object({
   server: z.string().trim().url("Informe a URL completa do servidor IPTV").max(500),
@@ -105,6 +107,18 @@ function publicSubscription(subscription: any) {
     devices: subscription.devices,
     createdAt: subscription.createdAt,
     updatedAt: subscription.updatedAt
+  };
+}
+
+function trialIsActive(trial: { expiresAt: Date }) {
+  return trial.expiresAt.getTime() > Date.now();
+}
+
+function trialTimeRemaining(expiresAt: Date) {
+  const remainingMs = Math.max(0, expiresAt.getTime() - Date.now());
+  return {
+    daysRemaining: Math.ceil(remainingMs / (24 * 60 * 60 * 1000)),
+    hoursRemaining: Math.ceil(remainingMs / (60 * 60 * 1000))
   };
 }
 
@@ -469,15 +483,36 @@ export async function manuallyPairAppSubscription(req: Request, res: Response) {
 
 export async function validateAppDevice(req: Request, res: Response) {
   const body = deviceSchema.parse(req.body);
+  const deviceIdHash = hashOpaqueValue(body.deviceId);
   const device = await prisma.appDevice.findFirst({
-    where: { deviceIdHash: hashOpaqueValue(body.deviceId) },
+    where: { deviceIdHash },
     include: {
       subscriber: true,
       subscription: { include: { company: { select: { active: true } }, credentials: { select: { id: true } } } }
     },
     orderBy: { lastSeenAt: "desc" }
   });
-  if (!device) return res.status(404).json({ error: "Esta Roku ainda nao possui uma licenca. Gere um codigo de acesso" });
+  if (!device) {
+    const trial = await prisma.appDeviceTrial.findUnique({ where: { deviceIdHash } });
+    if (!trial) return res.status(404).json({ error: "Esta Roku ainda nao iniciou o teste gratuito", code: "TRIAL_NOT_STARTED" });
+    if (!trialIsActive(trial)) {
+      return res.status(403).json({
+        error: "Seu teste gratuito de 3 dias terminou. Ative o aplicativo para continuar.",
+        code: "TRIAL_EXPIRED",
+        status: "expired",
+        accessMode: "trial",
+        expiresAt: trial.expiresAt
+      });
+    }
+    await prisma.appDeviceTrial.update({ where: { id: trial.id }, data: { lastSeenAt: new Date() } });
+    return res.json({
+      status: "trial",
+      accessMode: "trial",
+      trialDays: FREE_TRIAL_DAYS,
+      expiresAt: trial.expiresAt,
+      ...trialTimeRemaining(trial.expiresAt)
+    });
+  }
   if (!device.active) return res.status(403).json({ error: "Este aparelho foi bloqueado pelo administrador" });
   if (!device.subscription.company.active || subscriptionStatus(device.subscription) !== "active") {
     return res.status(403).json({ error: "A conta principal esta inativa ou expirada" });
@@ -486,7 +521,7 @@ export async function validateAppDevice(req: Request, res: Response) {
     return res.status(403).json({ error: "Seu periodo de acesso terminou. Solicite a renovacao" });
   }
   await prisma.appDevice.update({ where: { id: device.id }, data: { lastSeenAt: new Date() } });
-  return res.json({ status: "active", expiresAt: device.subscriber?.expiresAt ?? device.subscription.expiresAt });
+  return res.json({ status: "active", accessMode: "licensed", expiresAt: device.subscriber?.expiresAt ?? device.subscription.expiresAt });
 }
 
 export async function createPairing(req: Request, res: Response) {
@@ -507,12 +542,19 @@ export async function createPairing(req: Request, res: Response) {
     && subscriptionStatus(registeredDevice.subscription) === "active"
     && (!registeredDevice.subscriber || subscriptionStatus(registeredDevice.subscriber) === "active")
   );
+  const trial = !registeredDevice ? await prisma.appDeviceTrial.upsert({
+    where: { deviceIdHash },
+    create: { deviceIdHash, expiresAt: new Date(Date.now() + FREE_TRIAL_DURATION_MS) },
+    update: { lastSeenAt: new Date() }
+  }) : null;
+  const activeTrial = trial && trialIsActive(trial) ? trial : null;
   const code = await generateUniquePairingCode();
   const pairing = await prisma.appPairing.create({
     data: {
       code,
       deviceIdHash,
       ...(canSelfConfigure ? { subscriptionId: registeredDevice!.subscriptionId, subscriberId: registeredDevice!.subscriberId } : {}),
+      ...(activeTrial ? { trialId: activeTrial.id } : {}),
       expiresAt: new Date(Date.now() + 10 * 60 * 1000)
     }
   });
@@ -522,29 +564,68 @@ export async function createPairing(req: Request, res: Response) {
     code,
     pairUrl,
     qrUrl: `${env.iptvPairingWebUrl}/api/pairings/${code}/qr`,
-    expiresAt: pairing.expiresAt
+    expiresAt: pairing.expiresAt,
+    accessMode: canSelfConfigure ? "licensed" : activeTrial ? "trial" : "activation_required",
+    trialExpiresAt: activeTrial?.expiresAt ?? trial?.expiresAt ?? null
   });
 }
 
 export async function getPairing(req: Request, res: Response) {
   const code = normalizeCode(req.params.code);
-  const pairing = await prisma.appPairing.findUnique({ where: { code }, select: { status: true, expiresAt: true, subscriptionId: true } });
+  const pairing = await prisma.appPairing.findUnique({
+    where: { code },
+    select: { status: true, expiresAt: true, subscriptionId: true, trialId: true, trial: { select: { expiresAt: true } } }
+  });
   if (!pairing) return res.status(404).json({ message: "Codigo nao encontrado" });
   if (pairing.expiresAt.getTime() <= Date.now() && pairing.status === "PENDING") {
     await prisma.appPairing.update({ where: { code }, data: { status: "EXPIRED" } });
     return res.json({ status: "expired", expiresAt: pairing.expiresAt });
   }
-  return res.json({ status: pairing.status.toLowerCase(), expiresAt: pairing.expiresAt, registered: Boolean(pairing.subscriptionId) });
+  const activeTrial = Boolean(pairing.trial && trialIsActive(pairing.trial));
+  return res.json({
+    status: pairing.status.toLowerCase(),
+    expiresAt: pairing.expiresAt,
+    registered: Boolean(pairing.subscriptionId || activeTrial),
+    accessMode: pairing.subscriptionId ? "licensed" : activeTrial ? "trial" : "activation_required",
+    trialExpiresAt: pairing.trial?.expiresAt ?? null
+  });
 }
 
 export async function activatePairing(req: Request, res: Response) {
   const code = normalizeCode(req.params.code);
   const body = activateSchema.parse(req.body);
-  const pairing = await prisma.appPairing.findUnique({ where: { code } });
+  const pairing = await prisma.appPairing.findUnique({ where: { code }, include: { trial: true } });
   if (!pairing) return res.status(404).json({ message: "Codigo da TV nao encontrado" });
   if (pairing.status !== "PENDING" || pairing.expiresAt.getTime() <= Date.now()) {
     if (pairing.status === "PENDING") await prisma.appPairing.update({ where: { id: pairing.id }, data: { status: "EXPIRED" } });
     return res.status(410).json({ message: "Este codigo expirou. Gere um novo codigo na TV" });
+  }
+  if (!body.activationCode && pairing.trialId) {
+    if (!pairing.trial || !trialIsActive(pairing.trial)) {
+      return res.status(403).json({
+        message: "Seu teste gratuito de 3 dias terminou. Informe um codigo de ativacao para continuar.",
+        code: "TRIAL_EXPIRED"
+      });
+    }
+    await prisma.$transaction([
+      prisma.appDeviceTrial.update({ where: { id: pairing.trial.id }, data: { lastSeenAt: new Date() } }),
+      prisma.appPairing.update({
+        where: { id: pairing.id },
+        data: {
+          serverEncrypted: encryptIptvValue(body.credentials.server.replace(/\/$/, "")),
+          usernameEncrypted: encryptIptvValue(body.credentials.username),
+          passwordEncrypted: encryptIptvValue(body.credentials.password),
+          status: "PAIRED",
+          pairedAt: new Date()
+        }
+      })
+    ]);
+    return res.json({
+      status: "paired",
+      accessMode: "trial",
+      trialExpiresAt: pairing.trial.expiresAt,
+      companyName: "Teste gratuito"
+    });
   }
   const deviceIdHash = pairing.deviceIdHash;
   const activationCodeHash = body.activationCode ? hashOpaqueValue(normalizeCode(body.activationCode)) : null;
@@ -600,6 +681,7 @@ export async function activatePairing(req: Request, res: Response) {
       data: {
         subscriptionId: subscription.id,
         subscriberId: subscriber?.id,
+        trialId: null,
         serverEncrypted: encryptIptvValue(body.credentials.server.replace(/\/$/, "")),
         usernameEncrypted: encryptIptvValue(body.credentials.username),
         passwordEncrypted: encryptIptvValue(body.credentials.password),
@@ -608,7 +690,7 @@ export async function activatePairing(req: Request, res: Response) {
       }
     })
   ]);
-  return res.json({ status: "paired", companyName: subscriber?.name ?? subscription.company.tradeName });
+  return res.json({ status: "paired", accessMode: "licensed", companyName: subscriber?.name ?? subscription.company.tradeName });
 }
 
 export async function getPairingStatus(req: Request, res: Response) {
@@ -618,7 +700,8 @@ export async function getPairingStatus(req: Request, res: Response) {
     where: { code },
     include: {
       subscription: { include: { company: { select: { active: true, tradeName: true } }, credentials: true } },
-      subscriber: true
+      subscriber: true,
+      trial: true
     }
   });
   if (!pairing || pairing.deviceIdHash !== hashOpaqueValue(deviceId)) {
@@ -634,6 +717,28 @@ export async function getPairingStatus(req: Request, res: Response) {
 
   const subscription = pairing.subscription;
   const hasPairingCredentials = Boolean(pairing.serverEncrypted && pairing.usernameEncrypted && pairing.passwordEncrypted);
+  if (pairing.trialId) {
+    if (!pairing.trial || !trialIsActive(pairing.trial)) {
+      return res.status(403).json({
+        error: "Seu teste gratuito de 3 dias terminou. Ative o aplicativo para continuar.",
+        code: "TRIAL_EXPIRED"
+      });
+    }
+    if (!hasPairingCredentials) return res.status(409).json({ error: "A configuracao do teste ainda nao foi enviada" });
+    await prisma.appDeviceTrial.update({ where: { id: pairing.trial.id }, data: { lastSeenAt: new Date() } });
+    return res.json({
+      status: "paired",
+      accessMode: "trial",
+      trialExpiresAt: pairing.trial.expiresAt,
+      ...trialTimeRemaining(pairing.trial.expiresAt),
+      profile: {
+        name: "Teste gratuito",
+        server: decryptIptvValue(pairing.serverEncrypted!),
+        username: decryptIptvValue(pairing.usernameEncrypted!),
+        password: decryptIptvValue(pairing.passwordEncrypted!)
+      }
+    });
+  }
   if (!subscription || (!hasPairingCredentials && !subscription.credentials) || !subscription.company.active || subscriptionStatus(subscription) !== "active") {
     return res.status(403).json({ error: "Licenca inativa, expirada ou sem configuracao" });
   }
@@ -655,6 +760,7 @@ export async function getPairingStatus(req: Request, res: Response) {
   });
   return res.json({
     status: "paired",
+    accessMode: "licensed",
     profile: {
       name: pairing.subscriber?.name ?? subscription.company.tradeName,
       server: decryptIptvValue(pairing.serverEncrypted ?? subscription.credentials!.serverEncrypted),

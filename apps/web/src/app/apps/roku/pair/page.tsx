@@ -3,7 +3,14 @@
 import { useEffect, useState } from "react";
 import { apiFetch, readApiJson } from "../../../../lib/api";
 
-type PairingInfo = { status: string; expiresAt: string; registered?: boolean; message?: string };
+type PairingInfo = {
+  status: string;
+  expiresAt: string;
+  registered?: boolean;
+  accessMode?: "licensed" | "trial" | "activation_required";
+  trialExpiresAt?: string | null;
+  message?: string;
+};
 
 export default function RokuPairPage() {
   const [code, setCode] = useState("");
@@ -12,6 +19,9 @@ export default function RokuPairPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [registered, setRegistered] = useState(false);
+  const [accessMode, setAccessMode] = useState<PairingInfo["accessMode"]>("activation_required");
+  const [trialExpiresAt, setTrialExpiresAt] = useState<string | null>(null);
+  const [activateNow, setActivateNow] = useState(false);
   const [status, setStatus] = useState<"loading" | "ready" | "success" | "error">("loading");
   const [message, setMessage] = useState("Verificando o codigo da TV...");
 
@@ -30,8 +40,14 @@ export default function RokuPairPage() {
         if (payload.status === "expired") throw new Error("O codigo expirou. Gere um novo codigo na TV.");
         if (payload.status !== "pending") throw new Error("Este codigo ja foi utilizado.");
         setRegistered(Boolean(payload.registered));
+        setAccessMode(payload.accessMode ?? (payload.registered ? "licensed" : "activation_required"));
+        setTrialExpiresAt(payload.trialExpiresAt ?? null);
         setStatus("ready");
-        setMessage(payload.registered ? "Esta Roku ja esta ativa. Informe os novos dados da lista IPTV." : "Informe seu codigo de acesso e os dados da lista IPTV.");
+        setMessage(payload.accessMode === "trial"
+          ? "Seu teste gratuito de 3 dias esta ativo. Configure sua lista IPTV para começar."
+          : payload.registered
+            ? "Esta Roku ja esta ativa. Informe os novos dados da lista IPTV."
+            : "O teste gratuito terminou. Informe seu codigo de acesso e os dados da lista IPTV.");
       })
       .catch((error) => {
         setStatus("error");
@@ -46,7 +62,7 @@ export default function RokuPairPage() {
       const normalizedServer = /^https?:\/\//i.test(server.trim()) ? server.trim() : `http://${server.trim()}`;
       const response = await apiFetch(`/pairings/${encodeURIComponent(code)}/activate`, {
         method: "POST",
-        body: JSON.stringify({ ...(registered ? {} : { activationCode }), credentials: { server: normalizedServer, username, password } })
+        body: JSON.stringify({ ...((!registered || activateNow) ? { activationCode } : {}), credentials: { server: normalizedServer, username, password } })
       }, { skipSubdomain: true });
       const payload = await readApiJson<{ message?: string; companyName?: string }>(response);
       if (!response.ok) throw new Error(payload.message ?? "Nao foi possivel ativar");
@@ -68,8 +84,18 @@ export default function RokuPairPage() {
           <p className="text-xs uppercase tracking-widest text-white/60">Codigo da TV</p>
           <p className="mt-1 font-mono text-3xl font-black tracking-widest">{code || "------"}</p>
         </div>
+        {accessMode === "trial" && (
+          <div className="mt-4 rounded-2xl border border-emerald-300/40 bg-emerald-500/15 p-4 text-emerald-50">
+            <p className="font-bold">Teste gratuito ativo</p>
+            <p className="mt-1 text-sm text-emerald-100/80">Você pode usar o GuiGuiPlayer durante 3 dias. Depois será necessário ativar o aplicativo.</p>
+            {trialExpiresAt && <p className="mt-2 text-xs font-semibold">Válido até {new Date(trialExpiresAt).toLocaleString("pt-BR")}</p>}
+            <button type="button" className="mt-3 text-sm font-bold underline underline-offset-4" onClick={() => setActivateNow((value) => !value)}>
+              {activateNow ? "Continuar usando o teste" : "Já tenho um código e quero ativar agora"}
+            </button>
+          </div>
+        )}
         {status !== "success" && <div className="mt-5 space-y-4">
-          {!registered && <label className="block text-sm">Código de acesso
+          {(!registered || activateNow) && <label className="block text-sm">Código de acesso
             <input className="mt-2 w-full rounded-2xl border border-white/20 bg-white px-4 py-3 text-center font-mono text-xl font-bold uppercase tracking-widest text-slate-950" placeholder="DUMZ-965D-97PC" value={activationCode} disabled={status === "loading"} onChange={(event) => setActivationCode(event.target.value.toUpperCase())} />
           </label>}
           <label className="block text-sm">URL ou host do servidor
@@ -84,9 +110,9 @@ export default function RokuPairPage() {
         </div>}
         <p className={`mt-4 rounded-xl p-3 text-sm ${status === "success" ? "bg-emerald-500/20 text-emerald-100" : status === "error" ? "bg-red-500/20 text-red-100" : "bg-white/10"}`}>{message}</p>
         {(status === "ready" || status === "error") && code && (
-          <button className="mt-4 w-full rounded-2xl bg-violet-500 px-5 py-3 font-bold disabled:opacity-50" disabled={(!registered && activationCode.replace(/[^A-Z0-9]/g, "").length < 8) || !server.trim() || !username.trim() || !password} onClick={() => void activate()}>Salvar e enviar para a TV</button>
+          <button className="mt-4 w-full rounded-2xl bg-violet-500 px-5 py-3 font-bold disabled:opacity-50" disabled={((!registered || activateNow) && activationCode.replace(/[^A-Z0-9]/g, "").length < 8) || !server.trim() || !username.trim() || !password} onClick={() => void activate()}>Salvar e enviar para a TV</button>
         )}
-        <p className="mt-5 text-center text-xs text-white/50">Os dados são criptografados durante o envio e só são liberados se a licença estiver ativa.</p>
+        <p className="mt-5 text-center text-xs text-white/50">Os dados são criptografados durante o envio e só são liberados durante o teste ou com uma licença ativa.</p>
       </section>
     </main>
   );

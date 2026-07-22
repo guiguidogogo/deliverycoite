@@ -384,6 +384,19 @@ model AppDevice {
   @@index([subscriberId, active])
 }
 
+model AppDeviceTrial {
+  id           String       @id @default(cuid())
+  deviceIdHash String       @unique
+  startsAt     DateTime     @default(now())
+  expiresAt    DateTime
+  lastSeenAt   DateTime     @default(now())
+  pairings     AppPairing[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([expiresAt])
+}
+
 model AppPairing {
   id             String            @id @default(cuid())
   code           String            @unique
@@ -393,6 +406,8 @@ model AppPairing {
   subscription   AppSubscription?  @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
   subscriberId   String?
   subscriber     AppSubscriber?    @relation(fields: [subscriberId], references: [id], onDelete: SetNull)
+  trialId        String?
+  trial          AppDeviceTrial?    @relation(fields: [trialId], references: [id], onDelete: SetNull)
   serverEncrypted   String?
   usernameEncrypted String?
   passwordEncrypted String?
@@ -405,6 +420,7 @@ model AppPairing {
   @@index([deviceIdHash, status])
   @@index([subscriptionId, status])
   @@index([subscriberId, status])
+  @@index([trialId, status])
   @@index([expiresAt])
 }
 
