@@ -74,10 +74,10 @@ async function tick() {
   }
 }
 
-await tick();
-if (!once) {
+if (once) {
+  await tick();
+} else {
   const interval = Math.max(config.pollIntervalMs, 60_000);
-  setInterval(tick, interval);
   const server = http.createServer((request, response) => {
     response.setHeader("content-type", "application/json; charset=utf-8");
     if (request.url === "/health" || request.url === "/") {
@@ -91,5 +91,7 @@ if (!once) {
   server.listen(process.env.PORT || 3000, () => {
     console.log("[lottery-collector] health HTTP ativo");
   });
+  void tick();
+  setInterval(tick, interval);
   console.log(`[lottery-collector] ativo a cada ${interval}ms`);
 }

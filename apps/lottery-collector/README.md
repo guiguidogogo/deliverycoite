@@ -22,6 +22,6 @@ npm run send:force -w @delivery/lottery-collector
 O modo contínuo só inicia com `COLLECTOR_ENABLED=true`. O estado local fica em `data/state.json`, fora do Git.
 Ao iniciar sem estado, o coletor percorre até `COLLECTOR_HISTORY_LOOKBACK` concursos anteriores e os entrega do mais antigo para o mais novo. Isso recupera rifas de dias anteriores sem calcular números de concurso.
 
-No cPanel/Passenger, use `src/index.mjs` como startup file. O serviço mantém um endpoint HTTP em `/health` e escuta a porta ou socket fornecido por `PORT`.
+No cPanel/Passenger, use `src/passenger.cjs` como startup file. O serviço mantém um endpoint HTTP em `/health` e escuta a porta ou socket fornecido por `PORT`.
 
 Gere um segredo aleatório com pelo menos 32 bytes e nunca o salve no repositório. Em produção, use exclusivamente HTTPS no webhook.
