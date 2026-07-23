@@ -856,6 +856,10 @@ model RaffleOrder {
   pixQrCode              String?
   pixCopiaCola           String?
   reservationExpiresAt   DateTime?
+  paymentReminderAttemptedAt DateTime?
+  paymentReminderSentAt  DateTime?
+  paymentReminderStatus  String?
+  paymentReminderError   String?
   paidAt                 DateTime?
   cancelledAt            DateTime?
   cancelReason           String?

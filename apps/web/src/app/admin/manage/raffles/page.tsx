@@ -61,6 +61,9 @@ type RaffleOrder = {
   paidAt?: string | null;
   cancelledAt?: string | null;
   cancelReason?: string | null;
+  paymentReminderSentAt?: string | null;
+  paymentReminderStatus?: string | null;
+  paymentReminderError?: string | null;
   createdAt: string;
   numbers: Array<{ formattedNumber: string; price: number }>;
   lastPayment?: { provider: string; providerPaymentId?: string | null; method?: string | null; status: string; processedAt?: string | null } | null;
@@ -169,6 +172,8 @@ export default function AdminRafflesPage() {
     paidAt?: string | null;
     createdAt: string;
   } | null>(null);
+  const [manualSaving, setManualSaving] = useState(false);
+  const [manualOrder, setManualOrder] = useState({ raffleId: "", name: "", phone: "", numbers: "", status: "RESERVED" as "RESERVED" | "PAID", paymentMethod: "PIX", reservationExpiresAt: "" });
 
   const totalNumbers = useMemo(() => Math.max(0, Number(form.numberEnd) - Number(form.numberStart) + 1), [form.numberEnd, form.numberStart]);
   const editingRaffle = useMemo(() => raffles.find((raffle) => raffle.id === editingRaffleId) ?? null, [editingRaffleId, raffles]);
@@ -346,6 +351,34 @@ export default function AdminRafflesPage() {
     } finally {
       setUploadingImage(false);
     }
+  };
+  const createManualOrder = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!manualOrder.raffleId) return toast.error("Selecione a rifa");
+    setManualSaving(true);
+    try {
+      await adminApi(`/admin/raffles/${manualOrder.raffleId}/orders/manual`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...manualOrder, numbers: manualOrder.numbers.split(/[\s,;]+/).filter(Boolean), reservationExpiresAt: manualOrder.reservationExpiresAt ? new Date(manualOrder.reservationExpiresAt).toISOString() : null })
+      });
+      toast.success(manualOrder.status === "PAID" ? "Pagamento manual registrado" : "Numeros reservados manualmente");
+      setManualOrder((current) => ({ ...current, name: "", phone: "", numbers: "", reservationExpiresAt: "" }));
+      await load();
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Falha ao registrar"); }
+    finally { setManualSaving(false); }
+  };
+  const confirmManualPayment = async (order: RaffleOrder) => {
+    try {
+      await adminApi(`/admin/raffles/orders/${order.id}/manual-payment`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paymentMethod: "PIX" }) });
+      toast.success("Pagamento confirmado manualmente"); await load();
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Falha ao confirmar pagamento"); }
+  };
+  const sendPaymentReminder = async (order: RaffleOrder) => {
+    try {
+      const result = await adminApi<{ sent: boolean; whatsappUrl?: string | null }>(`/admin/raffles/orders/${order.id}/payment-reminder`, { method: "POST" });
+      if (result.whatsappUrl) window.open(result.whatsappUrl, "_blank", "noopener,noreferrer");
+      toast.success(result.sent ? "Lembrete enviado automaticamente" : "Mensagem pronta para envio no WhatsApp"); await load();
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Falha ao preparar lembrete"); }
   };
   const paidOrders = orders.filter(isPaidOrder).length;
   const pendingOrders = orders.filter(isPendingOrder).length;
@@ -768,6 +801,21 @@ export default function AdminRafflesPage() {
           <button className="rounded-xl border px-3 py-2 text-sm font-bold" onClick={() => void load()}>Atualizar pedidos</button>
         </div>
 
+        <form onSubmit={createManualOrder} className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950">
+          <h3 className="font-black">Reserva ou pagamento manual</h3>
+          <p className="mt-1 text-xs opacity-75">Informe cliente, WhatsApp e numeros separados por virgula. Reservas podem ficar validas ate o sorteio.</p>
+          <div className="mt-3 grid gap-2 md:grid-cols-3">
+            <select required className="rounded-xl border px-3 py-2" value={manualOrder.raffleId} onChange={(e) => setManualOrder({ ...manualOrder, raffleId: e.target.value })}><option value="">Selecione a rifa</option>{raffles.map((raffle) => <option key={raffle.id} value={raffle.id}>{raffle.title}</option>)}</select>
+            <input required className="rounded-xl border px-3 py-2" placeholder="Nome da pessoa" value={manualOrder.name} onChange={(e) => setManualOrder({ ...manualOrder, name: e.target.value })} />
+            <input required className="rounded-xl border px-3 py-2" placeholder="WhatsApp com DDD" value={manualOrder.phone} onChange={(e) => setManualOrder({ ...manualOrder, phone: e.target.value })} />
+            <input required className="rounded-xl border px-3 py-2" placeholder="Numeros: 05, 17, 88" value={manualOrder.numbers} onChange={(e) => setManualOrder({ ...manualOrder, numbers: e.target.value })} />
+            <select className="rounded-xl border px-3 py-2" value={manualOrder.status} onChange={(e) => setManualOrder({ ...manualOrder, status: e.target.value as "RESERVED" | "PAID" })}><option value="RESERVED">Somente reservar</option><option value="PAID">Registrar como pago</option></select>
+            <select className="rounded-xl border px-3 py-2" value={manualOrder.paymentMethod} onChange={(e) => setManualOrder({ ...manualOrder, paymentMethod: e.target.value })}><option value="PIX">Pix</option><option value="CASH">Dinheiro</option><option value="CARD">Cartao</option><option value="OTHER">Outro</option></select>
+            {manualOrder.status === "RESERVED" && <label className="grid gap-1 text-xs font-bold">Reservar ate (opcional)<input type="datetime-local" className="rounded-xl border px-3 py-2 font-normal" value={manualOrder.reservationExpiresAt} onChange={(e) => setManualOrder({ ...manualOrder, reservationExpiresAt: e.target.value })} /></label>}
+          </div>
+          <button disabled={manualSaving} className="mt-3 rounded-xl bg-emerald-700 px-4 py-2 font-bold text-white disabled:opacity-60">{manualSaving ? "Salvando..." : manualOrder.status === "PAID" ? "Registrar pagamento" : "Reservar numeros"}</button>
+        </form>
+
         <div className="mt-4 grid gap-3">
           {!loading && orders.length === 0 && <p className="rounded-2xl bg-slate-50 p-4 text-sm opacity-70">Nenhum pedido de rifa ainda.</p>}
           {orders.map((order) => (
@@ -798,6 +846,11 @@ export default function AdminRafflesPage() {
                 <span>Pagamento MP: {order.mercadoPagoPaymentId || order.lastPayment?.providerPaymentId || "-"}</span>
                 <span>{order.paidAt ? `Pago em ${new Date(order.paidAt).toLocaleString("pt-BR")}` : order.reservationExpiresAt ? `Expira em ${new Date(order.reservationExpiresAt).toLocaleString("pt-BR")}` : "Sem expiracao"}</span>
               </div>
+              {isPendingOrder(order) && <div className="mt-3 flex flex-wrap gap-2">
+                <button type="button" onClick={() => void confirmManualPayment(order)} className="rounded-xl bg-emerald-700 px-3 py-2 text-xs font-bold text-white">Confirmar pagamento</button>
+                <button type="button" onClick={() => void sendPaymentReminder(order)} className="rounded-xl bg-green-600 px-3 py-2 text-xs font-bold text-white">Lembrar no WhatsApp</button>
+                {order.paymentReminderSentAt && <span className="rounded-xl bg-emerald-100 px-3 py-2 text-xs">Lembrete enviado em {new Date(order.paymentReminderSentAt).toLocaleString("pt-BR")}</span>}
+              </div>}
             </article>
           ))}
         </div>

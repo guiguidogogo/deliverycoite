@@ -141,6 +141,8 @@ import { getSettings, updateSettings } from "../controllers/settings-controller.
 import { listMarketplaceCompanies, marketplaceSummary } from "../controllers/marketplace-controller.js";
 import {
   createAdminRaffle,
+  createAdminManualRaffleOrder,
+  confirmAdminRaffleManualPayment,
   createRaffleMercadoPagoPix,
   getAdminRaffle,
   getPublicRaffle,
@@ -155,6 +157,7 @@ import {
   requestRaffleParticipantPasswordReset,
   reservePublicRaffleNumbers,
   resetRaffleParticipantPassword,
+  sendAdminRafflePaymentReminder,
   retryAdminRaffleDraw,
   updateAdminRaffle,
   updateAdminRaffleStatus
@@ -353,6 +356,9 @@ route.put("/admin/business-hours", requirePermission("SETTINGS"), updateAdminBus
 route.get("/admin/raffles", requireAnyPermission(["CATALOG", "REPORTS"]), listAdminRaffles);
 route.post("/admin/raffles", requirePermission("CATALOG"), createAdminRaffle);
 route.get("/admin/raffles/orders", requireAnyPermission(["CATALOG", "REPORTS"]), listAdminRaffleOrders);
+route.post("/admin/raffles/:id/orders/manual", requirePermission("CATALOG"), createAdminManualRaffleOrder);
+route.post("/admin/raffles/orders/:orderId/manual-payment", requirePermission("CATALOG"), confirmAdminRaffleManualPayment);
+route.post("/admin/raffles/orders/:orderId/payment-reminder", requirePermission("CATALOG"), sendAdminRafflePaymentReminder);
 route.get("/admin/raffles/:id", requireAnyPermission(["CATALOG", "REPORTS"]), getAdminRaffle);
 route.patch("/admin/raffles/:id", requirePermission("CATALOG"), updateAdminRaffle);
 route.patch("/admin/raffles/:id/status", requirePermission("CATALOG"), updateAdminRaffleStatus);

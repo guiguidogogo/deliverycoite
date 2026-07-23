@@ -11,6 +11,7 @@ import {
   SUPPORTED_RAFFLE_CAIXA_MODALITIES
 } from "../services/caixa-lottery-service.js";
 import { processAutomaticRaffleById } from "../services/raffle-draw-service.js";
+import { sendRafflePaymentReminderById } from "../services/raffle-payment-reminder-service.js";
 import { dispatchWhatsappMessage } from "../services/whatsapp.js";
 import { env } from "../utils/env.js";
 import { isAllowedImageUrl, optionalImageUrl } from "../utils/image-url.js";
@@ -57,6 +58,15 @@ const publicReserveSchema = z.object({
     cpf: z.string().trim().max(20).optional().nullable(),
     password: z.string().min(6, "Crie uma senha com pelo menos 6 digitos").max(72).optional().or(z.literal(""))
   })
+});
+
+const adminManualRaffleOrderSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  phone: z.string().trim().min(8).max(30),
+  numbers: z.array(z.string().trim().min(1)).min(1).max(1000),
+  status: z.enum(["RESERVED", "PAID"]),
+  paymentMethod: z.enum(["PIX", "CASH", "CARD", "OTHER"]).default("PIX"),
+  reservationExpiresAt: z.coerce.date().optional().nullable()
 });
 
 const raffleParticipantLoginSchema = z.object({
@@ -574,6 +584,10 @@ export async function listAdminRaffleOrders(req: Request, res: Response) {
     paidAt: order.paidAt,
     cancelledAt: order.cancelledAt,
     cancelReason: order.cancelReason,
+    paymentReminderAttemptedAt: order.paymentReminderAttemptedAt,
+    paymentReminderSentAt: order.paymentReminderSentAt,
+    paymentReminderStatus: order.paymentReminderStatus,
+    paymentReminderError: order.paymentReminderError,
     createdAt: order.createdAt,
     numbers: order.items.map((item) => ({
       formattedNumber: item.formattedNumber,
@@ -581,6 +595,71 @@ export async function listAdminRaffleOrders(req: Request, res: Response) {
     })),
     lastPayment: order.payments[0] ?? null
   })));
+}
+
+export async function createAdminManualRaffleOrder(req: Request, res: Response) {
+  const companyId = getCompanyId(req);
+  const body = adminManualRaffleOrderSchema.parse(req.body);
+  const phone = onlyDigits(body.phone);
+  if (phone.length < 10) return res.status(400).json({ message: "Informe um WhatsApp valido com DDD." });
+  const raffle = await prisma.raffle.findFirst({ where: { id: req.params.id, companyId } });
+  if (!raffle) return res.status(404).json({ message: "Rifa nao encontrada" });
+  const requested = [...new Set(body.numbers.map((value) => formatNumber(Number(onlyDigits(value)), raffle.numberDigits)))];
+  const now = new Date();
+  const paid = body.status === "PAID";
+  const expiresAt = paid ? null : (body.reservationExpiresAt ?? raffle.drawScheduledAt ?? raffle.endsAt ?? new Date(now.getTime() + 7 * 86400000));
+
+  const order = await prisma.$transaction(async (tx) => {
+    const participant = await tx.raffleParticipant.upsert({
+      where: { companyId_phone: { companyId, phone } },
+      create: { companyId, raffleId: raffle.id, name: body.name, phone },
+      update: { name: body.name, raffleId: raffle.id }
+    });
+    const numbers = await tx.raffleNumber.findMany({
+      where: { companyId, raffleId: raffle.id, formattedNumber: { in: requested }, status: "AVAILABLE" }
+    });
+    if (numbers.length !== requested.length) throw Object.assign(new Error("Um ou mais numeros nao existem ou ja estao reservados."), { statusCode: 409 });
+    const subtotal = new Prisma.Decimal(Number(raffle.pricePerNumber) * numbers.length);
+    const created = await tx.raffleOrder.create({
+      data: {
+        companyId, raffleId: raffle.id, participantId: participant.id,
+        status: paid ? "PAID" : "RESERVED", paymentStatus: paid ? "APPROVED" : "PENDING",
+        paymentMethod: body.paymentMethod, subtotal, total: subtotal,
+        reservationExpiresAt: expiresAt, paidAt: paid ? now : null,
+        items: { create: numbers.map((number) => ({ companyId, raffleNumberId: number.id, number: number.number, formattedNumber: number.formattedNumber, price: raffle.pricePerNumber })) }
+      }
+    });
+    await tx.raffleNumber.updateMany({
+      where: { id: { in: numbers.map((number) => number.id) } },
+      data: { status: paid ? "PAID" : "RESERVED", reservedByParticipantId: participant.id, reservedUntil: expiresAt, orderId: created.id, paidAt: paid ? now : null }
+    });
+    if (paid) await tx.rafflePayment.create({ data: { companyId, raffleId: raffle.id, orderId: created.id, provider: "MANUAL", method: body.paymentMethod, status: "APPROVED", amount: subtotal, processedAt: now } });
+    await tx.raffleAuditLog.create({ data: { companyId, raffleId: raffle.id, userId: req.user?.sub, userName: req.user?.sub, action: paid ? "RAFFLE_MANUAL_PAYMENT" : "RAFFLE_MANUAL_RESERVATION", entity: "RaffleOrder", entityId: created.id, newValue: { name: body.name, phone, numbers: requested, paymentMethod: body.paymentMethod } } });
+    return created;
+  });
+  return res.status(201).json({ id: order.id, status: order.status, paymentStatus: order.paymentStatus });
+}
+
+export async function confirmAdminRaffleManualPayment(req: Request, res: Response) {
+  const companyId = getCompanyId(req);
+  const method = z.object({ paymentMethod: z.enum(["PIX", "CASH", "CARD", "OTHER"]).default("PIX") }).parse(req.body).paymentMethod;
+  const order = await prisma.raffleOrder.findFirst({ where: { id: req.params.orderId, companyId }, include: { numbers: true } });
+  if (!order) return res.status(404).json({ message: "Pedido nao encontrado" });
+  if (order.paymentStatus === "APPROVED") return res.json({ id: order.id, status: order.status });
+  const now = new Date();
+  await prisma.$transaction(async (tx) => {
+    await tx.raffleOrder.update({ where: { id: order.id }, data: { status: "PAID", paymentStatus: "APPROVED", paymentMethod: method, paidAt: now, reservationExpiresAt: null } });
+    await tx.raffleNumber.updateMany({ where: { companyId, orderId: order.id }, data: { status: "PAID", paidAt: now, reservedUntil: null } });
+    await tx.rafflePayment.create({ data: { companyId, raffleId: order.raffleId, orderId: order.id, provider: "MANUAL", method, status: "APPROVED", amount: order.total, processedAt: now } });
+    await tx.raffleAuditLog.create({ data: { companyId, raffleId: order.raffleId, userId: req.user?.sub, userName: req.user?.sub, action: "RAFFLE_MANUAL_PAYMENT", entity: "RaffleOrder", entityId: order.id, newValue: { paymentMethod: method } } });
+  });
+  return res.json({ id: order.id, status: "PAID", paymentStatus: "APPROVED" });
+}
+
+export async function sendAdminRafflePaymentReminder(req: Request, res: Response) {
+  const order = await prisma.raffleOrder.findFirst({ where: { id: req.params.orderId, companyId: getCompanyId(req) }, select: { id: true } });
+  if (!order) return res.status(404).json({ message: "Pedido nao encontrado" });
+  return res.json(await sendRafflePaymentReminderById(order.id));
 }
 
 export async function createAdminRaffle(req: Request, res: Response) {
