@@ -63,7 +63,14 @@ async function tick() {
   running = true;
   try {
     const result = await runCollectorCycle(config, { force });
-    lastCycle = { ok: true, at: new Date().toISOString(), status: result.status, eventIds: result.eventIds };
+    lastCycle = {
+      ok: true,
+      at: new Date().toISOString(),
+      status: result.status,
+      eventIds: result.eventIds,
+      ...(result.retryAt ? { retryAt: result.retryAt } : {}),
+      ...(result.reason ? { reason: result.reason } : {})
+    };
     console.log(`[lottery-collector] ${result.status} ${result.eventIds.join(",")}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : "falha desconhecida";

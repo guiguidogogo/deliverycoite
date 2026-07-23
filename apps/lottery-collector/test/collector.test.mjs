@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 import {
   parseFederalResult,
   parseOfficialDate,
+  runCollectorCycle,
   sendResultToSaas,
   signWebhookBody
 } from "../src/collector.mjs";
@@ -91,4 +95,46 @@ test("nao repete webhook rejeitado com HTTP 403", async () => {
     return new Response("forbidden", { status: 403 });
   }), /HTTP 403/);
   assert.equal(calls, 1);
+});
+
+test("pausa consultas a CAIXA por 6h e depois 24h ao receber bloqueio", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "lottery-collector-"));
+  const stateFile = path.join(directory, "state.json");
+  const config = { stateFile };
+  const start = Date.parse("2026-07-23T00:00:00.000Z");
+  let calls = 0;
+  const blockedFetch = async () => {
+    calls += 1;
+    const error = new Error("A CAIXA retornou HTTP 403.");
+    error.status = 403;
+    throw error;
+  };
+
+  try {
+    const first = await runCollectorCycle(config, { now: start, fetchResult: blockedFetch });
+    assert.equal(first.status, "PAUSED");
+    assert.equal(first.retryAt, "2026-07-23T06:00:00.000Z");
+    assert.equal(calls, 1);
+
+    const duringPause = await runCollectorCycle(config, {
+      now: start + 60 * 60 * 1000,
+      fetchResult: blockedFetch
+    });
+    assert.equal(duringPause.status, "PAUSED");
+    assert.equal(duringPause.retryAt, first.retryAt);
+    assert.equal(calls, 1);
+
+    const second = await runCollectorCycle(config, {
+      now: start + 6 * 60 * 60 * 1000,
+      fetchResult: blockedFetch
+    });
+    assert.equal(second.retryAt, "2026-07-24T06:00:00.000Z");
+    assert.equal(calls, 2);
+
+    const saved = JSON.parse(await readFile(stateFile, "utf8"));
+    assert.equal(saved.caixaBlockCount, 2);
+    assert.equal(saved.caixaLastStatus, 403);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

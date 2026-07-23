@@ -3,6 +3,9 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const TRANSIENT_WEBHOOK_STATUSES = new Set([429, 500, 502, 503, 504]);
+const CAIXA_BLOCK_STATUSES = new Set([403, 429]);
+const INITIAL_CAIXA_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+const MAX_CAIXA_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
 function onlyDigits(value) {
   return String(value ?? "").replace(/\D/g, "");
@@ -139,25 +142,89 @@ async function writeState(stateFile, state) {
   await rename(temporary, stateFile);
 }
 
-export async function runCollectorCycle(config, { force = false } = {}) {
-  const state = await readState(config.stateFile);
-  const latest = await fetchFederalResult(config);
+async function pauseAfterCaixaBlock(config, state, error, nowMs) {
+  const blockCount = Math.max(0, Number(state.caixaBlockCount) || 0) + 1;
+  const cooldownMs = blockCount === 1 ? INITIAL_CAIXA_COOLDOWN_MS : MAX_CAIXA_COOLDOWN_MS;
+  const retryAt = new Date(nowMs + cooldownMs).toISOString();
+  await writeState(config.stateFile, {
+    ...state,
+    caixaBlockCount: blockCount,
+    caixaRetryAt: retryAt,
+    caixaLastBlockedAt: new Date(nowMs).toISOString(),
+    caixaLastStatus: error.status
+  });
+  return {
+    status: "PAUSED",
+    eventIds: [],
+    retryAt,
+    reason: `CAIXA_HTTP_${error.status}`
+  };
+}
+
+function withoutCaixaPause(state) {
+  const clean = { ...state };
+  delete clean.caixaBlockCount;
+  delete clean.caixaRetryAt;
+  delete clean.caixaLastBlockedAt;
+  delete clean.caixaLastStatus;
+  return clean;
+}
+
+export async function runCollectorCycle(config, {
+  force = false,
+  now = Date.now(),
+  fetchResult = fetchFederalResult
+} = {}) {
+  let state = await readState(config.stateFile);
+  const nowMs = Number(now);
+  const savedRetryAtMs = Date.parse(state.caixaRetryAt ?? "");
+  if (!force && Number.isFinite(savedRetryAtMs) && savedRetryAtMs > nowMs) {
+    return {
+      status: "PAUSED",
+      eventIds: [],
+      retryAt: state.caixaRetryAt,
+      reason: `CAIXA_HTTP_${state.caixaLastStatus ?? 403}`
+    };
+  }
+
+  let latest;
+  try {
+    latest = await fetchResult(config);
+  } catch (error) {
+    if (CAIXA_BLOCK_STATUSES.has(error?.status)) {
+      return pauseAfterCaixaBlock(config, state, error, nowMs);
+    }
+    throw error;
+  }
   if (!force && state.lastDeliveredEventId === latest.payload.eventId) {
+    if (state.caixaRetryAt) await writeState(config.stateFile, withoutCaixaPause(state));
     return { status: "UNCHANGED", eventIds: [latest.payload.eventId] };
   }
 
   const pending = [latest.payload];
   let previousContest = latest.previousContest;
-  if (!force) {
-    while (previousContest && pending.length < config.historyLookback) {
-      const previous = await fetchFederalResult(config, previousContest);
-      if (previous.payload.eventId === state.lastDeliveredEventId) break;
-      if (pending.some((item) => item.eventId === previous.payload.eventId)) {
-        throw new Error("A CAIXA retornou um ciclo na navegacao de concursos anteriores.");
+  try {
+    if (!force) {
+      while (previousContest && pending.length < config.historyLookback) {
+        const previous = await fetchResult(config, previousContest);
+        if (previous.payload.eventId === state.lastDeliveredEventId) break;
+        if (pending.some((item) => item.eventId === previous.payload.eventId)) {
+          throw new Error("A CAIXA retornou um ciclo na navegacao de concursos anteriores.");
+        }
+        pending.push(previous.payload);
+        previousContest = previous.previousContest;
       }
-      pending.push(previous.payload);
-      previousContest = previous.previousContest;
     }
+  } catch (error) {
+    if (CAIXA_BLOCK_STATUSES.has(error?.status)) {
+      return pauseAfterCaixaBlock(config, state, error, nowMs);
+    }
+    throw error;
+  }
+
+  if (state.caixaRetryAt) {
+    state = withoutCaixaPause(state);
+    await writeState(config.stateFile, state);
   }
 
   const deliveries = [];
