@@ -75,12 +75,13 @@ async function tick() {
 }
 
 if (once) {
-  await tick();
+  void tick();
 } else {
   const interval = Math.max(config.pollIntervalMs, 60_000);
   const server = http.createServer((request, response) => {
     response.setHeader("content-type", "application/json; charset=utf-8");
-    if (request.url === "/health" || request.url === "/") {
+    const pathname = request.url?.split("?", 1)[0] ?? "/";
+    if (pathname === "/" || pathname === "/health" || pathname.endsWith("/health")) {
       response.statusCode = lastCycle?.ok === false ? 503 : 200;
       response.end(JSON.stringify({ service: "lottery-collector", enabled: true, lastCycle }));
       return;
