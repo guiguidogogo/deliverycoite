@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   parseFederalResult,
   parseOfficialDate,
+  resolveFederalResult,
   runCollectorCycle,
   sendResultToSaas,
   signWebhookBody
@@ -95,6 +96,50 @@ test("nao repete webhook rejeitado com HTTP 403", async () => {
     return new Response("forbidden", { status: 403 });
   }), /HTTP 403/);
   assert.equal(calls, 1);
+});
+
+test("localiza concurso antigo pela data oficial sem calcular sequencia", async () => {
+  const calls = [];
+  const results = {
+    latest: {
+      payload: { eventId: "federal:6085", contest: "6085", drawDate: "2026-07-22" },
+      previousContest: "6084",
+      raw: { numero: 6085 }
+    },
+    "6084": {
+      payload: { eventId: "federal:6084", contest: "6084", drawDate: "2026-07-18" },
+      previousContest: "6083",
+      raw: { numero: 6084 }
+    }
+  };
+
+  const result = await resolveFederalResult({ historyLookback: 10 }, {
+    drawDate: "2026-07-18",
+    fetchResult: async (_config, contest) => {
+      calls.push(contest ?? "latest");
+      return results[contest ?? "latest"];
+    }
+  });
+
+  assert.equal(result.payload.contest, "6084");
+  assert.deepEqual(calls, ["latest", "6084"]);
+});
+
+test("nao associa resultado de outra data", async () => {
+  await assert.rejects(() => resolveFederalResult({ historyLookback: 2 }, {
+    drawDate: "2026-07-19",
+    fetchResult: async (_config, contest) => contest
+      ? {
+          payload: { eventId: "federal:6084", contest: "6084", drawDate: "2026-07-18" },
+          previousContest: "",
+          raw: { numero: 6084 }
+        }
+      : {
+          payload: { eventId: "federal:6085", contest: "6085", drawDate: "2026-07-22" },
+          previousContest: "6084",
+          raw: { numero: 6085 }
+        }
+  }), /Nenhum concurso/);
 });
 
 test("pausa consultas a CAIXA por 6h e depois 24h ao receber bloqueio", async () => {

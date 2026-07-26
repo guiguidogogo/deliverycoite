@@ -144,7 +144,7 @@ export async function processAutomaticRaffleById(
       : await findStoredLotteryResult(modality, scheduledDateKey, raffle.drawContestNumber);
     const result = suppliedResult
       ?? storedResult
-      ?? await fetchCaixaLotteryResult(modality, raffle.drawContestNumber);
+      ?? await fetchCaixaLotteryResult(modality, raffle.drawContestNumber, scheduledDateKey);
 
     if (result.modality !== modality) {
       throw new CaixaLotteryError("O resultado recebido pertence a outra modalidade.", false);

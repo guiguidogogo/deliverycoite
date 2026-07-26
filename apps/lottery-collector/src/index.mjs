@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import { runCollectorCycle } from "./collector.mjs";
+import { resolveFederalResult, runCollectorCycle } from "./collector.mjs";
 
 function loadEnvFile() {
   const envPath = path.resolve(process.cwd(), ".env");
@@ -39,7 +39,8 @@ function getConfig() {
     webhookMaxRetries: positiveInteger(process.env.COLLECTOR_WEBHOOK_MAX_RETRIES, 5, "COLLECTOR_WEBHOOK_MAX_RETRIES"),
     historyLookback: positiveInteger(process.env.COLLECTOR_HISTORY_LOOKBACK, 10, "COLLECTOR_HISTORY_LOOKBACK"),
     stateFile: path.resolve(process.cwd(), process.env.COLLECTOR_STATE_FILE ?? "./data/state.json"),
-    userAgent: process.env.LOTTERY_COLLECTOR_USER_AGENT ?? "HubRegional-LotteryCollector/1.0"
+    userAgent: process.env.LOTTERY_COLLECTOR_USER_AGENT ?? "HubRegional-LotteryCollector/1.0",
+    relayToken: process.env.CAIXA_LOTTERY_RELAY_TOKEN ?? webhookSecret
   };
 }
 
@@ -57,6 +58,37 @@ if (!once && !enabled) {
 const config = getConfig();
 let running = false;
 let lastCycle = null;
+const relayCache = new Map();
+const relayInFlight = new Map();
+
+function bearerToken(request) {
+  const authorization = String(request.headers.authorization ?? "");
+  if (/^Bearer /i.test(authorization)) return authorization.slice(7).trim();
+  return String(request.headers["x-caixa-relay-token"] ?? "").trim();
+}
+
+function relayRequestKey(contestNumber, drawDate) {
+  return contestNumber ? `contest:${contestNumber}` : drawDate ? `date:${drawDate}` : "latest";
+}
+
+async function resolveRelayRequest(contestNumber, drawDate) {
+  const key = relayRequestKey(contestNumber, drawDate);
+  const cached = relayCache.get(key);
+  if (cached) return cached;
+  const existing = relayInFlight.get(key);
+  if (existing) return existing;
+
+  const pending = resolveFederalResult(config, { contestNumber, drawDate })
+    .then((result) => {
+      relayCache.set(key, result.raw);
+      relayCache.set(`contest:${result.payload.contest}`, result.raw);
+      relayCache.set(`date:${result.payload.drawDate}`, result.raw);
+      return result.raw;
+    })
+    .finally(() => relayInFlight.delete(key));
+  relayInFlight.set(key, pending);
+  return pending;
+}
 
 async function tick() {
   if (running) return;
@@ -87,10 +119,33 @@ if (once) {
   const interval = Math.max(config.pollIntervalMs, 60_000);
   const server = http.createServer((request, response) => {
     response.setHeader("content-type", "application/json; charset=utf-8");
-    const pathname = request.url?.split("?", 1)[0] ?? "/";
+    const requestUrl = new URL(request.url ?? "/", "http://localhost");
+    const pathname = requestUrl.pathname;
     if (pathname === "/" || pathname === "/health" || pathname.endsWith("/health")) {
       response.statusCode = lastCycle?.ok === false ? 503 : 200;
       response.end(JSON.stringify({ service: "lottery-collector", enabled: true, lastCycle }));
+      return;
+    }
+    const federalMatch = pathname.match(/(?:^|\/)federal(?:\/(\d+))?\/?$/i);
+    if (request.method === "GET" && federalMatch) {
+      if (!config.relayToken || bearerToken(request) !== config.relayToken) {
+        response.statusCode = 401;
+        response.end(JSON.stringify({ message: "Nao autorizado." }));
+        return;
+      }
+      const contestNumber = federalMatch[1] ?? "";
+      const drawDate = requestUrl.searchParams.get("date") ?? "";
+      void resolveRelayRequest(contestNumber, drawDate)
+        .then((raw) => {
+          response.statusCode = 200;
+          response.end(JSON.stringify(raw));
+        })
+        .catch((error) => {
+          response.statusCode = Number.isInteger(error?.status) ? error.status : 502;
+          response.end(JSON.stringify({
+            message: error instanceof Error ? error.message : "Falha ao consultar a CAIXA."
+          }));
+        });
       return;
     }
     response.statusCode = 404;

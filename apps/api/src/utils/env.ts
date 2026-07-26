@@ -48,6 +48,12 @@ export const env = {
   get caixaLotteryBaseUrl() {
     return process.env.CAIXA_LOTTERY_BASE_URL ?? "https://servicebus2.caixa.gov.br/portaldeloterias/api";
   },
+  get lotteryCollectorRelayUrl() {
+    return (
+      process.env.LOTTERY_COLLECTOR_RELAY_URL ??
+      "https://sorrindo.es.ht/lottery-collector"
+    ).replace(/\/$/, "");
+  },
   get caixaLotteryTimeoutMs() {
     return Number(process.env.CAIXA_LOTTERY_TIMEOUT_MS ?? 10000);
   },
@@ -58,7 +64,9 @@ export const env = {
     );
   },
   get caixaLotteryRelayToken() {
-    return process.env.CAIXA_LOTTERY_RELAY_TOKEN?.trim() ?? "";
+    return process.env.CAIXA_LOTTERY_RELAY_TOKEN?.trim()
+      || process.env.LOTTERY_WEBHOOK_SECRET?.trim()
+      || "";
   },
   get raffleDrawJobEnabled() {
     return (process.env.RAFFLE_DRAW_JOB_ENABLED ?? "false").toLowerCase() === "true";

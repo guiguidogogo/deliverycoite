@@ -157,7 +157,11 @@ export function extractWinningDigits(baseNumber: string, digits: number) {
   return normalized.padStart(digits, "0").slice(-digits);
 }
 
-export async function fetchCaixaLotteryResult(modalityInput: string, contestNumber?: string | null): Promise<CaixaLotteryResult> {
+export async function fetchCaixaLotteryResult(
+  modalityInput: string,
+  contestNumber?: string | null,
+  scheduledDateKey?: string | null
+): Promise<CaixaLotteryResult> {
   const modality = normalizeCaixaModality(modalityInput);
   if (!isAllowedCaixaModality(modality)) throw new CaixaLotteryError("Modalidade da CAIXA invalida.", false);
   if (!isSupportedRaffleCaixaModality(modality)) {
@@ -165,7 +169,12 @@ export async function fetchCaixaLotteryResult(modalityInput: string, contestNumb
   }
 
   const contestPath = contestNumber ? `/${encodeURIComponent(onlyDigits(contestNumber))}` : "";
-  const url = `${env.caixaLotteryBaseUrl.replace(/\/$/, "")}/${modality}${contestPath}`;
+  const useCollector = env.lotteryCollectorWebhookEnabled && Boolean(env.lotteryCollectorRelayUrl);
+  const baseUrl = useCollector ? env.lotteryCollectorRelayUrl : env.caixaLotteryBaseUrl.replace(/\/$/, "");
+  const dateQuery = useCollector && !contestNumber && scheduledDateKey
+    ? `?date=${encodeURIComponent(scheduledDateKey)}`
+    : "";
+  const url = `${baseUrl}/${modality}${contestPath}${dateQuery}`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), env.caixaLotteryTimeoutMs);
   try {
@@ -205,7 +214,7 @@ export async function fetchCaixaLotteryResult(modalityInput: string, contestNumb
       officialDateKey: official.dateKey,
       officialDate: official.date,
       baseNumber,
-      source: "CAIXA_JSON",
+      source: useCollector ? "EXTERNAL_COLLECTOR" : "CAIXA_JSON",
       raw
     };
   } catch (error) {

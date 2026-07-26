@@ -81,8 +81,52 @@ export async function fetchFederalResult(config, contestNumber) {
   }
   return {
     payload: parseFederalResult(raw),
-    previousContest: onlyDigits(raw.numeroConcursoAnterior)
+    previousContest: onlyDigits(raw.numeroConcursoAnterior),
+    raw
   };
+}
+
+export async function resolveFederalResult(config, {
+  contestNumber,
+  drawDate,
+  fetchResult = fetchFederalResult
+} = {}) {
+  const normalizedContest = onlyDigits(contestNumber);
+  const normalizedDate = String(drawDate ?? "").trim();
+  if (normalizedDate && !/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
+    const error = new Error("Data prevista invalida. Use YYYY-MM-DD.");
+    error.status = 400;
+    throw error;
+  }
+
+  if (normalizedContest) {
+    const result = await fetchResult(config, normalizedContest);
+    if (normalizedDate && result.payload.drawDate !== normalizedDate) {
+      const error = new Error("O concurso informado nao pertence a data prevista.");
+      error.status = 404;
+      throw error;
+    }
+    return result;
+  }
+
+  if (!normalizedDate) return fetchResult(config);
+
+  let result = await fetchResult(config);
+  const visited = new Set();
+  for (let position = 0; position < config.historyLookback; position += 1) {
+    if (visited.has(result.payload.eventId)) {
+      throw new Error("A CAIXA retornou um ciclo na navegacao de concursos anteriores.");
+    }
+    visited.add(result.payload.eventId);
+
+    if (result.payload.drawDate === normalizedDate) return result;
+    if (result.payload.drawDate < normalizedDate || !result.previousContest) break;
+    result = await fetchResult(config, result.previousContest);
+  }
+
+  const error = new Error(`Nenhum concurso da Loteria Federal foi encontrado em ${normalizedDate}.`);
+  error.status = 404;
+  throw error;
 }
 
 function wait(ms) {
