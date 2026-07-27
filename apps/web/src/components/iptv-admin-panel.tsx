@@ -40,6 +40,8 @@ export function IptvAdminPanel() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [pairingSubscriberId, setPairingSubscriberId] = useState<string | null>(null);
+  const [tvCode, setTvCode] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
 
@@ -114,6 +116,28 @@ export function IptvAdminPanel() {
     } catch (error) { toast.error(error instanceof Error ? error.message : "Falha ao gerar código"); }
   }
 
+  async function manualPairSubscriber(item: Subscriber) {
+    const pairingCode = tvCode.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (pairingCode.length < 4) return toast.error("Informe o código exibido na TV");
+    try {
+      const result = await adminApi<{ activationCode: string }>(
+        `/admin/my-app/subscribers/${item.id}/manual-pair`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pairingCode })
+        }
+      );
+      await navigator.clipboard.writeText(result.activationCode).catch(() => undefined);
+      toast.success(`TV vinculada. Novo código: ${result.activationCode}`);
+      setPairingSubscriberId(null);
+      setTvCode("");
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao vincular a TV");
+    }
+  }
+
   async function removeSubscriber(item: Subscriber) {
     if (!window.confirm(`Excluir ${item.name}? O acesso e os aparelhos vinculados serão removidos.`)) return;
     try {
@@ -173,7 +197,16 @@ export function IptvAdminPanel() {
                 <div className="mt-4 rounded-xl bg-violet-500/15 p-4"><p className="text-xs uppercase tracking-wider text-white/55">Código de acesso</p><div className="mt-1 flex flex-wrap items-center justify-between gap-2"><strong className="font-mono text-xl tracking-wider">{item.activationCode}</strong><button className="text-sm text-violet-200 underline" onClick={() => void navigator.clipboard.writeText(item.activationCode).then(() => toast.success("Código copiado"))}>Copiar</button></div></div>
                 <div className="mt-4 grid grid-cols-2 gap-3 text-sm"><div><p className="text-white/50">Plano</p><p className="font-semibold">{planText[item.plan]}</p></div><div><p className="text-white/50">Validade</p><p className="font-semibold">{formatDate(item.expiresAt)}</p></div></div>
                 {item.devices.map((device) => <div key={device.id} className="mt-3 flex items-center justify-between rounded-xl bg-white/5 p-3"><div><p className="font-semibold">{device.label || "Roku"}</p><p className="text-xs text-white/50">Último acesso: {new Date(device.lastSeenAt).toLocaleString("pt-BR")}</p></div><button className={`rounded-lg px-3 py-2 text-xs font-bold ${device.active ? "bg-red-600" : "bg-emerald-600"}`} onClick={() => void toggleDevice(device)}>{device.active ? "Bloquear TV" : "Liberar TV"}</button></div>)}
-                <div className="mt-5 flex flex-wrap gap-2"><button className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold" onClick={() => editSubscriber(item)}>Editar / renovar</button><button className={`rounded-lg px-3 py-2 text-sm font-semibold ${item.active ? "bg-amber-600" : "bg-emerald-600"}`} onClick={() => void toggleSubscriber(item)}>{item.active ? "Bloquear" : "Liberar"}</button><button className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-semibold" onClick={() => void regenerateCode(item)}>Novo código</button><button className="rounded-lg bg-red-700 px-3 py-2 text-sm font-semibold" onClick={() => void removeSubscriber(item)}>Excluir</button></div>
+                <div className="mt-5 flex flex-wrap gap-2"><button className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold" onClick={() => editSubscriber(item)}>Editar / renovar</button><button className={`rounded-lg px-3 py-2 text-sm font-semibold ${item.active ? "bg-amber-600" : "bg-emerald-600"}`} onClick={() => void toggleSubscriber(item)}>{item.active ? "Bloquear" : "Liberar"}</button><button className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-semibold" onClick={() => void regenerateCode(item)}>Novo código</button><button className="rounded-lg bg-fuchsia-600 px-3 py-2 text-sm font-semibold" onClick={() => { setPairingSubscriberId(item.id); setTvCode(""); }}>Vincular código da TV</button><button className="rounded-lg bg-red-700 px-3 py-2 text-sm font-semibold" onClick={() => void removeSubscriber(item)}>Excluir</button></div>
+                {pairingSubscriberId === item.id && <div className="mt-4 rounded-xl border border-fuchsia-300/30 bg-fuchsia-500/10 p-4">
+                  <p className="font-semibold">Vincular esta TV a {item.name}</p>
+                  <p className="mt-1 text-sm text-white/60">Digite o código curto que está aparecendo na televisão.</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <input className="min-w-52 flex-1 rounded-xl bg-white px-4 py-3 font-mono text-lg font-bold uppercase tracking-widest text-slate-950" placeholder="CÓDIGO DA TV" maxLength={12} value={tvCode} onChange={(event) => setTvCode(event.target.value.toUpperCase())} />
+                    <button className="rounded-xl bg-fuchsia-600 px-5 py-3 font-bold" onClick={() => void manualPairSubscriber(item)}>Vincular e liberar</button>
+                    <button className="rounded-xl bg-white/10 px-4 py-3" onClick={() => setPairingSubscriberId(null)}>Cancelar</button>
+                  </div>
+                </div>}
               </article>)}
             </div>
 

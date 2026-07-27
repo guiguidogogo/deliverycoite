@@ -264,6 +264,95 @@ export async function regenerateMySubscriberActivationCode(req: Request, res: Re
   return res.json({ activationCode: activationDisplay(activationCode) });
 }
 
+export async function manuallyPairMyAppSubscriber(req: Request, res: Response) {
+  const companyId = req.user?.companyId;
+  if (!companyId) return res.status(403).json({ message: "Acesso disponivel somente para empresas" });
+  const body = manualPairingSchema.parse(req.body);
+  const subscriber = await prisma.appSubscriber.findFirst({
+    where: {
+      id: req.params.subscriberId,
+      subscription: { companyId, product: "GUIGUI_PLAYER" }
+    },
+    include: {
+      devices: true,
+      subscription: {
+        include: {
+          company: { select: { active: true, tradeName: true } },
+          credentials: true
+        }
+      }
+    }
+  });
+  if (!subscriber) return res.status(404).json({ message: "Assinante nao encontrado" });
+  if (
+    !subscriber.subscription.company.active
+    || subscriptionStatus(subscriber.subscription) !== "active"
+    || subscriptionStatus(subscriber) !== "active"
+  ) {
+    return res.status(403).json({ message: "Ative ou renove o assinante antes de vincular a TV" });
+  }
+  if (!subscriber.subscription.credentials) {
+    return res.status(409).json({ message: "Configure o servidor, login e senha IPTV antes de vincular a TV" });
+  }
+
+  const pairingCode = normalizeCode(body.pairingCode);
+  const pairing = await prisma.appPairing.findUnique({ where: { code: pairingCode } });
+  if (!pairing) return res.status(404).json({ message: "Codigo da TV nao encontrado" });
+  if (pairing.status !== "PENDING" || pairing.expiresAt.getTime() <= Date.now()) {
+    if (pairing.status === "PENDING") {
+      await prisma.appPairing.update({ where: { id: pairing.id }, data: { status: "EXPIRED" } });
+    }
+    return res.status(410).json({ message: "O codigo da TV expirou. Gere outro codigo na Roku" });
+  }
+
+  const existingDevice = subscriber.devices.find((device) => device.deviceIdHash === pairing.deviceIdHash);
+  const activeDevices = subscriber.devices.filter((device) => device.active && device.id !== existingDevice?.id).length;
+  if (activeDevices >= subscriber.maxDevices) {
+    return res.status(409).json({ message: "Limite de TVs deste assinante atingido" });
+  }
+
+  const activationCode = await generateUniqueActivationCode();
+  await prisma.$transaction([
+    prisma.appSubscriber.update({
+      where: { id: subscriber.id },
+      data: {
+        activationCodeHash: hashOpaqueValue(activationCode),
+        activationCodeEncrypted: encryptIptvValue(activationCode)
+      }
+    }),
+    prisma.appDevice.upsert({
+      where: {
+        subscriptionId_deviceIdHash: {
+          subscriptionId: subscriber.subscriptionId,
+          deviceIdHash: pairing.deviceIdHash
+        }
+      },
+      create: {
+        subscriptionId: subscriber.subscriptionId,
+        subscriberId: subscriber.id,
+        deviceIdHash: pairing.deviceIdHash,
+        label: "Roku",
+        active: true
+      },
+      update: { subscriberId: subscriber.id, active: true, lastSeenAt: new Date() }
+    }),
+    prisma.appPairing.update({
+      where: { id: pairing.id },
+      data: {
+        subscriptionId: subscriber.subscriptionId,
+        subscriberId: subscriber.id,
+        status: "PAIRED",
+        pairedAt: new Date()
+      }
+    })
+  ]);
+  return res.json({
+    activationCode: activationDisplay(activationCode),
+    status: "paired",
+    subscriberName: subscriber.name
+  });
+}
+
 async function generateUniquePairingCode() {
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const code = randomCode(6);

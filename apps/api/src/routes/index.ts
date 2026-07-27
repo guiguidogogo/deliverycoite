@@ -217,6 +217,7 @@ import {
   listAppSubscriptions,
   listMyAppSubscribers,
   manuallyPairAppSubscription,
+  manuallyPairMyAppSubscriber,
   regenerateActivationCode,
   regenerateMySubscriberActivationCode,
   updateAppDevice,
@@ -334,6 +335,7 @@ route.post("/admin/my-app/subscribers", createMyAppSubscriber);
 route.patch("/admin/my-app/subscribers/:subscriberId", updateMyAppSubscriber);
 route.delete("/admin/my-app/subscribers/:subscriberId", deleteMyAppSubscriber);
 route.post("/admin/my-app/subscribers/:subscriberId/activation-code", regenerateMySubscriberActivationCode);
+route.post("/admin/my-app/subscribers/:subscriberId/manual-pair", manuallyPairMyAppSubscriber);
 route.patch("/admin/my-app/devices/:deviceId", updateMyAppDevice);
 route.get("/admin/companies/subdomain", requireSuperAdmin, generateCompanySubdomain);
 route.post("/admin/companies/upload", requireSuperAdmin, persistentImageUpload.single("image"), uploadPersistentImage);
