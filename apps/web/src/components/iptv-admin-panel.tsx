@@ -33,6 +33,7 @@ const planText: Record<Plan, string> = {
   LIFETIME: "Vitalício"
 };
 const emptyForm = { name: "", phone: "", plan: "TRIAL_7_DAYS" as Plan, maxDevices: 1 };
+const emptyCredentials = { server: "", username: "", password: "" };
 
 export function IptvAdminPanel() {
   const [subscription, setSubscription] = useState<Subscription | null>(null);
@@ -44,6 +45,9 @@ export function IptvAdminPanel() {
   const [tvCode, setTvCode] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
+  const [credentials, setCredentials] = useState(emptyCredentials);
+  const [showCredentials, setShowCredentials] = useState(false);
+  const [savingCredentials, setSavingCredentials] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -155,6 +159,28 @@ export function IptvAdminPanel() {
     } catch (error) { toast.error(error instanceof Error ? error.message : "Falha ao alterar o aparelho"); }
   }
 
+  async function saveCredentials() {
+    if (!credentials.server.trim() || !credentials.username.trim() || !credentials.password) {
+      return toast.error("Informe o host, o usuario e a senha do IPTV");
+    }
+    setSavingCredentials(true);
+    try {
+      const updated = await adminApi<Subscription>("/admin/my-app/credentials", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(credentials)
+      });
+      setSubscription(updated);
+      setCredentials(emptyCredentials);
+      setShowCredentials(false);
+      toast.success("Host, usuario e senha do IPTV atualizados");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao salvar os dados do IPTV");
+    } finally {
+      setSavingCredentials(false);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-950 via-violet-950 to-slate-950 px-4 py-10 text-white">
       <div className="mx-auto max-w-6xl">
@@ -170,6 +196,60 @@ export function IptvAdminPanel() {
             <InfoCard label="Validade da conta" value={formatDate(subscription.expiresAt)} />
             <InfoCard label="Lista IPTV" value={subscription.configured ? "Configurada" : "Pendente"} tone={subscription.configured ? "green" : "amber"} />
             <InfoCard label="Assinantes ativos" value={String(subscribers.filter((item) => item.status === "active").length)} tone="green" />
+          </section>
+
+          <section className="mt-6 rounded-3xl border border-violet-300/25 bg-white/10 p-6 backdrop-blur">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-2xl font-bold">Dados da lista IPTV</h2>
+                <p className="mt-1 text-sm text-white/65">
+                  {subscription.configured
+                    ? "A lista esta configurada. Preencha os tres campos somente quando quiser substituir os dados atuais."
+                    : "Informe os dados fornecidos pelo seu servidor IPTV."}
+                </p>
+              </div>
+              <button
+                className="rounded-xl bg-violet-500 px-5 py-3 font-bold hover:bg-violet-400"
+                onClick={() => setShowCredentials((current) => !current)}
+              >
+                {showCredentials ? "Cancelar" : subscription.configured ? "Alterar dados IPTV" : "Configurar IPTV"}
+              </button>
+            </div>
+
+            {showCredentials && <div className="mt-5 rounded-2xl border border-violet-300/30 bg-black/25 p-5">
+              <div className="grid gap-4 md:grid-cols-3">
+                <Field label="Host / servidor IPTV">
+                  <input
+                    type="url"
+                    value={credentials.server}
+                    onChange={(event) => setCredentials({ ...credentials, server: event.target.value })}
+                    placeholder="http://servidor.com:8080"
+                    autoComplete="off"
+                  />
+                </Field>
+                <Field label="Login / usuario IPTV">
+                  <input
+                    value={credentials.username}
+                    onChange={(event) => setCredentials({ ...credentials, username: event.target.value })}
+                    placeholder="Usuario IPTV"
+                    autoComplete="off"
+                  />
+                </Field>
+                <Field label="Senha IPTV">
+                  <input
+                    type="password"
+                    value={credentials.password}
+                    onChange={(event) => setCredentials({ ...credentials, password: event.target.value })}
+                    placeholder="Senha IPTV"
+                    autoComplete="new-password"
+                  />
+                </Field>
+              </div>
+              <p className="mt-3 text-xs text-white/50">Por seguranca, a senha atual nunca e exibida. Ao salvar, os tres dados anteriores serao substituidos.</p>
+              <button disabled={savingCredentials} className="mt-4 rounded-xl bg-emerald-600 px-5 py-3 font-bold disabled:opacity-50" onClick={() => void saveCredentials()}>
+                {savingCredentials ? "Salvando..." : "Salvar dados IPTV"}
+              </button>
+            </div>}
           </section>
 
           <section className="mt-6 rounded-3xl border border-white/10 bg-white/10 p-6 backdrop-blur">

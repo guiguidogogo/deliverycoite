@@ -391,6 +391,42 @@ export async function getMyAppSubscription(req: Request, res: Response) {
   return res.json(subscription ? publicSubscription(subscription) : null);
 }
 
+export async function updateMyAppCredentials(req: Request, res: Response) {
+  const companyId = req.user?.companyId;
+  if (!companyId) return res.status(403).json({ message: "Acesso disponivel somente para empresas" });
+
+  const body = credentialsSchema.parse(req.body);
+  const subscription = await prisma.appSubscription.findFirst({
+    where: { companyId, product: "GUIGUI_PLAYER" },
+    orderBy: { createdAt: "desc" },
+    select: { id: true }
+  });
+  if (!subscription) return res.status(404).json({ message: "Licenca do GuiGuiPlayer nao encontrada" });
+
+  const updated = await prisma.appSubscription.update({
+    where: { id: subscription.id },
+    data: {
+      credentials: {
+        upsert: {
+          create: {
+            serverEncrypted: encryptIptvValue(body.server.replace(/\/$/, "")),
+            usernameEncrypted: encryptIptvValue(body.username),
+            passwordEncrypted: encryptIptvValue(body.password)
+          },
+          update: {
+            serverEncrypted: encryptIptvValue(body.server.replace(/\/$/, "")),
+            usernameEncrypted: encryptIptvValue(body.username),
+            passwordEncrypted: encryptIptvValue(body.password)
+          }
+        }
+      }
+    },
+    include: subscriptionInclude
+  });
+
+  return res.json(publicSubscription(updated));
+}
+
 export async function updateMyAppDevice(req: Request, res: Response) {
   const companyId = req.user?.companyId;
   if (!companyId) return res.status(403).json({ message: "Acesso disponivel somente para empresas" });

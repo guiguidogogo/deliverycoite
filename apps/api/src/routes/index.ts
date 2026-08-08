@@ -221,6 +221,7 @@ import {
   regenerateActivationCode,
   regenerateMySubscriberActivationCode,
   updateAppDevice,
+  updateMyAppCredentials,
   updateMyAppDevice,
   updateMyAppSubscriber,
   updateAppSubscription,
@@ -330,6 +331,7 @@ route.post("/printer-agent/test", getPrinterAgentTestReceipt);
 router.use(auth());
 route.get("/admin/me", getCurrentStaff);
 route.get("/admin/my-app", getMyAppSubscription);
+route.patch("/admin/my-app/credentials", updateMyAppCredentials);
 route.get("/admin/my-app/subscribers", listMyAppSubscribers);
 route.post("/admin/my-app/subscribers", createMyAppSubscriber);
 route.patch("/admin/my-app/subscribers/:subscriberId", updateMyAppSubscriber);
