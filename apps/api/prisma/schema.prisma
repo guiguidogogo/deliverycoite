@@ -344,6 +344,9 @@ model AppSubscriber {
   maxDevices              Int               @default(1)
   activationCodeHash      String            @unique
   activationCodeEncrypted String
+  serverEncrypted         String?
+  usernameEncrypted       String?
+  passwordEncrypted       String?
   devices                 AppDevice[]
   pairings                AppPairing[]
   createdAt               DateTime          @default(now())

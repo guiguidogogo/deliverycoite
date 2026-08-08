@@ -34,7 +34,7 @@ const updateSubscriptionSchema = z.object({
 const deviceSchema = z.object({ deviceId: z.string().trim().min(4).max(256) });
 const activateSchema = z.object({
   activationCode: z.string().trim().min(8).max(32).optional(),
-  credentials: credentialsSchema
+  credentials: credentialsSchema.optional()
 });
 const subscriberPlanSchema = z.enum(["TRIAL_7_DAYS", "DAYS_30", "DAYS_60", "DAYS_90", "MONTHS_6", "YEAR_1", "LIFETIME"]);
 const createSubscriberSchema = z.object({
@@ -134,6 +134,7 @@ function publicSubscriber(subscriber: any) {
     expiresAt: subscriber.expiresAt,
     maxDevices: subscriber.maxDevices,
     activationCode: activationDisplay(decryptIptvValue(subscriber.activationCodeEncrypted)),
+    configured: Boolean(subscriber.serverEncrypted && subscriber.usernameEncrypted && subscriber.passwordEncrypted),
     devices: subscriber.devices,
     createdAt: subscriber.createdAt,
     updatedAt: subscriber.updatedAt
@@ -235,6 +236,27 @@ export async function updateMyAppSubscriber(req: Request, res: Response) {
   return res.json(publicSubscriber(updated));
 }
 
+export async function updateMyAppSubscriberCredentials(req: Request, res: Response) {
+  const companyId = req.user?.companyId;
+  if (!companyId) return res.status(403).json({ message: "Acesso disponivel somente para empresas" });
+  const body = credentialsSchema.parse(req.body);
+  const subscriber = await prisma.appSubscriber.findFirst({
+    where: { id: req.params.subscriberId, subscription: { companyId, product: "GUIGUI_PLAYER" } }
+  });
+  if (!subscriber) return res.status(404).json({ message: "Assinante nao encontrado" });
+
+  const updated = await prisma.appSubscriber.update({
+    where: { id: subscriber.id },
+    data: {
+      serverEncrypted: encryptIptvValue(body.server.replace(/\/$/, "")),
+      usernameEncrypted: encryptIptvValue(body.username),
+      passwordEncrypted: encryptIptvValue(body.password)
+    },
+    include: subscriberInclude
+  });
+  return res.json(publicSubscriber(updated));
+}
+
 export async function deleteMyAppSubscriber(req: Request, res: Response) {
   const companyId = req.user?.companyId;
   if (!companyId) return res.status(403).json({ message: "Acesso disponivel somente para empresas" });
@@ -291,7 +313,15 @@ export async function manuallyPairMyAppSubscriber(req: Request, res: Response) {
   ) {
     return res.status(403).json({ message: "Ative ou renove o assinante antes de vincular a TV" });
   }
-  if (!subscriber.subscription.credentials) {
+  const subscriberCredentials = subscriber.serverEncrypted && subscriber.usernameEncrypted && subscriber.passwordEncrypted
+    ? {
+        serverEncrypted: subscriber.serverEncrypted,
+        usernameEncrypted: subscriber.usernameEncrypted,
+        passwordEncrypted: subscriber.passwordEncrypted
+      }
+    : null;
+  const selectedCredentials = subscriberCredentials ?? subscriber.subscription.credentials;
+  if (!selectedCredentials) {
     return res.status(409).json({ message: "Configure o servidor, login e senha IPTV antes de vincular a TV" });
   }
 
@@ -341,6 +371,9 @@ export async function manuallyPairMyAppSubscriber(req: Request, res: Response) {
       data: {
         subscriptionId: subscriber.subscriptionId,
         subscriberId: subscriber.id,
+        serverEncrypted: selectedCredentials.serverEncrypted,
+        usernameEncrypted: selectedCredentials.usernameEncrypted,
+        passwordEncrypted: selectedCredentials.passwordEncrypted,
         status: "PAIRED",
         pairedAt: new Date()
       }
@@ -732,6 +765,9 @@ export async function activatePairing(req: Request, res: Response) {
         code: "TRIAL_EXPIRED"
       });
     }
+    if (!body.credentials) {
+      return res.status(400).json({ message: "Informe o host, o login e a senha para usar o teste gratuito" });
+    }
     await prisma.$transaction([
       prisma.appDeviceTrial.update({ where: { id: pairing.trial.id }, data: { lastSeenAt: new Date() } }),
       prisma.appPairing.update({
@@ -787,6 +823,24 @@ export async function activatePairing(req: Request, res: Response) {
   if (subscriber && subscriptionStatus(subscriber) !== "active") {
     return res.status(403).json({ message: "Acesso do assinante bloqueado ou expirado" });
   }
+  const subscriberCredentials = subscriber?.serverEncrypted && subscriber.usernameEncrypted && subscriber.passwordEncrypted
+    ? {
+        serverEncrypted: subscriber.serverEncrypted,
+        usernameEncrypted: subscriber.usernameEncrypted,
+        passwordEncrypted: subscriber.passwordEncrypted
+      }
+    : null;
+  const submittedCredentials = body.credentials
+    ? {
+        serverEncrypted: encryptIptvValue(body.credentials.server.replace(/\/$/, "")),
+        usernameEncrypted: encryptIptvValue(body.credentials.username),
+        passwordEncrypted: encryptIptvValue(body.credentials.password)
+      }
+    : null;
+  const selectedCredentials = subscriberCredentials ?? submittedCredentials ?? subscription.credentials;
+  if (!selectedCredentials) {
+    return res.status(409).json({ message: "O administrador ainda nao configurou o host, o login e a senha deste assinante" });
+  }
   const licensedDevices = subscriber ? subscriber.devices : legacySubscription?.devices ?? [];
   const maxDevices = subscriber?.maxDevices ?? subscription.maxDevices;
   const existingDevice = licensedDevices.find((device) => device.deviceIdHash === deviceIdHash);
@@ -807,9 +861,9 @@ export async function activatePairing(req: Request, res: Response) {
         subscriptionId: subscription.id,
         subscriberId: subscriber?.id,
         trialId: null,
-        serverEncrypted: encryptIptvValue(body.credentials.server.replace(/\/$/, "")),
-        usernameEncrypted: encryptIptvValue(body.credentials.username),
-        passwordEncrypted: encryptIptvValue(body.credentials.password),
+        serverEncrypted: selectedCredentials.serverEncrypted,
+        usernameEncrypted: selectedCredentials.usernameEncrypted,
+        passwordEncrypted: selectedCredentials.passwordEncrypted,
         status: "PAIRED",
         pairedAt: new Date()
       }
@@ -842,6 +896,11 @@ export async function getPairingStatus(req: Request, res: Response) {
 
   const subscription = pairing.subscription;
   const hasPairingCredentials = Boolean(pairing.serverEncrypted && pairing.usernameEncrypted && pairing.passwordEncrypted);
+  const hasSubscriberCredentials = Boolean(
+    pairing.subscriber?.serverEncrypted
+    && pairing.subscriber.usernameEncrypted
+    && pairing.subscriber.passwordEncrypted
+  );
   if (pairing.trialId) {
     if (!pairing.trial || !trialIsActive(pairing.trial)) {
       return res.status(403).json({
@@ -864,7 +923,7 @@ export async function getPairingStatus(req: Request, res: Response) {
       }
     });
   }
-  if (!subscription || (!hasPairingCredentials && !subscription.credentials) || !subscription.company.active || subscriptionStatus(subscription) !== "active") {
+  if (!subscription || (!hasPairingCredentials && !hasSubscriberCredentials && !subscription.credentials) || !subscription.company.active || subscriptionStatus(subscription) !== "active") {
     return res.status(403).json({ error: "Licenca inativa, expirada ou sem configuracao" });
   }
   if (pairing.subscriber && subscriptionStatus(pairing.subscriber) !== "active") {
@@ -888,9 +947,9 @@ export async function getPairingStatus(req: Request, res: Response) {
     accessMode: "licensed",
     profile: {
       name: pairing.subscriber?.name ?? subscription.company.tradeName,
-      server: decryptIptvValue(pairing.serverEncrypted ?? subscription.credentials!.serverEncrypted),
-      username: decryptIptvValue(pairing.usernameEncrypted ?? subscription.credentials!.usernameEncrypted),
-      password: decryptIptvValue(pairing.passwordEncrypted ?? subscription.credentials!.passwordEncrypted)
+      server: decryptIptvValue(pairing.serverEncrypted ?? pairing.subscriber?.serverEncrypted ?? subscription.credentials!.serverEncrypted),
+      username: decryptIptvValue(pairing.usernameEncrypted ?? pairing.subscriber?.usernameEncrypted ?? subscription.credentials!.usernameEncrypted),
+      password: decryptIptvValue(pairing.passwordEncrypted ?? pairing.subscriber?.passwordEncrypted ?? subscription.credentials!.passwordEncrypted)
     }
   });
 }

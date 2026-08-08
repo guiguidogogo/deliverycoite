@@ -46,8 +46,8 @@ export default function RokuPairPage() {
         setMessage(payload.accessMode === "trial"
           ? "Seu teste gratuito de 3 dias esta ativo. Configure sua lista IPTV para começar."
           : payload.registered
-            ? "Esta Roku ja esta ativa. Informe os novos dados da lista IPTV."
-            : "O teste gratuito terminou. Informe seu codigo de acesso e os dados da lista IPTV.");
+            ? "Esta Roku ja esta ativa. Envie novamente a lista salva pelo administrador."
+            : "Informe o codigo de acesso. A TV recebera automaticamente a lista IPTV deste assinante.");
       })
       .catch((error) => {
         setStatus("error");
@@ -59,10 +59,16 @@ export default function RokuPairPage() {
     setStatus("loading");
     setMessage("Ativando o GuiGuiPlayer...");
     try {
-      const normalizedServer = /^https?:\/\//i.test(server.trim()) ? server.trim() : `http://${server.trim()}`;
+      const needsTrialCredentials = accessMode === "trial" && !activateNow;
+      const normalizedServer = needsTrialCredentials
+        ? (/^https?:\/\//i.test(server.trim()) ? server.trim() : `http://${server.trim()}`)
+        : "";
       const response = await apiFetch(`/pairings/${encodeURIComponent(code)}/activate`, {
         method: "POST",
-        body: JSON.stringify({ ...((!registered || activateNow) ? { activationCode } : {}), credentials: { server: normalizedServer, username, password } })
+        body: JSON.stringify({
+          ...((!registered || activateNow) ? { activationCode } : {}),
+          ...(needsTrialCredentials ? { credentials: { server: normalizedServer, username, password } } : {})
+        })
       }, { skipSubdomain: true });
       const payload = await readApiJson<{ message?: string; companyName?: string }>(response);
       if (!response.ok) throw new Error(payload.message ?? "Nao foi possivel ativar");
@@ -98,7 +104,7 @@ export default function RokuPairPage() {
           {(!registered || activateNow) && <label className="block text-sm">Código de acesso
             <input className="mt-2 w-full rounded-2xl border border-white/20 bg-white px-4 py-3 text-center font-mono text-xl font-bold uppercase tracking-widest text-slate-950" placeholder="DUMZ-965D-97PC" value={activationCode} disabled={status === "loading"} onChange={(event) => setActivationCode(event.target.value.toUpperCase())} />
           </label>}
-          <label className="block text-sm">URL ou host do servidor
+          {accessMode === "trial" && !activateNow && <><label className="block text-sm">URL ou host do servidor
             <input className="mt-2 w-full rounded-2xl border border-white/20 bg-white px-4 py-3 text-slate-950" inputMode="url" placeholder="http://servidor.com:porta" value={server} disabled={status === "loading"} onChange={(event) => setServer(event.target.value)} />
           </label>
           <label className="block text-sm">Login
@@ -106,11 +112,11 @@ export default function RokuPairPage() {
           </label>
           <label className="block text-sm">Senha
             <input type="password" className="mt-2 w-full rounded-2xl border border-white/20 bg-white px-4 py-3 text-slate-950" autoComplete="current-password" placeholder="Sua senha IPTV" value={password} disabled={status === "loading"} onChange={(event) => setPassword(event.target.value)} />
-          </label>
+          </label></>}
         </div>}
         <p className={`mt-4 rounded-xl p-3 text-sm ${status === "success" ? "bg-emerald-500/20 text-emerald-100" : status === "error" ? "bg-red-500/20 text-red-100" : "bg-white/10"}`}>{message}</p>
         {(status === "ready" || status === "error") && code && (
-          <button className="mt-4 w-full rounded-2xl bg-violet-500 px-5 py-3 font-bold disabled:opacity-50" disabled={((!registered || activateNow) && activationCode.replace(/[^A-Z0-9]/g, "").length < 8) || !server.trim() || !username.trim() || !password} onClick={() => void activate()}>Salvar e enviar para a TV</button>
+          <button className="mt-4 w-full rounded-2xl bg-violet-500 px-5 py-3 font-bold disabled:opacity-50" disabled={((!registered || activateNow) && activationCode.replace(/[^A-Z0-9]/g, "").length < 8) || (accessMode === "trial" && !activateNow && (!server.trim() || !username.trim() || !password))} onClick={() => void activate()}>Ativar e enviar para a TV</button>
         )}
         <p className="mt-5 text-center text-xs text-white/50">Os dados são criptografados durante o envio e só são liberados durante o teste ou com uma licença ativa.</p>
       </section>

@@ -224,6 +224,7 @@ import {
   updateMyAppCredentials,
   updateMyAppDevice,
   updateMyAppSubscriber,
+  updateMyAppSubscriberCredentials,
   updateAppSubscription,
   validateAppDevice
 } from "../controllers/apps-controller.js";
@@ -335,6 +336,7 @@ route.patch("/admin/my-app/credentials", updateMyAppCredentials);
 route.get("/admin/my-app/subscribers", listMyAppSubscribers);
 route.post("/admin/my-app/subscribers", createMyAppSubscriber);
 route.patch("/admin/my-app/subscribers/:subscriberId", updateMyAppSubscriber);
+route.patch("/admin/my-app/subscribers/:subscriberId/credentials", updateMyAppSubscriberCredentials);
 route.delete("/admin/my-app/subscribers/:subscriberId", deleteMyAppSubscriber);
 route.post("/admin/my-app/subscribers/:subscriberId/activation-code", regenerateMySubscriberActivationCode);
 route.post("/admin/my-app/subscribers/:subscriberId/manual-pair", manuallyPairMyAppSubscriber);
