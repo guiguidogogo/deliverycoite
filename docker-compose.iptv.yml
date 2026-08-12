@@ -1,0 +1,19 @@
+services:
+  guiguiplayer:
+    build:
+      context: .
+      dockerfile: Dockerfile.iptv
+    image: guiguiplayer-iptv:production
+    restart: unless-stopped
+    env_file:
+      - .env.iptv
+    environment:
+      NODE_ENV: production
+      APP_ENV: production
+      PORT: 3000
+      NEXT_PUBLIC_API_URL: /api
+      ROOT_DOMAIN: hubregional.com.br
+      NEXT_PUBLIC_ROOT_DOMAIN: hubregional.com.br
+      IPTV_PAIRING_WEB_URL: https://iptv.hubregional.com.br
+    ports:
+      - "3000:3000"
