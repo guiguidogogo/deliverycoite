@@ -1,8 +1,6 @@
 FROM node:20-alpine AS build
 
 WORKDIR /app
-RUN apk add --no-cache openssl
-
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
@@ -13,29 +11,24 @@ COPY . .
 ENV NODE_ENV=production
 ENV NEXT_PUBLIC_API_URL=/api
 ENV NEXT_PUBLIC_ROOT_DOMAIN=hubregional.com.br
+ENV NEXT_PUBLIC_IPTV_PUBLIC_HOST=iptv.hubregional.com.br
+ENV NEXT_PUBLIC_IPTV_TENANT_SUBDOMAIN=guiguiplay
 
-RUN npm run prisma:generate -w @delivery/api \
-  && npm run build -w @delivery/api \
-  && npm run build -w @delivery/web
+RUN npm run build -w @delivery/web
 
 FROM node:20-alpine AS runtime
 
 WORKDIR /app
-RUN apk add --no-cache openssl
-
 ENV NODE_ENV=production
-ENV APP_ENV=production
 ENV PORT=3000
 ENV NEXT_PUBLIC_API_URL=/api
 ENV NEXT_PUBLIC_ROOT_DOMAIN=hubregional.com.br
-ENV ROOT_DOMAIN=hubregional.com.br
+ENV NEXT_PUBLIC_IPTV_PUBLIC_HOST=iptv.hubregional.com.br
+ENV NEXT_PUBLIC_IPTV_TENANT_SUBDOMAIN=guiguiplay
+ENV API_SERVER_URL=http://b5jw6gbpa73ksnfc8flvrdto.62.171.165.253.sslip.io
 
 COPY --from=build /app/package.json /app/package-lock.json ./
 COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/server.mjs ./server.mjs
-COPY --from=build /app/apps/api/package.json ./apps/api/package.json
-COPY --from=build /app/apps/api/dist ./apps/api/dist
-COPY --from=build /app/apps/api/prisma ./apps/api/prisma
 COPY --from=build /app/apps/web/package.json ./apps/web/package.json
 COPY --from=build /app/apps/web/.next ./apps/web/.next
 COPY --from=build /app/apps/web/public ./apps/web/public
@@ -43,4 +36,4 @@ COPY --from=build /app/apps/web/next.config.ts ./apps/web/next.config.ts
 
 EXPOSE 3000
 
-CMD ["node", "server.mjs"]
+CMD ["npm", "run", "start", "-w", "@delivery/web"]

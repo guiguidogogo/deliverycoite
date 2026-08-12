@@ -17,6 +17,8 @@ const configuredRootDomain = (
   .trim()
   .toLowerCase()
   .replace(/^\.+|\.+$/g, "");
+const iptvPublicHost = normalizeHost(process.env.NEXT_PUBLIC_IPTV_PUBLIC_HOST);
+const iptvTenantSubdomain = normalizeSubdomain(process.env.NEXT_PUBLIC_IPTV_TENANT_SUBDOMAIN);
 
 function normalizeHost(value?: string | null) {
   return (value ?? "")
@@ -68,6 +70,9 @@ function subdomainFromRequest(request: NextRequest) {
   if (explicit) return explicit;
 
   const host = normalizeHost(request.headers.get("x-forwarded-host") ?? request.headers.get("host"));
+  if (iptvPublicHost && iptvTenantSubdomain && host === iptvPublicHost) {
+    return iptvTenantSubdomain;
+  }
   const rootDomain = rootDomainFromHost(host);
   if (!host || !rootDomain) return "";
   if (host === rootDomain || host === `www.${rootDomain}` || host === `admin.${rootDomain}`) return "";

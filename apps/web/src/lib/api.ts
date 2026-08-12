@@ -1,5 +1,7 @@
 const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "/api").replace(/\/$/, "");
 const CONFIGURED_ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN?.trim().toLowerCase().replace(/^\.+|\.+$/g, "") ?? "";
+const IPTV_PUBLIC_HOST = normalizeHost(process.env.NEXT_PUBLIC_IPTV_PUBLIC_HOST);
+const IPTV_TENANT_SUBDOMAIN = normalizeSubdomain(process.env.NEXT_PUBLIC_IPTV_TENANT_SUBDOMAIN);
 
 function normalizeHost(value?: string | null) {
   return (value ?? "")
@@ -15,6 +17,9 @@ function getCurrentHostSubdomain() {
   if (typeof window === "undefined") return "";
 
   const host = normalizeHost(window.location.hostname);
+  if (IPTV_PUBLIC_HOST && IPTV_TENANT_SUBDOMAIN && host === IPTV_PUBLIC_HOST) {
+    return IPTV_TENANT_SUBDOMAIN;
+  }
   const rootDomain = getBrowserRootDomain();
   if (host.endsWith(`.${rootDomain}`) && host !== rootDomain && host !== `www.${rootDomain}` && host !== `admin.${rootDomain}`) {
     return normalizeSubdomain(host.slice(0, -(rootDomain.length + 1)));
