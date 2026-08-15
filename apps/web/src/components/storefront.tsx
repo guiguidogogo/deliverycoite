@@ -1089,9 +1089,9 @@ export function Storefront() {
             style={{ backgroundImage: "linear-gradient(135deg, var(--tenant-primary), #111827 72%)" }}
           >
             <div className="flex items-center gap-3">
-              <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white shadow-xl">
+              <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-full bg-white shadow-xl">
                 {company?.logoUrl ? (
-                  <Image src={resolveAssetUrl(company.logoUrl)} alt={`Logo ${company.tradeName}`} width={56} height={56} className="h-full w-full object-contain p-1" unoptimized />
+                  <Image src={resolveAssetUrl(company.logoUrl)} alt={`Logo ${company.tradeName}`} width={56} height={56} className="h-full w-full object-cover" unoptimized />
                 ) : (
                   <Store className="text-slate-900" size={28} />
                 )}
@@ -1176,9 +1176,9 @@ export function Storefront() {
           <div className="absolute -right-12 -top-12 h-44 w-44 rounded-full bg-white/10 blur-2xl" />
           <div className="relative z-10 flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white shadow-xl shadow-black/20">
+              <div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-full bg-white shadow-xl shadow-black/20">
                 {company?.logoUrl ? (
-                  <Image src={resolveAssetUrl(company.logoUrl)} alt={`Logo ${company.tradeName}`} width={64} height={64} className="h-full w-full object-contain p-1" unoptimized />
+                  <Image src={resolveAssetUrl(company.logoUrl)} alt={`Logo ${company.tradeName}`} width={64} height={64} className="h-full w-full object-cover" unoptimized />
                 ) : (
                   <Store className="text-slate-900" size={30} />
                 )}
