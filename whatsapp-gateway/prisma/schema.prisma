@@ -1,0 +1,135 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum InstanceStatus {
+  disconnected
+  connecting
+  reconnecting
+  connected
+  qr_required
+  logged_out
+  error
+}
+
+enum JobStatus {
+  pending
+  processing
+  sent
+  failed
+}
+
+model App {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  apiKeys   ApiKey[]
+  tenants   Tenant[]
+
+  @@map("apps")
+}
+
+model ApiKey {
+  id         String    @id @default(uuid()) @db.Uuid
+  appId      String    @db.Uuid @map("app_id")
+  keyPrefix  String    @unique @map("key_prefix")
+  keyHash    String    @map("key_hash")
+  name       String?
+  active     Boolean   @default(true)
+  lastUsedAt DateTime? @map("last_used_at")
+  expiresAt  DateTime? @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  app        App       @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@index([appId, active])
+  @@map("api_keys")
+}
+
+model Tenant {
+  id               String             @id @default(uuid()) @db.Uuid
+  appId            String             @db.Uuid @map("app_id")
+  externalTenantId String             @map("external_tenant_id")
+  name             String
+  active           Boolean            @default(true)
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+  app              App                @relation(fields: [appId], references: [id], onDelete: Cascade)
+  whatsappInstance WhatsappInstance?
+
+  @@unique([appId, externalTenantId])
+  @@index([appId, active])
+  @@map("tenants")
+}
+
+model WhatsappInstance {
+  id                    String         @id @default(uuid()) @db.Uuid
+  tenantId              String         @unique @db.Uuid @map("tenant_id")
+  evolutionInstanceName String         @unique @map("evolution_instance_name")
+  phoneNumber           String?        @map("phone_number")
+  status                InstanceStatus @default(disconnected)
+  profileName           String?        @map("profile_name")
+  profilePictureUrl     String?        @map("profile_picture_url")
+  lastConnectedAt       DateTime?      @map("last_connected_at")
+  lastDisconnectedAt    DateTime?      @map("last_disconnected_at")
+  createdAt             DateTime       @default(now()) @map("created_at")
+  updatedAt             DateTime       @updatedAt @map("updated_at")
+  tenant                Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  events                WhatsappEvent[]
+  messageJobs           MessageJob[]
+
+  @@map("whatsapp_instances")
+}
+
+model WhatsappEvent {
+  id         String            @id @default(uuid()) @db.Uuid
+  instanceId String?           @db.Uuid @map("instance_id")
+  eventType  String            @map("event_type")
+  payload    Json
+  createdAt  DateTime          @default(now()) @map("created_at")
+  instance   WhatsappInstance? @relation(fields: [instanceId], references: [id], onDelete: SetNull)
+
+  @@index([instanceId, createdAt])
+  @@map("whatsapp_events")
+}
+
+model IdempotencyRecord {
+  id           String   @id @default(uuid()) @db.Uuid
+  appId        String   @db.Uuid @map("app_id")
+  key          String
+  requestHash  String   @map("request_hash")
+  responseCode Int      @map("response_code")
+  responseBody Json     @map("response_body")
+  createdAt    DateTime @default(now()) @map("created_at")
+  expiresAt    DateTime @map("expires_at")
+
+  @@unique([appId, key])
+  @@index([expiresAt])
+  @@map("idempotency_records")
+}
+
+model MessageJob {
+  id             String             @id @default(uuid()) @db.Uuid
+  instanceId     String             @db.Uuid @map("instance_id")
+  type           String
+  recipient      String
+  payload        Json
+  status         JobStatus          @default(pending)
+  providerId     String?            @map("provider_id")
+  errorCode      String?            @map("error_code")
+  attempts       Int                @default(0)
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+  instance       WhatsappInstance   @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId, createdAt])
+  @@map("message_jobs")
+}
