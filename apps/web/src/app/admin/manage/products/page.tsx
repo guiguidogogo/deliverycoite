@@ -70,13 +70,17 @@ export default function ProductsManagePage() {
       responseJson(categoriesRes),
       responseJson(complementsRes)
     ]);
-    setProducts(productData.map((item: any) => ({
-      ...item,
-      price: Number(item.price),
-      promoPrice: item.promoPrice ? Number(item.promoPrice) : null,
-      stockQuantity: Number(item.stockQuantity ?? 0),
-      lowStockAlert: item.lowStockAlert !== null && item.lowStockAlert !== undefined ? Number(item.lowStockAlert) : null
-    })));
+    setProducts(
+      productData
+        .filter((item: Product) => item.active || item.available)
+        .map((item: any) => ({
+          ...item,
+          price: Number(item.price),
+          promoPrice: item.promoPrice ? Number(item.promoPrice) : null,
+          stockQuantity: Number(item.stockQuantity ?? 0),
+          lowStockAlert: item.lowStockAlert !== null && item.lowStockAlert !== undefined ? Number(item.lowStockAlert) : null
+        }))
+    );
     setCategories(categoryData);
     setComplements(complementData.map((item: any) => ({ ...item, price: Number(item.price) })));
   }
@@ -210,6 +214,7 @@ export default function ProductsManagePage() {
         headers: { Authorization: `Bearer ${token}` }
       });
       await responseJson(res);
+      setProducts((current) => current.filter((item) => item.id !== product.id));
       toast.success("Produto apagado");
       await load();
     } catch (error) {
