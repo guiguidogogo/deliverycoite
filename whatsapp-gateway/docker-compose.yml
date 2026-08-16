@@ -1,0 +1,65 @@
+services:
+  gateway:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-whatsapp_gateway}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-whatsapp_gateway}?schema=public
+      REDIS_URL: redis://redis:6379/0
+      RUN_WORKER: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-3334}:3334"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3334/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  worker:
+    build: .
+    restart: unless-stopped
+    command: ["node", "dist/src/worker.js"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-whatsapp_gateway}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-whatsapp_gateway}?schema=public
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-whatsapp_gateway}
+      POSTGRES_USER: ${POSTGRES_USER:-whatsapp_gateway}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - gateway_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - gateway_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  gateway_postgres:
+  gateway_redis:
