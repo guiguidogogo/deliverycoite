@@ -1,0 +1,16 @@
+CREATE TYPE "InstanceStatus" AS ENUM ('disconnected','connecting','reconnecting','connected','qr_required','logged_out','error');
+CREATE TYPE "JobStatus" AS ENUM ('pending','processing','sent','failed');
+CREATE TABLE "apps" ("id" UUID PRIMARY KEY, "name" TEXT NOT NULL, "slug" TEXT NOT NULL UNIQUE, "active" BOOLEAN NOT NULL DEFAULT true, "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updated_at" TIMESTAMP(3) NOT NULL);
+CREATE TABLE "api_keys" ("id" UUID PRIMARY KEY, "app_id" UUID NOT NULL REFERENCES "apps"("id") ON DELETE CASCADE, "key_prefix" TEXT NOT NULL UNIQUE, "key_hash" TEXT NOT NULL, "name" TEXT, "active" BOOLEAN NOT NULL DEFAULT true, "last_used_at" TIMESTAMP(3), "expires_at" TIMESTAMP(3), "revoked_at" TIMESTAMP(3), "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE "tenants" ("id" UUID PRIMARY KEY, "app_id" UUID NOT NULL REFERENCES "apps"("id") ON DELETE CASCADE, "external_tenant_id" TEXT NOT NULL, "name" TEXT NOT NULL, "active" BOOLEAN NOT NULL DEFAULT true, "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updated_at" TIMESTAMP(3) NOT NULL);
+CREATE TABLE "whatsapp_instances" ("id" UUID PRIMARY KEY, "tenant_id" UUID NOT NULL UNIQUE REFERENCES "tenants"("id") ON DELETE CASCADE, "evolution_instance_name" TEXT NOT NULL UNIQUE, "phone_number" TEXT, "status" "InstanceStatus" NOT NULL DEFAULT 'disconnected', "profile_name" TEXT, "profile_picture_url" TEXT, "last_connected_at" TIMESTAMP(3), "last_disconnected_at" TIMESTAMP(3), "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updated_at" TIMESTAMP(3) NOT NULL);
+CREATE TABLE "whatsapp_events" ("id" UUID PRIMARY KEY, "instance_id" UUID REFERENCES "whatsapp_instances"("id") ON DELETE SET NULL, "event_type" TEXT NOT NULL, "payload" JSONB NOT NULL, "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE "idempotency_records" ("id" UUID PRIMARY KEY, "app_id" UUID NOT NULL, "key" TEXT NOT NULL, "request_hash" TEXT NOT NULL, "response_code" INTEGER NOT NULL, "response_body" JSONB NOT NULL, "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "expires_at" TIMESTAMP(3) NOT NULL);
+CREATE TABLE "message_jobs" ("id" UUID PRIMARY KEY, "instance_id" UUID NOT NULL REFERENCES "whatsapp_instances"("id") ON DELETE CASCADE, "type" TEXT NOT NULL, "recipient" TEXT NOT NULL, "payload" JSONB NOT NULL, "status" "JobStatus" NOT NULL DEFAULT 'pending', "provider_id" TEXT, "error_code" TEXT, "attempts" INTEGER NOT NULL DEFAULT 0, "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updated_at" TIMESTAMP(3) NOT NULL);
+CREATE UNIQUE INDEX "tenants_app_id_external_tenant_id_key" ON "tenants"("app_id","external_tenant_id");
+CREATE UNIQUE INDEX "idempotency_records_app_id_key_key" ON "idempotency_records"("app_id","key");
+CREATE INDEX "api_keys_app_id_active_idx" ON "api_keys"("app_id","active");
+CREATE INDEX "tenants_app_id_active_idx" ON "tenants"("app_id","active");
+CREATE INDEX "whatsapp_events_instance_id_created_at_idx" ON "whatsapp_events"("instance_id","created_at");
+CREATE INDEX "idempotency_records_expires_at_idx" ON "idempotency_records"("expires_at");
+CREATE INDEX "message_jobs_instance_id_created_at_idx" ON "message_jobs"("instance_id","created_at");
