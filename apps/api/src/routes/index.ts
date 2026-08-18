@@ -106,6 +106,14 @@ import {
   reopenCashSession
 } from "../controllers/finance-controller.js";
 import { getFutureIntegrations, testMenuiaIntegration } from "../controllers/integrations-controller.js";
+import {
+  connectWhatsappIntegration,
+  getWhatsappIntegrationQrCode,
+  getWhatsappIntegrationStatus,
+  logoutWhatsappIntegration,
+  reconnectWhatsappIntegration,
+  testWhatsappIntegration
+} from "../controllers/whatsapp-integration-controller.js";
 import { createOrderMercadoPagoPix, createOrderMercadoPagoPreference, getMercadoPagoPublicConfig, getOrderMercadoPagoStatus, mercadoPagoWebhook, refundOrderMercadoPago } from "../controllers/mercadopago-controller.js";
 import { listNewOrders } from "../controllers/notifications-controller.js";
 import {
@@ -405,6 +413,12 @@ route.delete("/admin/coupons/:id", requirePermission("COUPONS"), deleteCoupon);
 route.patch("/admin/settings", requirePermission("SETTINGS"), updateSettings);
 route.patch("/admin/store/pause", requirePermission("STORE_PAUSE"), updateSettings);
 route.post("/admin/integrations/menuia/test", requirePermission("SETTINGS"), testMenuiaIntegration);
+route.get("/admin/integrations/whatsapp/status", requirePermission("SETTINGS"), getWhatsappIntegrationStatus);
+route.get("/admin/integrations/whatsapp/qrcode", requirePermission("SETTINGS"), getWhatsappIntegrationQrCode);
+route.post("/admin/integrations/whatsapp/connect", requirePermission("SETTINGS"), connectWhatsappIntegration);
+route.post("/admin/integrations/whatsapp/reconnect", requirePermission("SETTINGS"), reconnectWhatsappIntegration);
+route.post("/admin/integrations/whatsapp/logout", requirePermission("SETTINGS"), logoutWhatsappIntegration);
+route.post("/admin/integrations/whatsapp/test", requirePermission("SETTINGS"), testWhatsappIntegration);
 route.get("/admin/staff/roles", requirePermission("USERS"), listStaffRoles);
 route.post("/admin/staff/roles", requirePermission("USERS"), createStaffRole);
 route.patch("/admin/staff/roles/:id", requirePermission("USERS"), updateStaffRole);

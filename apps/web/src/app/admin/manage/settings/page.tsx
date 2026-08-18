@@ -7,6 +7,7 @@ import { API_URL, apiFetch, readApiJson } from "../../../../lib/api";
 import { LocationPicker } from "../../../../components/location-picker";
 import { printTestReceipt, testReceiptHtml } from "../../../../lib/browser-print";
 import { findLocalPrinters, printHtmlWithAgent } from "../../../../lib/qz-print";
+import { WhatsappConnectionCard } from "../../../../components/admin/whatsapp-connection-card";
 
 type ClosedOrderPolicy = "BLOCK_WHEN_CLOSED" | "ALLOW_WHEN_CLOSED" | "SCHEDULE_ONLY_WHEN_CLOSED";
 
@@ -836,6 +837,8 @@ export default function SettingsManagePage() {
           Essas chaves ficam vinculadas apenas à empresa logada e não aparecem para outras lojas.
         </p>
       </section>
+
+      <WhatsappConnectionCard />
 
       <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
         <h2 className="mb-3 text-xl font-bold">Integração Menuia</h2>

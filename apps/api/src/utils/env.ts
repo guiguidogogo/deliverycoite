@@ -44,5 +44,15 @@ export const env = {
     if (derived) return derived;
 
     return "hubregional.com.br";
+  },
+  get hubWhatsappUrl() {
+    return (process.env.HUB_WHATSAPP_URL ?? "").trim().replace(/\/$/, "");
+  },
+  get hubWhatsappKey() {
+    return (process.env.HUB_WHATSAPP_KEY ?? "").trim();
+  },
+  get hubWhatsappTimeoutMs() {
+    const value = Number(process.env.HUB_WHATSAPP_TIMEOUT_MS ?? 10000);
+    return Number.isFinite(value) && value > 0 ? value : 10000;
   }
 };
