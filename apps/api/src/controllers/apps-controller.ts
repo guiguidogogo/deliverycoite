@@ -892,7 +892,9 @@ export async function getPairingStatus(req: Request, res: Response) {
   }
   if (pairing.status === "PENDING") return res.json({ status: "pending" });
   if (pairing.status === "EXPIRED") return res.json({ status: "expired" });
-  if (pairing.status === "ACKNOWLEDGED") return res.json({ status: "acknowledged" });
+  // An acknowledged device must still receive the current subscriber profile.
+  // Credentials can be changed after pairing and the TV refreshes this endpoint
+  // periodically, so returning only the status would leave stale IPTV data on it.
 
   const subscription = pairing.subscription;
   const hasPairingCredentials = Boolean(pairing.serverEncrypted && pairing.usernameEncrypted && pairing.passwordEncrypted);
