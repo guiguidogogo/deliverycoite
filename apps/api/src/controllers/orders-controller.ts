@@ -824,19 +824,21 @@ export async function sendToDelivery(req: Request, res: Response) {
     settings.deliveryPhoneNumber
   );
 
-  // Atualizar pedido
-  await prisma.order.update({
-    where: { id: order.id },
-    data: { 
-      sentToDelivery: true,
-      deliverySentAt: new Date()
-    }
-  });
+  const sentByServer = deliverySend.channel === "EVOLUTION";
+  if (sentByServer) {
+    await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        sentToDelivery: true,
+        deliverySentAt: new Date()
+      }
+    });
+  }
 
   return res.json({
-    whatsappUrl: deliverySend.whatsappUrl ?? null,
+    whatsappUrl: null,
     message,
-    sentByServer: deliverySend.channel === "EVOLUTION",
+    sentByServer,
     sendPending: deliverySend.channel === "EVOLUTION_PENDING",
     sendError: deliverySend.channel === "WHATSAPP_LINK" ? (deliverySend.error ?? null) : null
   });
