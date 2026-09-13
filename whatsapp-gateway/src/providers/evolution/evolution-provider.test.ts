@@ -38,3 +38,22 @@ test("retries Brazilian mobile numbers without the ninth digit after Evolution 4
     globalThis.fetch = originalFetch;
   }
 });
+
+test("adds the Brazilian country code to a local mobile number", async () => {
+  process.env.NODE_ENV = "test";
+  process.env.EVOLUTION_API_URL = "https://evolution.example";
+  process.env.EVOLUTION_API_KEY = "test-key";
+  process.env.DATABASE_URL = "postgresql://test:test@localhost:5432/test";
+  process.env.REDIS_URL = "redis://localhost:6379";
+  process.env.WEBHOOK_SECRET = "01234567890123456789012345678901";
+
+  const calls: string[] = [];
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    calls.push(JSON.parse(String(init?.body)).number);
+    return new Response(JSON.stringify({ key: { id: "message-id" } }), { status: 201 });
+  }) as typeof fetch;
+
+  const { EvolutionProvider } = await import("./evolution-provider.js");
+  await new EvolutionProvider().sendText("instance", "71992294907", "Teste");
+  assert.deepEqual(calls, ["5571992294907"]);
+});

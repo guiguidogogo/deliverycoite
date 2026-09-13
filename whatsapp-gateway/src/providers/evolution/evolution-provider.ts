@@ -15,12 +15,26 @@ function isEvolutionProviderStatus(error: unknown, status: number) {
 function providerMessage(data: any) {
   const value = data?.response?.message ?? data?.message ?? data?.error;
   if (typeof value === "string") return value.slice(0, 300);
-  if (Array.isArray(value)) return value.map(String).join("; ").slice(0, 300);
+  if (value !== undefined) {
+    try {
+      return JSON.stringify(value).slice(0, 500);
+    } catch {
+      return String(value).slice(0, 300);
+    }
+  }
   return undefined;
 }
 
 function brazilianLegacyNumber(number: string) {
   return /^55\d{2}9\d{8}$/.test(number) ? `${number.slice(0, 4)}${number.slice(5)}` : null;
+}
+
+export function normalizeWhatsappNumber(number: string) {
+  const digits = number.replace(/\D/g, "");
+  // Os cadastros brasileiros da loja normalmente guardam somente DDD + telefone.
+  // A Evolution exige o DDI para montar o JID do destinatario.
+  if (/^\d{10,11}$/.test(digits)) return `55${digits}`;
+  return digits;
 }
 
 export class EvolutionProvider implements WhatsAppProvider {
@@ -69,10 +83,11 @@ export class EvolutionProvider implements WhatsAppProvider {
       method: "POST",
       body: JSON.stringify({ number, text: message, delay: 800, linkPreview: false })
     });
+    const normalizedNumber = normalizeWhatsappNumber(to);
     try {
-      return await send(to);
+      return await send(normalizedNumber);
     } catch (error) {
-      const legacyNumber = brazilianLegacyNumber(to);
+      const legacyNumber = brazilianLegacyNumber(normalizedNumber);
       if (!legacyNumber || !isEvolutionProviderStatus(error, 400)) throw error;
       logger.info({ provider: "evolution", phoneLast4: legacyNumber.slice(-4) }, "Retrying Brazilian number without the ninth digit");
       return send(legacyNumber);
