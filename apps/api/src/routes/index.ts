@@ -62,6 +62,11 @@ import {
   updateStaffUser
 } from "../controllers/staff-controller.js";
 import { deleteCustomer, listCustomers, lookupCustomer, updateCustomer } from "../controllers/customers-controller.js";
+import {
+  createWhatsappCampaign,
+  listWhatsappCampaigns,
+  updateWhatsappCampaignStatus
+} from "../controllers/whatsapp-campaigns-controller.js";
 import { getDashboard } from "../controllers/dashboard-controller.js";
 import {
   acceptDriverRoute,
@@ -373,6 +378,9 @@ route.get("/admin/reports/finance.pdf", requirePermission("FINANCE_REPORTS"), ex
 route.get("/admin/customers", requirePermission("CUSTOMERS"), listCustomers);
 route.patch("/admin/customers/:id", requirePermission("CUSTOMERS"), updateCustomer);
 route.delete("/admin/customers/:id", requirePermission("CUSTOMERS"), deleteCustomer);
+route.get("/admin/whatsapp-campaigns", requirePermission("CUSTOMERS"), listWhatsappCampaigns);
+route.post("/admin/whatsapp-campaigns", requirePermission("CUSTOMERS"), createWhatsappCampaign);
+route.patch("/admin/whatsapp-campaigns/:id/status", requirePermission("CUSTOMERS"), updateWhatsappCampaignStatus);
 route.get("/admin/finance/summary", requireAnyPermission(["FINANCE", "CASH_MANAGE"]), getFinanceSummary);
 route.get("/admin/finance/dashboard", requirePermission("FINANCE"), getFinanceDashboard);
 route.get("/admin/finance/sessions", requireAnyPermission(["FINANCE", "CASH_MANAGE"]), listCashSessions);

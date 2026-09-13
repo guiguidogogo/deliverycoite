@@ -135,24 +135,39 @@ enum RaffleMediaType {
   SHARE_BANNER
 }
 
+enum WhatsappCampaignStatus {
+  RUNNING
+  PAUSED
+  COMPLETED
+  CANCELED
+}
+
+enum WhatsappCampaignRecipientStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+  CANCELED
+}
+
 model User {
-  id             String          @id @default(cuid())
-  name           String
-  email          String
-  phone          String?
-  passwordHash   String
-  role           UserRole        @default(ATTENDANT)
-  active         Boolean         @default(true)
-  companyId      String
-  company        Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  staffRoleId    String?
-  staffRole      StaffRole?      @relation(fields: [staffRoleId], references: [id], onDelete: SetNull)
-  waiterOrders   Order[]         @relation("WaiterOrders")
-  openedTableSessions TableSession[] @relation("OpenedTableSessions")
-  closedTableSessions TableSession[] @relation("ClosedTableSessions")
-  passwordResets PasswordReset[]
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  id                  String          @id @default(cuid())
+  name                String
+  email               String
+  phone               String?
+  passwordHash        String
+  role                UserRole        @default(ATTENDANT)
+  active              Boolean         @default(true)
+  companyId           String
+  company             Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  staffRoleId         String?
+  staffRole           StaffRole?      @relation(fields: [staffRoleId], references: [id], onDelete: SetNull)
+  waiterOrders        Order[]         @relation("WaiterOrders")
+  openedTableSessions TableSession[]  @relation("OpenedTableSessions")
+  closedTableSessions TableSession[]  @relation("ClosedTableSessions")
+  passwordResets      PasswordReset[]
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
 
   @@unique([companyId, email])
   @@unique([companyId, phone])
@@ -168,81 +183,83 @@ model UploadedImage {
 }
 
 model Company {
-  id                     String                @id @default(cuid())
-  companyName            String
-  tradeName              String
-  cnpj                   String?               @unique
-  phone                  String?
-  whatsapp               String?
-  instagram              String?
-  email                  String?
-  subdomain              String                @unique
-  logoUrl                String?
-  faviconUrl             String?
-  primaryColor           String                @default("#e76f51")
-  secondaryColor         String                @default("#7ebc59")
-  active                 Boolean               @default(true)
-  marketplaceVisible     Boolean               @default(true)
-  featured               Boolean               @default(false)
-  businessType           BusinessType          @default(FOOD)
-  category               String                @default("Lanches")
-  city                   String                @default("Conceição do Coité")
-  isOpen                 Boolean               @default(true)
-  deliveryFee            Decimal               @default(5) @db.Decimal(10, 2)
-  deliveryTimeMin        Int                   @default(35)
-  rating                 Decimal               @default(5) @db.Decimal(2, 1)
-  customDomain           String?               @unique
-  address                String?
-  plan                   String                @default("basico")
-  mercadoPagoPublicKey   String?
-  mercadoPagoAccessToken String?
-  mercadoPagoEnabled     Boolean               @default(false)
-  printerAgentTokenHash  String?
-  printerAgentEnabled    Boolean               @default(false)
-  printerAgentLastSeenAt DateTime?
-  menuiaApiKey           String?
-  menuiaStoreId          String?
-  printerName            String?
-  createdAt              DateTime              @default(now())
-  updatedAt              DateTime              @updatedAt
-  users                  User[]
-  staffRoles             StaffRole[]
-  categories             Category[]
-  products               Product[]
-  complements            Complement[]
-  customers              Customer[]
-  companyCustomers       CompanyCustomer[]
-  settings               Setting[]
-  coupons                Coupon[]
-  orders                 Order[]
-  tableSessions          TableSession[]
-  cashSessions           CashSession[]
-  cashEntries            CashEntry[]
-  deliveryFeeTiers       DeliveryFeeTier[]
-  customerAddresses      CustomerAddress[]
-  productComplements     ProductComplement[]
-  couponRedemptions      CouponRedemption[]
-  orderItems             OrderItem[]
-  orderItemComplements   OrderItemComplement[]
-  passwordResets         PasswordReset[]
-  favorites              Favorite[]
-  drivers                Driver[]
-  deliveryRoutes         DeliveryRoute[]
-  deliveryRouteOrders    DeliveryRouteOrder[]
-  driverDeviceTokens     DriverDeviceToken[]
-  diningAreas            DiningArea[]
-  restaurantTables       RestaurantTable[]
-  businessHours          CompanyBusinessHour[]
-  printerJobs            PrinterJob[]
-  auditLogs              AuditLog[]
-  payables               AccountPayable[]
-  receivables            AccountReceivable[]
-  raffles                Raffle[]
-  raffleParticipants     RaffleParticipant[]
-  raffleNumbers          RaffleNumber[]
-  raffleOrders           RaffleOrder[]
-  rafflePayments         RafflePayment[]
-  raffleAuditLogs        RaffleAuditLog[]
+  id                         String                      @id @default(cuid())
+  companyName                String
+  tradeName                  String
+  cnpj                       String?                     @unique
+  phone                      String?
+  whatsapp                   String?
+  instagram                  String?
+  email                      String?
+  subdomain                  String                      @unique
+  logoUrl                    String?
+  faviconUrl                 String?
+  primaryColor               String                      @default("#e76f51")
+  secondaryColor             String                      @default("#7ebc59")
+  active                     Boolean                     @default(true)
+  marketplaceVisible         Boolean                     @default(true)
+  featured                   Boolean                     @default(false)
+  businessType               BusinessType                @default(FOOD)
+  category                   String                      @default("Lanches")
+  city                       String                      @default("Conceição do Coité")
+  isOpen                     Boolean                     @default(true)
+  deliveryFee                Decimal                     @default(5) @db.Decimal(10, 2)
+  deliveryTimeMin            Int                         @default(35)
+  rating                     Decimal                     @default(5) @db.Decimal(2, 1)
+  customDomain               String?                     @unique
+  address                    String?
+  plan                       String                      @default("basico")
+  mercadoPagoPublicKey       String?
+  mercadoPagoAccessToken     String?
+  mercadoPagoEnabled         Boolean                     @default(false)
+  printerAgentTokenHash      String?
+  printerAgentEnabled        Boolean                     @default(false)
+  printerAgentLastSeenAt     DateTime?
+  menuiaApiKey               String?
+  menuiaStoreId              String?
+  printerName                String?
+  createdAt                  DateTime                    @default(now())
+  updatedAt                  DateTime                    @updatedAt
+  users                      User[]
+  staffRoles                 StaffRole[]
+  categories                 Category[]
+  products                   Product[]
+  complements                Complement[]
+  customers                  Customer[]
+  companyCustomers           CompanyCustomer[]
+  settings                   Setting[]
+  coupons                    Coupon[]
+  orders                     Order[]
+  tableSessions              TableSession[]
+  cashSessions               CashSession[]
+  cashEntries                CashEntry[]
+  deliveryFeeTiers           DeliveryFeeTier[]
+  customerAddresses          CustomerAddress[]
+  productComplements         ProductComplement[]
+  couponRedemptions          CouponRedemption[]
+  orderItems                 OrderItem[]
+  orderItemComplements       OrderItemComplement[]
+  passwordResets             PasswordReset[]
+  favorites                  Favorite[]
+  drivers                    Driver[]
+  deliveryRoutes             DeliveryRoute[]
+  deliveryRouteOrders        DeliveryRouteOrder[]
+  driverDeviceTokens         DriverDeviceToken[]
+  diningAreas                DiningArea[]
+  restaurantTables           RestaurantTable[]
+  businessHours              CompanyBusinessHour[]
+  printerJobs                PrinterJob[]
+  auditLogs                  AuditLog[]
+  payables                   AccountPayable[]
+  receivables                AccountReceivable[]
+  raffles                    Raffle[]
+  raffleParticipants         RaffleParticipant[]
+  raffleNumbers              RaffleNumber[]
+  raffleOrders               RaffleOrder[]
+  rafflePayments             RafflePayment[]
+  raffleAuditLogs            RaffleAuditLog[]
+  whatsappCampaigns          WhatsappCampaign[]
+  whatsappCampaignRecipients WhatsappCampaignRecipient[]
 }
 
 model CompanyBusinessHour {
@@ -303,47 +320,47 @@ model Category {
 }
 
 model Product {
-  id          String              @id @default(cuid())
-  companyId   String
-  company     Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  name        String
-  description String
-  price       Decimal             @db.Decimal(10, 2)
-  promoPrice  Decimal?            @db.Decimal(10, 2)
-  imageUrl    String?
-  available   Boolean             @default(true)
-  active      Boolean             @default(true)
-  trackStock  Boolean             @default(false)
-  stockQuantity Decimal           @default(0) @db.Decimal(10, 3)
-  lowStockAlert Decimal?          @db.Decimal(10, 3)
-  categoryId  String
-  category    Category            @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  orderItems  OrderItem[]
-  favorites   Favorite[]
-  complements ProductComplement[]
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
+  id            String              @id @default(cuid())
+  companyId     String
+  company       Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name          String
+  description   String
+  price         Decimal             @db.Decimal(10, 2)
+  promoPrice    Decimal?            @db.Decimal(10, 2)
+  imageUrl      String?
+  available     Boolean             @default(true)
+  active        Boolean             @default(true)
+  trackStock    Boolean             @default(false)
+  stockQuantity Decimal             @default(0) @db.Decimal(10, 3)
+  lowStockAlert Decimal?            @db.Decimal(10, 3)
+  categoryId    String
+  category      Category            @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  orderItems    OrderItem[]
+  favorites     Favorite[]
+  complements   ProductComplement[]
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
 
   @@index([categoryId])
   @@index([companyId])
 }
 
 model Complement {
-  id          String                @id @default(cuid())
-  companyId   String
-  company     Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  name        String
-  description String
-  price       Decimal               @default(0) @db.Decimal(10, 2)
-  imageUrl    String?
-  active      Boolean               @default(true)
-  trackStock  Boolean               @default(false)
-  stockQuantity Decimal             @default(0) @db.Decimal(10, 3)
-  lowStockAlert Decimal?            @db.Decimal(10, 3)
-  products    ProductComplement[]
-  orderItems  OrderItemComplement[]
-  createdAt   DateTime              @default(now())
-  updatedAt   DateTime              @updatedAt
+  id            String                @id @default(cuid())
+  companyId     String
+  company       Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name          String
+  description   String
+  price         Decimal               @default(0) @db.Decimal(10, 2)
+  imageUrl      String?
+  active        Boolean               @default(true)
+  trackStock    Boolean               @default(false)
+  stockQuantity Decimal               @default(0) @db.Decimal(10, 3)
+  lowStockAlert Decimal?              @db.Decimal(10, 3)
+  products      ProductComplement[]
+  orderItems    OrderItemComplement[]
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
 
   @@index([companyId])
 }
@@ -368,37 +385,84 @@ model ProductComplement {
 }
 
 model Customer {
-  id                String             @id @default(cuid())
-  globalCustomerId  String?
-  globalCustomer    GlobalCustomer?    @relation(fields: [globalCustomerId], references: [id], onDelete: SetNull)
-  companyCustomerId String?
-  companyCustomer   CompanyCustomer?   @relation(fields: [companyCustomerId], references: [id], onDelete: SetNull)
-  companyId         String
-  company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  name              String
-  phone             String
-  address           String
-  number            String
-  district          String
-  complement        String?
-  email             String?
-  passwordHash      String?
-  addresses         CustomerAddress[]
-  orders            Order[]
-  couponRedemptions CouponRedemption[]
-  passwordResets    PasswordReset[]
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
-  deletedAt         DateTime?
-  deletedBy         String?
-  deletionReason    String?
+  id                         String                      @id @default(cuid())
+  globalCustomerId           String?
+  globalCustomer             GlobalCustomer?             @relation(fields: [globalCustomerId], references: [id], onDelete: SetNull)
+  companyCustomerId          String?
+  companyCustomer            CompanyCustomer?            @relation(fields: [companyCustomerId], references: [id], onDelete: SetNull)
+  companyId                  String
+  company                    Company                     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name                       String
+  phone                      String
+  address                    String
+  number                     String
+  district                   String
+  complement                 String?
+  email                      String?
+  passwordHash               String?
+  addresses                  CustomerAddress[]
+  orders                     Order[]
+  couponRedemptions          CouponRedemption[]
+  passwordResets             PasswordReset[]
+  createdAt                  DateTime                    @default(now())
+  updatedAt                  DateTime                    @updatedAt
+  deletedAt                  DateTime?
+  deletedBy                  String?
+  deletionReason             String?
+  whatsappCampaignRecipients WhatsappCampaignRecipient[]
 
-  @@index([globalCustomerId])
-  @@index([companyCustomerId])
   @@unique([companyId, phone])
   @@unique([companyId, email])
+  @@index([globalCustomerId])
+  @@index([companyCustomerId])
   @@index([companyId])
   @@index([companyId, deletedAt])
+}
+
+model WhatsappCampaign {
+  id              String                      @id @default(cuid())
+  companyId       String
+  company         Company                     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name            String
+  message         String
+  batchSize       Int                         @default(5)
+  intervalMinutes Int                         @default(5)
+  status          WhatsappCampaignStatus      @default(RUNNING)
+  nextBatchAt     DateTime
+  totalRecipients Int                         @default(0)
+  sentCount       Int                         @default(0)
+  failedCount     Int                         @default(0)
+  createdBy       String
+  completedAt     DateTime?
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
+  recipients      WhatsappCampaignRecipient[]
+
+  @@index([companyId, createdAt])
+  @@index([status, nextBatchAt])
+}
+
+model WhatsappCampaignRecipient {
+  id           String                          @id @default(cuid())
+  companyId    String
+  company      Company                         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  campaignId   String
+  campaign     WhatsappCampaign                @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  customerId   String?
+  customer     Customer?                       @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  customerName String
+  phone        String
+  status       WhatsappCampaignRecipientStatus @default(PENDING)
+  attempts     Int                             @default(0)
+  gatewayJobId String?
+  errorMessage String?
+  sentAt       DateTime?
+  createdAt    DateTime                        @default(now())
+  updatedAt    DateTime                        @updatedAt
+
+  @@unique([campaignId, phone])
+  @@index([companyId, status])
+  @@index([campaignId, status, createdAt])
 }
 
 model GlobalCustomer {
@@ -419,23 +483,23 @@ model GlobalCustomer {
 }
 
 model CompanyCustomer {
-  id                  String            @id @default(cuid())
-  companyId           String
-  company             Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  globalCustomerId    String
-  globalCustomer      GlobalCustomer    @relation(fields: [globalCustomerId], references: [id], onDelete: Cascade)
-  firstPurchaseAt     DateTime?
-  lastPurchaseAt      DateTime?
-  ordersCount         Int               @default(0)
-  totalSpent          Decimal           @default(0) @db.Decimal(12, 2)
-  averageTicket       Decimal           @default(0) @db.Decimal(12, 2)
-  notes               String?
-  loyaltyPoints       Int               @default(0)
-  active              Boolean           @default(true)
-  preferences         Json?
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
-  customers           Customer[]
+  id               String         @id @default(cuid())
+  companyId        String
+  company          Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  globalCustomerId String
+  globalCustomer   GlobalCustomer @relation(fields: [globalCustomerId], references: [id], onDelete: Cascade)
+  firstPurchaseAt  DateTime?
+  lastPurchaseAt   DateTime?
+  ordersCount      Int            @default(0)
+  totalSpent       Decimal        @default(0) @db.Decimal(12, 2)
+  averageTicket    Decimal        @default(0) @db.Decimal(12, 2)
+  notes            String?
+  loyaltyPoints    Int            @default(0)
+  active           Boolean        @default(true)
+  preferences      Json?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  customers        Customer[]
 
   @@unique([companyId, globalCustomerId])
   @@index([companyId, active])
@@ -462,19 +526,19 @@ model PasswordReset {
 }
 
 model CashSession {
-  id            String      @id @default(cuid())
-  companyId     String
-  company       Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  openedBy      String
-  operatorName  String?
-  openingIp     String?
-  openingDevice String?
-  openingAmount Decimal     @db.Decimal(10, 2)
-  openedAt      DateTime    @default(now())
-  closedAt      DateTime?
-  closingAmount Decimal?    @db.Decimal(10, 2)
-  expectedAmount Decimal?   @db.Decimal(10, 2)
-  difference     Decimal?   @db.Decimal(10, 2)
+  id             String      @id @default(cuid())
+  companyId      String
+  company        Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  openedBy       String
+  operatorName   String?
+  openingIp      String?
+  openingDevice  String?
+  openingAmount  Decimal     @db.Decimal(10, 2)
+  openedAt       DateTime    @default(now())
+  closedAt       DateTime?
+  closingAmount  Decimal?    @db.Decimal(10, 2)
+  expectedAmount Decimal?    @db.Decimal(10, 2)
+  difference     Decimal?    @db.Decimal(10, 2)
   closingNotes   String?
   closedBy       String?
   closingIp      String?
@@ -482,10 +546,10 @@ model CashSession {
   reopenedAt     DateTime?
   reopenedBy     String?
   reopenReason   String?
-  locked         Boolean    @default(false)
+  locked         Boolean     @default(false)
   deletedAt      DateTime?
-  notes         String?
-  entries       CashEntry[]
+  notes          String?
+  entries        CashEntry[]
 
   @@index([openedAt])
   @@index([closedAt])
@@ -494,26 +558,26 @@ model CashSession {
 }
 
 model CashEntry {
-  id            String         @id @default(cuid())
-  companyId     String
-  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  sessionId     String
-  session       CashSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  type          CashEntryType
-  category      String?
-  direction     String         @default("IN")
-  amount        Decimal        @db.Decimal(10, 2)
-  paymentMethod PaymentMethod?
-  paymentDetail String?
-  orderId       String?
-  operatorId    String?
-  operatorName  String?
-  reason        String?
-  description   String?
-  deletedAt     DateTime?
-  deletedBy     String?
+  id             String         @id @default(cuid())
+  companyId      String
+  company        Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  sessionId      String
+  session        CashSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  type           CashEntryType
+  category       String?
+  direction      String         @default("IN")
+  amount         Decimal        @db.Decimal(10, 2)
+  paymentMethod  PaymentMethod?
+  paymentDetail  String?
+  orderId        String?
+  operatorId     String?
+  operatorName   String?
+  reason         String?
+  description    String?
+  deletedAt      DateTime?
+  deletedBy      String?
   deletionReason String?
-  createdAt     DateTime       @default(now())
+  createdAt      DateTime       @default(now())
 
   @@index([sessionId, createdAt])
   @@index([companyId])
@@ -521,19 +585,19 @@ model CashEntry {
 }
 
 model AuditLog {
-  id          String   @id @default(cuid())
-  companyId   String
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  userId      String?
-  userName    String?
-  action      String
-  entity      String
-  entityId    String?
-  oldValue    Json?
-  newValue    Json?
-  ipAddress   String?
-  device      String?
-  createdAt   DateTime @default(now())
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  userId    String?
+  userName  String?
+  action    String
+  entity    String
+  entityId  String?
+  oldValue  Json?
+  newValue  Json?
+  ipAddress String?
+  device    String?
+  createdAt DateTime @default(now())
 
   @@index([companyId, createdAt])
   @@index([companyId, entity, entityId])
@@ -541,39 +605,39 @@ model AuditLog {
 }
 
 model AccountPayable {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   companyId   String
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
   description String
   category    String
-  amount      Decimal  @db.Decimal(10, 2)
+  amount      Decimal   @db.Decimal(10, 2)
   dueDate     DateTime
-  status      String   @default("PENDING")
+  status      String    @default("PENDING")
   paidAt      DateTime?
   notes       String?
   createdBy   String?
   deletedAt   DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([companyId, dueDate, status])
 }
 
 model AccountReceivable {
-  id          String   @id @default(cuid())
-  companyId   String
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  id           String    @id @default(cuid())
+  companyId    String
+  company      Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
   customerName String
-  description String?
-  amount      Decimal  @db.Decimal(10, 2)
-  dueDate     DateTime
-  status      String   @default("OPEN")
-  receivedAt  DateTime?
-  notes       String?
-  createdBy   String?
-  deletedAt   DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  description  String?
+  amount       Decimal   @db.Decimal(10, 2)
+  dueDate      DateTime
+  status       String    @default("OPEN")
+  receivedAt   DateTime?
+  notes        String?
+  createdBy    String?
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@index([companyId, dueDate, status])
 }
@@ -619,22 +683,22 @@ model Raffle {
 }
 
 model RaffleNumber {
-  id                       String              @id @default(cuid())
-  companyId                String
-  company                  Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  raffleId                 String
-  raffle                   Raffle              @relation(fields: [raffleId], references: [id], onDelete: Cascade)
-  number                   Int
-  formattedNumber          String
-  status                   RaffleNumberStatus  @default(AVAILABLE)
-  reservedByParticipantId  String?
-  reservedByParticipant    RaffleParticipant?  @relation(fields: [reservedByParticipantId], references: [id], onDelete: SetNull)
-  reservedUntil            DateTime?
-  orderId                  String?
-  order                    RaffleOrder?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
-  paidAt                   DateTime?
-  createdAt                DateTime            @default(now())
-  updatedAt                DateTime            @updatedAt
+  id                      String             @id @default(cuid())
+  companyId               String
+  company                 Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  raffleId                String
+  raffle                  Raffle             @relation(fields: [raffleId], references: [id], onDelete: Cascade)
+  number                  Int
+  formattedNumber         String
+  status                  RaffleNumberStatus @default(AVAILABLE)
+  reservedByParticipantId String?
+  reservedByParticipant   RaffleParticipant? @relation(fields: [reservedByParticipantId], references: [id], onDelete: SetNull)
+  reservedUntil           DateTime?
+  orderId                 String?
+  order                   RaffleOrder?       @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  paidAt                  DateTime?
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
 
   @@unique([raffleId, number])
   @@index([companyId, status])
@@ -643,23 +707,23 @@ model RaffleNumber {
 }
 
 model RaffleParticipant {
-  id             String          @id @default(cuid())
-  companyId      String
-  company        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  raffleId       String?
-  raffle         Raffle?         @relation("RaffleParticipants", fields: [raffleId], references: [id], onDelete: SetNull)
-  name           String
-  birthDate      DateTime?
-  phone          String
-  email          String?
-  cpf            String?
-  passwordHash   String?
+  id              String         @id @default(cuid())
+  companyId       String
+  company         Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  raffleId        String?
+  raffle          Raffle?        @relation("RaffleParticipants", fields: [raffleId], references: [id], onDelete: SetNull)
+  name            String
+  birthDate       DateTime?
+  phone           String
+  email           String?
+  cpf             String?
+  passwordHash    String?
   acceptedTermsAt DateTime?
-  lastAccessAt   DateTime?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  numbers        RaffleNumber[]
-  orders         RaffleOrder[]
+  lastAccessAt    DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  numbers         RaffleNumber[]
+  orders          RaffleOrder[]
 
   @@unique([companyId, phone])
   @@index([companyId, email])
@@ -667,32 +731,32 @@ model RaffleParticipant {
 }
 
 model RaffleOrder {
-  id                     String              @id @default(cuid())
-  companyId              String
-  company                Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  raffleId               String
-  raffle                 Raffle              @relation(fields: [raffleId], references: [id], onDelete: Cascade)
-  participantId          String
-  participant            RaffleParticipant   @relation(fields: [participantId], references: [id], onDelete: Restrict)
-  status                 RaffleOrderStatus   @default(RESERVED)
-  paymentMethod          String?
-  paymentStatus          RafflePaymentStatus @default(PENDING)
-  subtotal               Decimal             @db.Decimal(10, 2)
-  cardFee                Decimal             @default(0) @db.Decimal(10, 2)
-  total                  Decimal             @db.Decimal(10, 2)
-  mercadoPagoPaymentId   String?
+  id                      String              @id @default(cuid())
+  companyId               String
+  company                 Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  raffleId                String
+  raffle                  Raffle              @relation(fields: [raffleId], references: [id], onDelete: Cascade)
+  participantId           String
+  participant             RaffleParticipant   @relation(fields: [participantId], references: [id], onDelete: Restrict)
+  status                  RaffleOrderStatus   @default(RESERVED)
+  paymentMethod           String?
+  paymentStatus           RafflePaymentStatus @default(PENDING)
+  subtotal                Decimal             @db.Decimal(10, 2)
+  cardFee                 Decimal             @default(0) @db.Decimal(10, 2)
+  total                   Decimal             @db.Decimal(10, 2)
+  mercadoPagoPaymentId    String?
   mercadoPagoPreferenceId String?
-  pixQrCode              String?
-  pixCopiaCola           String?
-  reservationExpiresAt   DateTime?
-  paidAt                 DateTime?
-  cancelledAt            DateTime?
-  cancelReason           String?
-  createdAt              DateTime            @default(now())
-  updatedAt              DateTime            @updatedAt
-  numbers                RaffleNumber[]
-  items                  RaffleOrderItem[]
-  payments               RafflePayment[]
+  pixQrCode               String?
+  pixCopiaCola            String?
+  reservationExpiresAt    DateTime?
+  paidAt                  DateTime?
+  cancelledAt             DateTime?
+  cancelReason            String?
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+  numbers                 RaffleNumber[]
+  items                   RaffleOrderItem[]
+  payments                RafflePayment[]
 
   @@index([companyId, status])
   @@index([raffleId, status])
@@ -702,38 +766,38 @@ model RaffleOrder {
 }
 
 model RaffleOrderItem {
-  id              String        @id @default(cuid())
+  id              String      @id @default(cuid())
   companyId       String
   orderId         String
-  order           RaffleOrder   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order           RaffleOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   raffleNumberId  String
   number          Int
   formattedNumber String
-  price           Decimal       @db.Decimal(10, 2)
-  createdAt       DateTime      @default(now())
+  price           Decimal     @db.Decimal(10, 2)
+  createdAt       DateTime    @default(now())
 
   @@unique([orderId, raffleNumberId])
   @@index([companyId])
 }
 
 model RafflePayment {
-  id                   String              @id @default(cuid())
-  companyId            String
-  company              Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  raffleId             String
-  raffle               Raffle              @relation(fields: [raffleId], references: [id], onDelete: Cascade)
-  orderId              String
-  order                RaffleOrder         @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  provider             String              @default("MERCADO_PAGO")
-  providerPaymentId    String?
-  providerEventId      String?
-  method               String?
-  status               RafflePaymentStatus @default(PENDING)
-  amount               Decimal             @db.Decimal(10, 2)
-  payload              Json?
-  processedAt          DateTime?
-  createdAt            DateTime            @default(now())
-  updatedAt            DateTime            @updatedAt
+  id                String              @id @default(cuid())
+  companyId         String
+  company           Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  raffleId          String
+  raffle            Raffle              @relation(fields: [raffleId], references: [id], onDelete: Cascade)
+  orderId           String
+  order             RaffleOrder         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  provider          String              @default("MERCADO_PAGO")
+  providerPaymentId String?
+  providerEventId   String?
+  method            String?
+  status            RafflePaymentStatus @default(PENDING)
+  amount            Decimal             @db.Decimal(10, 2)
+  payload           Json?
+  processedAt       DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
 
   @@unique([provider, providerEventId])
   @@index([companyId, status])
@@ -755,39 +819,39 @@ model RaffleMedia {
 }
 
 model RaffleWinner {
-  id                  String             @id @default(cuid())
-  companyId           String
-  raffleId            String
-  raffle              Raffle             @relation(fields: [raffleId], references: [id], onDelete: Cascade)
-  raffleNumberId      String?
-  number              Int
-  formattedNumber     String
-  participantName     String?
-  participantPhone    String?
-  drawMethod          String?
-  proofUrl            String?
-  notes               String?
-  published           Boolean            @default(false)
-  drawnAt             DateTime           @default(now())
-  createdAt           DateTime           @default(now())
+  id               String   @id @default(cuid())
+  companyId        String
+  raffleId         String
+  raffle           Raffle   @relation(fields: [raffleId], references: [id], onDelete: Cascade)
+  raffleNumberId   String?
+  number           Int
+  formattedNumber  String
+  participantName  String?
+  participantPhone String?
+  drawMethod       String?
+  proofUrl         String?
+  notes            String?
+  published        Boolean  @default(false)
+  drawnAt          DateTime @default(now())
+  createdAt        DateTime @default(now())
 
   @@index([companyId, raffleId])
 }
 
 model RaffleAuditLog {
-  id          String   @id @default(cuid())
-  companyId   String
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  raffleId    String?
-  raffle      Raffle?  @relation(fields: [raffleId], references: [id], onDelete: SetNull)
-  userId      String?
-  userName    String?
-  action      String
-  entity      String
-  entityId    String?
-  oldValue    Json?
-  newValue    Json?
-  createdAt   DateTime @default(now())
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  raffleId  String?
+  raffle    Raffle?  @relation(fields: [raffleId], references: [id], onDelete: SetNull)
+  userId    String?
+  userName  String?
+  action    String
+  entity    String
+  entityId  String?
+  oldValue  Json?
+  newValue  Json?
+  createdAt DateTime @default(now())
 
   @@index([companyId, createdAt])
   @@index([companyId, raffleId])
@@ -836,56 +900,56 @@ model Coupon {
 }
 
 model Order {
-  id                 String            @id @default(cuid())
-  companyId          String
-  company            Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  orderNumber        Int               @unique @default(autoincrement())
-  customerId         String
-  customer           Customer          @relation(fields: [customerId], references: [id])
-  status             OrderStatus       @default(RECEIVED)
-  source             OrderSource       @default(DELIVERY)
-  paymentMethod      PaymentMethod
-  fulfillmentType    FulfillmentType   @default(DELIVERY)
-  tableId            String?
-  table              RestaurantTable?  @relation(fields: [tableId], references: [id], onDelete: SetNull)
-  tableSessionId     String?
-  tableSession       TableSession?     @relation(fields: [tableSessionId], references: [id], onDelete: SetNull)
-  waiterId           String?
-  waiter             User?             @relation("WaiterOrders", fields: [waiterId], references: [id], onDelete: SetNull)
-  changeFor          Decimal?          @db.Decimal(10, 2)
-  subtotal           Decimal           @db.Decimal(10, 2)
-  deliveryFee        Decimal           @db.Decimal(10, 2)
-  deliveryLatitude   Float?
-  deliveryLongitude  Float?
-  deliveryDistanceKm Float?
-  discount           Decimal           @default(0) @db.Decimal(10, 2)
-  total              Decimal           @db.Decimal(10, 2)
-  couponCode         String?
-  customerNotes      String?
-  paidAt             DateTime?
-  paidMethodDetail   String?
+  id                      String               @id @default(cuid())
+  companyId               String
+  company                 Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  orderNumber             Int                  @unique @default(autoincrement())
+  customerId              String
+  customer                Customer             @relation(fields: [customerId], references: [id])
+  status                  OrderStatus          @default(RECEIVED)
+  source                  OrderSource          @default(DELIVERY)
+  paymentMethod           PaymentMethod
+  fulfillmentType         FulfillmentType      @default(DELIVERY)
+  tableId                 String?
+  table                   RestaurantTable?     @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  tableSessionId          String?
+  tableSession            TableSession?        @relation(fields: [tableSessionId], references: [id], onDelete: SetNull)
+  waiterId                String?
+  waiter                  User?                @relation("WaiterOrders", fields: [waiterId], references: [id], onDelete: SetNull)
+  changeFor               Decimal?             @db.Decimal(10, 2)
+  subtotal                Decimal              @db.Decimal(10, 2)
+  deliveryFee             Decimal              @db.Decimal(10, 2)
+  deliveryLatitude        Float?
+  deliveryLongitude       Float?
+  deliveryDistanceKm      Float?
+  discount                Decimal              @default(0) @db.Decimal(10, 2)
+  total                   Decimal              @db.Decimal(10, 2)
+  couponCode              String?
+  customerNotes           String?
+  paidAt                  DateTime?
+  paidMethodDetail        String?
   mercadoPagoPreferenceId String?
   mercadoPagoPaymentId    String?
   mercadoPagoStatus       String?
   mercadoPagoStatusDetail String?
-  scheduledFor        DateTime?
-  notes              String?
-  whatsappLink       String?
-  printerQueuedAt    DateTime?
-  printerPrintedAt   DateTime?
-  printerPrintCount  Int               @default(0)
-  printerLastError   String?
-  viewedByStaff      Boolean           @default(false)
-  sentToDelivery     Boolean           @default(false)
-  deliverySentAt     DateTime?
-  deletedAt           DateTime?
-  deletedBy           String?
-  deletionReason      String?
-  deliveryRouteOrders DeliveryRouteOrder[]
-  items              OrderItem[]
-  couponRedemption   CouponRedemption?
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
+  scheduledFor            DateTime?
+  notes                   String?
+  whatsappLink            String?
+  printerQueuedAt         DateTime?
+  printerPrintedAt        DateTime?
+  printerPrintCount       Int                  @default(0)
+  printerLastError        String?
+  viewedByStaff           Boolean              @default(false)
+  sentToDelivery          Boolean              @default(false)
+  deliverySentAt          DateTime?
+  deletedAt               DateTime?
+  deletedBy               String?
+  deletionReason          String?
+  deliveryRouteOrders     DeliveryRouteOrder[]
+  items                   OrderItem[]
+  couponRedemption        CouponRedemption?
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
 
   @@index([status])
   @@index([createdAt])
@@ -914,23 +978,23 @@ model DiningArea {
 }
 
 model RestaurantTable {
-  id           String       @id @default(cuid())
-  companyId    String
-  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  areaId       String?
-  area         DiningArea?   @relation(fields: [areaId], references: [id], onDelete: SetNull)
-  number       Int
-  name         String?
-  seats        Int          @default(4)
-  status       TableStatus  @default(FREE)
-  qrCodeToken  String       @unique
-  active       Boolean      @default(true)
-  openedAt     DateTime?
-  closedAt     DateTime?
-  orders       Order[]
-  sessions     TableSession[]
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  id          String         @id @default(cuid())
+  companyId   String
+  company     Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  areaId      String?
+  area        DiningArea?    @relation(fields: [areaId], references: [id], onDelete: SetNull)
+  number      Int
+  name        String?
+  seats       Int            @default(4)
+  status      TableStatus    @default(FREE)
+  qrCodeToken String         @unique
+  active      Boolean        @default(true)
+  openedAt    DateTime?
+  closedAt    DateTime?
+  orders      Order[]
+  sessions    TableSession[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
 
   @@unique([companyId, number])
   @@index([companyId, status])
@@ -938,31 +1002,31 @@ model RestaurantTable {
 }
 
 model TableSession {
-  id             String             @id @default(cuid())
-  companyId      String
-  company        Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  tableId        String
-  table          RestaurantTable    @relation(fields: [tableId], references: [id], onDelete: Cascade)
-  status         TableSessionStatus @default(OPEN)
-  token          String             @unique
-  shortCode      String
-  customerName   String?
-  customerPhone  String?
-  customerEmail  String?
-  openedByUserId String?
-  openedByUser   User?              @relation("OpenedTableSessions", fields: [openedByUserId], references: [id], onDelete: SetNull)
-  closedByUserId String?
-  closedByUser   User?              @relation("ClosedTableSessions", fields: [closedByUserId], references: [id], onDelete: SetNull)
-  openedAt       DateTime           @default(now())
-  closedAt       DateTime?
-  expiresAt      DateTime?
-  lastActivityAt DateTime           @default(now())
-  waiterCalledAt DateTime?
+  id              String             @id @default(cuid())
+  companyId       String
+  company         Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  tableId         String
+  table           RestaurantTable    @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  status          TableSessionStatus @default(OPEN)
+  token           String             @unique
+  shortCode       String
+  customerName    String?
+  customerPhone   String?
+  customerEmail   String?
+  openedByUserId  String?
+  openedByUser    User?              @relation("OpenedTableSessions", fields: [openedByUserId], references: [id], onDelete: SetNull)
+  closedByUserId  String?
+  closedByUser    User?              @relation("ClosedTableSessions", fields: [closedByUserId], references: [id], onDelete: SetNull)
+  openedAt        DateTime           @default(now())
+  closedAt        DateTime?
+  expiresAt       DateTime?
+  lastActivityAt  DateTime           @default(now())
+  waiterCalledAt  DateTime?
   billRequestedAt DateTime?
-  total          Decimal            @default(0) @db.Decimal(10, 2)
-  orders         Order[]
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
+  total           Decimal            @default(0) @db.Decimal(10, 2)
+  orders          Order[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
 
   @@index([companyId, status])
   @@index([companyId, tableId, openedAt])
@@ -993,24 +1057,24 @@ model PrinterJob {
 }
 
 model Driver {
-  id                String              @id @default(cuid())
-  companyId         String
-  company           Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  name              String
-  phone             String
-  whatsapp          String
-  vehicle           String
-  licensePlate      String?
-  passwordHash      String?
-  active            Boolean             @default(true)
-  available         Boolean             @default(true)
-  lastLatitude      Float?
-  lastLongitude     Float?
-  lastLocationAt    DateTime?
-  deliveryRoutes    DeliveryRoute[]
-  deviceTokens      DriverDeviceToken[]
-  createdAt         DateTime             @default(now())
-  updatedAt         DateTime             @updatedAt
+  id             String              @id @default(cuid())
+  companyId      String
+  company        Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name           String
+  phone          String
+  whatsapp       String
+  vehicle        String
+  licensePlate   String?
+  passwordHash   String?
+  active         Boolean             @default(true)
+  available      Boolean             @default(true)
+  lastLatitude   Float?
+  lastLongitude  Float?
+  lastLocationAt DateTime?
+  deliveryRoutes DeliveryRoute[]
+  deviceTokens   DriverDeviceToken[]
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
 
   @@unique([companyId, phone])
   @@index([companyId, active])
@@ -1041,33 +1105,33 @@ model DeliveryRoute {
 }
 
 model DriverDeviceToken {
-  id         String   @id @default(cuid())
-  companyId  String
-  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  driverId   String
-  driver     Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
-  expoToken  String   @unique
-  platform   String?
-  active     Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  driverId  String
+  driver    Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  expoToken String   @unique
+  platform  String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([companyId, driverId])
 }
 
 model DeliveryRouteOrder {
-  id          String        @id @default(cuid())
-  companyId   String
-  company     Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  routeId     String
-  route       DeliveryRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
-  orderId     String
-  order       Order         @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  sequence    Int
-  address     String
-  latitude    Float?
-  longitude   Float?
-  createdAt   DateTime      @default(now())
+  id        String        @id @default(cuid())
+  companyId String
+  company   Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  routeId   String
+  route     DeliveryRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  orderId   String
+  order     Order         @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  sequence  Int
+  address   String
+  latitude  Float?
+  longitude Float?
+  createdAt DateTime      @default(now())
 
   @@unique([routeId, orderId])
   @@unique([routeId, sequence])

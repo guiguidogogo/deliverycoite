@@ -7,6 +7,7 @@ import { app } from "./app.js";
 import { attachRealtimeServer } from "./services/realtime.js";
 import { env } from "./utils/env.js";
 import { prisma } from "./utils/prisma.js";
+import { startWhatsappCampaignWorker } from "./services/whatsapp-campaign-worker.js";
 
 const require = createRequire(import.meta.url);
 
@@ -56,6 +57,7 @@ async function bootstrap() {
     runPackageScript("prisma:seed");
   }
   await prisma.$connect();
+  startWhatsappCampaignWorker();
 
   const server = http.createServer(app);
   attachRealtimeServer(server);
