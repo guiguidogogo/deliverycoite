@@ -21,6 +21,14 @@ export type HubWhatsappQrCode = {
   pairing_code?: string;
 };
 
+export type HubWhatsappJob = {
+  id: string;
+  status: "pending" | "processing" | "sent" | "failed";
+  attempts: number;
+  providerId?: string | null;
+  errorCode?: string | null;
+};
+
 export class HubWhatsappError extends Error {
   constructor(
     public readonly statusCode: number,
@@ -125,6 +133,20 @@ export function sendHubWhatsappText(tenantId: string, to: string, message: strin
     headers: { "idempotency-key": idempotencyKey ?? `delivery_${crypto.randomUUID().replace(/-/g, "")}` },
     body: JSON.stringify({ tenant_id: tenantId, to, message })
   });
+}
+
+export function getHubWhatsappJob(jobId: string) {
+  return gatewayRequest<HubWhatsappJob>(`/api/v1/whatsapp/jobs/${encodeURIComponent(jobId)}`);
+}
+
+export async function waitForHubWhatsappJob(jobId: string, timeoutMs = 7000) {
+  const deadline = Date.now() + timeoutMs;
+  let job = await getHubWhatsappJob(jobId);
+  while ((job.status === "pending" || job.status === "processing") && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    job = await getHubWhatsappJob(jobId);
+  }
+  return job;
 }
 
 export function sendHubWhatsappTest(tenantId: string, to: string, message: string) {

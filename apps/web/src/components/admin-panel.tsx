@@ -628,6 +628,7 @@ export function AdminPanel() {
                         status: Order["status"];
                         statusWhatsappUrl?: string | null;
                         statusWhatsappSent?: boolean;
+                        statusWhatsappPending?: boolean;
                       }>(`/admin/orders/${order.id}/status`, token, {
                         method: "PATCH",
                         body: JSON.stringify({ status, reason })
@@ -641,7 +642,9 @@ export function AdminPanel() {
                           window.open(payload.statusWhatsappUrl, "_blank");
                           toast.success("Mensagem de status pronta no WhatsApp");
                         } else if (payload.statusWhatsappSent) {
-                          toast.success("Status enviado ao cliente via Evolution");
+                          toast.success("Mensagem aceita pelo Evolution");
+                        } else if (payload.statusWhatsappPending) {
+                          toast.info("Mensagem em processamento no Evolution");
                         }
                         await refreshPanel(false);
                       }).catch((error) => {
@@ -680,12 +683,14 @@ export function AdminPanel() {
                   <button
                     className="rounded-lg bg-blue-500 px-2 py-1 text-xs text-white"
                     onClick={() => {
-                      void authApi<{whatsappUrl: string | null; sentByServer?: boolean}>(`/admin/orders/${order.id}/send-delivery`, token, { method: "POST" }).then((data) => {
+                      void authApi<{whatsappUrl: string | null; sentByServer?: boolean; sendPending?: boolean; sendError?: string | null}>(`/admin/orders/${order.id}/send-delivery`, token, { method: "POST" }).then((data) => {
                         if (data.whatsappUrl) {
                           window.open(data.whatsappUrl, '_blank');
                         }
                         setOrders((prev) => prev.map((item) => (item.id === order.id ? { ...item, sentToDelivery: true } : item)));
-                        toast.success(data.sentByServer ? 'Mensagem enviada para o motoboy via Evolution!' : 'Mensagem pronta no WhatsApp do motoboy');
+                        if (data.sentByServer) toast.success('Mensagem aceita pelo Evolution');
+                        else if (data.sendPending) toast.info('Mensagem em processamento no Evolution');
+                        else toast.warning(data.sendError ? `Falha no Evolution: ${data.sendError}` : 'Mensagem pronta no WhatsApp do motoboy');
                       }).catch(() => {
                         toast.error('Configure o número do motoboy nas configurações');
                       });

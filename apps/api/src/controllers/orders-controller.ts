@@ -736,7 +736,12 @@ export async function updateOrderStatus(req: Request, res: Response) {
       ? buildOrderStatusWhatsappMessage(current.customer.phone, current.customer.name, body.status, settings)
       : null;
 
-  let statusSendResult: { ok: boolean; whatsappUrl?: string; error?: string } | null = null;
+  let statusSendResult: {
+    ok: boolean;
+    channel: "EVOLUTION" | "EVOLUTION_PENDING" | "WHATSAPP_LINK";
+    whatsappUrl?: string;
+    error?: string;
+  } | null = null;
   if (settings && statusWhatsapp) {
     statusSendResult = await dispatchWhatsappMessage(settings, current.customer.phone, statusWhatsapp.message, current.customer.phone);
   }
@@ -744,8 +749,9 @@ export async function updateOrderStatus(req: Request, res: Response) {
   return res.json({
     ...order,
     statusWhatsappUrl: statusSendResult?.whatsappUrl ?? null,
-    statusWhatsappSent: statusSendResult?.ok ?? false,
-    statusWhatsappError: statusSendResult?.ok ? null : (statusSendResult?.error ?? null),
+    statusWhatsappSent: statusSendResult?.channel === "EVOLUTION",
+    statusWhatsappPending: statusSendResult?.channel === "EVOLUTION_PENDING",
+    statusWhatsappError: statusSendResult?.channel === "WHATSAPP_LINK" ? (statusSendResult.error ?? null) : null,
     statusWhatsappMessage: statusWhatsapp?.message ?? null
   });
 }
@@ -827,7 +833,13 @@ export async function sendToDelivery(req: Request, res: Response) {
     }
   });
 
-  return res.json({ whatsappUrl: deliverySend.whatsappUrl ?? null, message, sentByServer: deliverySend.channel === "EVOLUTION" });
+  return res.json({
+    whatsappUrl: deliverySend.whatsappUrl ?? null,
+    message,
+    sentByServer: deliverySend.channel === "EVOLUTION",
+    sendPending: deliverySend.channel === "EVOLUTION_PENDING",
+    sendError: deliverySend.channel === "WHATSAPP_LINK" ? (deliverySend.error ?? null) : null
+  });
 }
 
 export async function deleteOrder(req: Request, res: Response) {

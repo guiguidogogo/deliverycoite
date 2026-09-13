@@ -1,6 +1,6 @@
 import type { Order, OrderItem, OrderItemComplement, Product, Customer, Setting } from "@prisma/client";
 import { formatOrderCode } from "../utils/order-code.js";
-import { sendHubWhatsappText } from "./hub-whatsapp.js";
+import { sendHubWhatsappText, waitForHubWhatsappJob } from "./hub-whatsapp.js";
 
 type FullOrder = Order & {
   customer: Customer;
@@ -86,7 +86,7 @@ export function buildOrderStatusWhatsappMessage(phoneRaw: string, customerName: 
 
 type SendResult = {
   ok: boolean;
-  channel: "EVOLUTION" | "WHATSAPP_LINK";
+  channel: "EVOLUTION" | "EVOLUTION_PENDING" | "WHATSAPP_LINK";
   whatsappUrl?: string;
   error?: string;
 };
@@ -107,8 +107,11 @@ export async function dispatchWhatsappMessage(
   fallbackPhoneRaw?: string
 ): Promise<SendResult> {
   try {
-    await sendHubWhatsappText(settings.companyId, toPhoneRaw.replace(/\D/g, ""), message);
-    return { ok: true, channel: "EVOLUTION" };
+    const queued = await sendHubWhatsappText(settings.companyId, toPhoneRaw.replace(/\D/g, ""), message);
+    const job = await waitForHubWhatsappJob(queued.job_id);
+    if (job.status === "sent") return { ok: true, channel: "EVOLUTION" };
+    if (job.status === "failed") throw new Error("A Evolution recusou a mensagem");
+    return { ok: true, channel: "EVOLUTION_PENDING", error: "Mensagem ainda em processamento" };
   } catch (error) {
     const fallback = buildWhatsappLink(fallbackPhoneRaw ?? toPhoneRaw, message);
     return {
