@@ -86,9 +86,6 @@ export default function SettingsManagePage() {
     autoMessage: "",
     pixKey: "",
     pixQrCodeUrl: "",
-    menuiaApiKey: "",
-    menuiaStoreId: "",
-    menuiaEnabled: false,
     mercadoPagoEnabled: false,
     mercadoPagoPublicKey: "",
     mercadoPagoAccessToken: "",
@@ -177,9 +174,6 @@ export default function SettingsManagePage() {
           autoMessage: data.autoMessage ?? "",
           pixKey: data.pixKey ?? "",
           pixQrCodeUrl: data.pixQrCodeUrl ?? "",
-          menuiaApiKey: data.menuiaApiKey ?? "",
-          menuiaStoreId: data.menuiaStoreId ?? "",
-          menuiaEnabled: data.menuiaEnabled ?? false,
           mercadoPagoEnabled: data.mercadoPagoEnabled ?? false,
           mercadoPagoPublicKey: data.mercadoPagoPublicKey ?? "",
           mercadoPagoAccessToken: data.mercadoPagoAccessToken ?? "",
@@ -342,42 +336,6 @@ export default function SettingsManagePage() {
       }
     }
     printTestReceipt(form.companyName, form.printerPaperWidth === 80 ? 80 : 58);
-  }
-
-  async function testMenuia() {
-    const token = localStorage.getItem("delivery:token");
-    if (!token) {
-      toast.error("Faça login novamente para testar a conexão MenuIA.");
-      window.setTimeout(() => {
-        window.location.href = "/admin/login";
-      }, 900);
-      return;
-    }
-
-    if (!form.menuiaEnabled) {
-      toast.error("Ative a integração MenuIA antes de testar. Se você não usa MenuIA, pode deixar desativado.");
-      return;
-    }
-
-    if (!form.menuiaApiKey.trim() || !form.menuiaStoreId.trim()) {
-      toast.error("Preencha AUTHKEY e APPKEY da MenuIA para testar. Esses campos só são necessários se a integração estiver ativa.");
-      return;
-    }
-
-    const res = await apiFetch(`/admin/integrations/menuia/test`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` }
-    });
-
-    if (await handleUnauthorized(res)) return;
-
-    const payload = await readApiJson<any>(res).catch(() => ({}));
-    if (!res.ok || !payload.ok) {
-      toast.error(payload.message ? `MenuIA: ${payload.message}` : "Teste MenuIA falhou. Confira AUTHKEY e APPKEY.");
-      return;
-    }
-
-    toast.success(payload.message ?? "Menuia conectado com sucesso");
   }
 
   function locateStore() {
@@ -839,27 +797,6 @@ export default function SettingsManagePage() {
       </section>
 
       <WhatsappConnectionCard />
-
-      <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
-        <h2 className="mb-3 text-xl font-bold">Integração Menuia</h2>
-        <div className="mb-3 flex items-center gap-2">
-          <input 
-            type="checkbox" 
-            id="menuiaEnabled" 
-            checked={form.menuiaEnabled} 
-            onChange={(e) => setForm((v) => ({ ...v, menuiaEnabled: e.target.checked }))}
-            className="h-4 w-4"
-          />
-          <label htmlFor="menuiaEnabled">Ativar integração com Menuia</label>
-        </div>
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-          <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="AUTHKEY" value={form.menuiaApiKey} onChange={(e) => setForm((v) => ({ ...v, menuiaApiKey: e.target.value }))} />
-          <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 dark:border-white/20" placeholder="APPKEY" value={form.menuiaStoreId} onChange={(e) => setForm((v) => ({ ...v, menuiaStoreId: e.target.value }))} />
-        </div>
-        <button className="mt-3 rounded-xl bg-ink px-4 py-2 text-sm text-white" onClick={() => void testMenuia()}>
-          Testar conexao Menuia
-        </button>
-      </section>
 
       <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
         <h2 className="mb-1 text-xl font-bold">Mensagens por etapa</h2>

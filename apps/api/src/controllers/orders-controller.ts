@@ -28,7 +28,7 @@ function shouldSendStatusWhatsapp(
     CANCELED: settings.whatsappOnCanceled
   };
 
-  return settings.menuiaEnabled && enabledByStatus[status];
+  return enabledByStatus[status];
 }
 
 const checkoutSchema = z
@@ -565,8 +565,8 @@ export async function createOrder(req: Request, res: Response) {
   return res.status(201).json({
     orderId: updatedOrder.id,
     whatsappUrl: sent.whatsappUrl ?? null,
-    sentByServer: sent.channel === "MENUAI",
-    sendError: sent.ok ? null : (sent.error ?? "Falha ao enviar via Menuia"),
+    sentByServer: sent.channel === "EVOLUTION",
+    sendError: sent.channel === "EVOLUTION" ? null : (sent.error ?? null),
     printError,
     message: whatsapp.message,
     total: updatedOrder.total
@@ -809,10 +809,6 @@ export async function sendToDelivery(req: Request, res: Response) {
     settings.deliveryPhoneNumber
   );
 
-  if (settings.menuiaEnabled && !deliverySend.ok) {
-    return res.status(400).json({ message: deliverySend.error ?? "Falha ao enviar para motoboy via Menuia" });
-  }
-
   // Atualizar pedido
   await prisma.order.update({
     where: { id: order.id },
@@ -822,7 +818,7 @@ export async function sendToDelivery(req: Request, res: Response) {
     }
   });
 
-  return res.json({ whatsappUrl: deliverySend.whatsappUrl ?? null, message, sentByServer: deliverySend.channel === "MENUAI" });
+  return res.json({ whatsappUrl: deliverySend.whatsappUrl ?? null, message, sentByServer: deliverySend.channel === "EVOLUTION" });
 }
 
 export async function deleteOrder(req: Request, res: Response) {
@@ -924,7 +920,7 @@ export async function markOrderPaid(req: Request, res: Response) {
   });
   const settings = await prisma.setting.findFirst({ where: companyWhere(req) });
   const paymentWhatsapp =
-    settings && settings.menuiaEnabled && settings.whatsappOnPaymentConfirmed && orderWithCustomer
+    settings && settings.whatsappOnPaymentConfirmed && orderWithCustomer
       ? buildOrderStatusWhatsappMessage(
           orderWithCustomer.customer.phone,
           orderWithCustomer.customer.name,

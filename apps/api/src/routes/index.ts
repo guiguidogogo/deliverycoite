@@ -105,7 +105,7 @@ import {
   receiveReceivable,
   reopenCashSession
 } from "../controllers/finance-controller.js";
-import { getFutureIntegrations, testMenuiaIntegration } from "../controllers/integrations-controller.js";
+import { getFutureIntegrations } from "../controllers/integrations-controller.js";
 import {
   connectWhatsappIntegration,
   getWhatsappIntegrationQrCode,
@@ -412,7 +412,6 @@ route.delete("/admin/coupons/:id", requirePermission("COUPONS"), deleteCoupon);
 
 route.patch("/admin/settings", requirePermission("SETTINGS"), updateSettings);
 route.patch("/admin/store/pause", requirePermission("STORE_PAUSE"), updateSettings);
-route.post("/admin/integrations/menuia/test", requirePermission("SETTINGS"), testMenuiaIntegration);
 route.get("/admin/integrations/whatsapp/status", requirePermission("SETTINGS"), getWhatsappIntegrationStatus);
 route.get("/admin/integrations/whatsapp/qrcode", requirePermission("SETTINGS"), getWhatsappIntegrationQrCode);
 route.post("/admin/integrations/whatsapp/connect", requirePermission("SETTINGS"), connectWhatsappIntegration);

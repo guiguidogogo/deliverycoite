@@ -44,8 +44,8 @@ Opcionalmente, mantenha os dados de integracao abaixo iguais aos do ambiente
 testado ou deixe vazios se o DEV nao for usarlos:
 
 ```env
-MENUIA_API_BASE_URL=https://chatbot.menuia.com
-MENUIA_LICENSE=hugocursos
+HUB_WHATSAPP_URL=https://whatsapp-gateway.hubregional.com.br
+HUB_WHATSAPP_KEY=configure-somente-no-backend
 WHATSAPP_NUMBER=5575999999999
 ```
 
@@ -91,7 +91,7 @@ Valide no DEV:
 
 - login admin;
 - salvamento de configuracoes;
-- menuia / mercadopago / impressao;
+- WhatsApp Evolution / mercadopago / impressao;
 - pedidos do frontend;
 - carrinho e checkout;
 - painel admin.

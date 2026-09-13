@@ -89,8 +89,8 @@ Aplicacao web completa (mobile-first) para cardapio, pedido por WhatsApp e paine
 1. Instale Node.js 20+ e Docker Desktop.
 2. Copie `.env.example` para `.env`.
 3. Ajuste as variaveis se necessario.
-   Para usar a Menuia, configure `MENUIA_API_BASE_URL` e `MENUIA_LICENSE` se os valores
-   forem diferentes de `https://chatbot.menuia.com` e `hugocursos`.
+   Para o WhatsApp automatico, configure `HUB_WHATSAPP_URL` e `HUB_WHATSAPP_KEY`
+   somente no backend. O Gateway central usa o Evolution e isola cada empresa.
 4. Instale dependencias:
 
 ```bash
@@ -222,11 +222,10 @@ Tabelas no schema Prisma:
 
 ## Fluxo WhatsApp
 
-Ao confirmar pedido, API monta mensagem formatada e retorna `whatsappUrl` no formato:
-
-`https://wa.me/NUMERO?text=MENSAGEM`
-
-O frontend redireciona automaticamente.
+Cada empresa conecta seu proprio WhatsApp por QR Code em **Configuracoes**. Pedidos,
+mudancas de status, confirmacoes de pagamento, motoboy e recuperacao de acesso seguem
+pelo Gateway HubRegional, que utiliza o Evolution. Se a conexao estiver indisponivel,
+o sistema preserva o link manual `wa.me` como contingencia.
 
 ## Proximos passos recomendados
 

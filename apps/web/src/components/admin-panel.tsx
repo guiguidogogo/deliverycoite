@@ -641,7 +641,7 @@ export function AdminPanel() {
                           window.open(payload.statusWhatsappUrl, "_blank");
                           toast.success("Mensagem de status pronta no WhatsApp");
                         } else if (payload.statusWhatsappSent) {
-                          toast.success("Status enviado ao cliente via Menuia");
+                          toast.success("Status enviado ao cliente via Evolution");
                         }
                         await refreshPanel(false);
                       }).catch((error) => {
@@ -685,7 +685,7 @@ export function AdminPanel() {
                           window.open(data.whatsappUrl, '_blank');
                         }
                         setOrders((prev) => prev.map((item) => (item.id === order.id ? { ...item, sentToDelivery: true } : item)));
-                        toast.success(data.sentByServer ? 'Mensagem enviada para o motoboy via Menuia!' : 'Mensagem pronta no WhatsApp do motoboy');
+                        toast.success(data.sentByServer ? 'Mensagem enviada para o motoboy via Evolution!' : 'Mensagem pronta no WhatsApp do motoboy');
                       }).catch(() => {
                         toast.error('Configure o número do motoboy nas configurações');
                       });
@@ -726,7 +726,7 @@ export function AdminPanel() {
                                   if (payload.paymentWhatsappUrl) {
                                     window.open(payload.paymentWhatsappUrl, "_blank");
                                   } else if (payload.paymentWhatsappSent) {
-                                    toast.success("Pagamento confirmado enviado via Menuia");
+                                    toast.success("Pagamento confirmado enviado via Evolution");
                                   }
                                   window.dispatchEvent(new Event("delivery:payment-updated"));
                                   setPayingOrderId(null);

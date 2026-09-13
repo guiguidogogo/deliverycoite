@@ -707,7 +707,7 @@ export async function requestRaffleParticipantPasswordReset(req: Request, res: R
         "Se voce nao solicitou, ignore esta mensagem."
       ].join("\n");
       const sent = await dispatchWhatsappMessage(settings, participant.phone, message, participant.phone);
-      if (sent.channel !== "MENUAI") throw new Error("Envio automatico do WhatsApp indisponivel");
+      if (sent.channel !== "EVOLUTION") throw new Error("Envio automatico do WhatsApp indisponivel");
     } catch (error) {
       await prisma.raffleAuditLog.delete({ where: { id: resetLog.id } }).catch(() => undefined);
       throw error;

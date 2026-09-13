@@ -41,9 +41,6 @@ const settingsSchema = z.object({
   pixKey: optionalText,
   pixQrCodeUrl: optionalText,
   darkModeEnabled: z.boolean().optional(),
-  menuiaApiKey: optionalText,
-  menuiaStoreId: optionalText,
-  menuiaEnabled: z.boolean().optional(),
   whatsappOnReceived: z.boolean().optional(),
   whatsappOnPreparing: z.boolean().optional(),
   whatsappOnOutForDelivery: z.boolean().optional(),
@@ -89,6 +86,11 @@ async function ensureDefaultSettings(req: Request) {
   });
 }
 
+function settingsWithoutLegacyMenuia(settings: object) {
+  const privateFields = new Set(["menuiaApiKey", "menuiaStoreId", "menuiaEnabled"]);
+  return Object.fromEntries(Object.entries(settings).filter(([key]) => !privateFields.has(key)));
+}
+
 export async function getSettings(req: Request, res: Response) {
   const settings = await ensureDefaultSettings(req);
   const company = await prisma.company.findUnique({
@@ -102,7 +104,7 @@ export async function getSettings(req: Request, res: Response) {
 
   const isAdminRequest = Boolean(req.user);
   return res.json({
-    ...settings,
+    ...settingsWithoutLegacyMenuia(settings),
     mercadoPagoPublicKey: company?.mercadoPagoPublicKey ?? null,
     ...(isAdminRequest ? { mercadoPagoAccessToken: company?.mercadoPagoAccessToken ?? null } : {}),
     mercadoPagoEnabled: company?.mercadoPagoEnabled ?? false
@@ -202,5 +204,5 @@ export async function updateSettings(req: Request, res: Response) {
     };
   });
 
-  return res.json(settings);
+  return res.json(settingsWithoutLegacyMenuia(settings));
 }

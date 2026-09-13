@@ -119,10 +119,14 @@ export function logoutHubWhatsapp(tenantId: string) {
   });
 }
 
-export function sendHubWhatsappTest(tenantId: string, to: string, message: string) {
+export function sendHubWhatsappText(tenantId: string, to: string, message: string, idempotencyKey?: string) {
   return gatewayRequest<{ job_id: string; status: string }>("/api/v1/whatsapp/send/text", {
     method: "POST",
-    headers: { "idempotency-key": `test_${crypto.randomUUID().replace(/-/g, "")}` },
+    headers: { "idempotency-key": idempotencyKey ?? `delivery_${crypto.randomUUID().replace(/-/g, "")}` },
     body: JSON.stringify({ tenant_id: tenantId, to, message })
   });
+}
+
+export function sendHubWhatsappTest(tenantId: string, to: string, message: string) {
+  return sendHubWhatsappText(tenantId, to, message, `test_${crypto.randomUUID().replace(/-/g, "")}`);
 }

@@ -36,7 +36,7 @@ services:
         sync: false
       - key: SEED_MASTER_PASSWORD
         sync: false
-      - key: MENUIA_API_BASE_URL
-        value: https://chatbot.menuia.com
-      - key: MENUIA_LICENSE
-        value: hugocursos
+      - key: HUB_WHATSAPP_URL
+        value: https://whatsapp-gateway.hubregional.com.br
+      - key: HUB_WHATSAPP_KEY
+        sync: false

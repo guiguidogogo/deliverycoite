@@ -43,7 +43,7 @@ export async function createPasswordReset(params: {
   ].join("\n");
   const sent = await dispatchWhatsappMessage(settings, params.phone, message, params.phone);
 
-  if (sent.channel !== "MENUAI") {
+  if (sent.channel !== "EVOLUTION") {
     throw new Error("Envio automatico do WhatsApp indisponivel");
   }
 }

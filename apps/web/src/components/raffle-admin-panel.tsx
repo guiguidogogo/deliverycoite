@@ -67,7 +67,7 @@ export function RaffleAdminPanel() {
         <AdminShortcut title="Pagamentos" description="Acompanhar Pix, cartão e confirmações." disabled />
         <AdminShortcut title="Sorteios" description="Apuração, ganhadores e auditoria." disabled />
         <AdminShortcut title="Relatórios" description="Vendas, números e conversão." disabled />
-        <AdminShortcut title="Integrações" description="Mercado Pago, WhatsApp/MenuIA e e-mail." href="/admin/manage/settings" />
+        <AdminShortcut title="Integrações" description="Mercado Pago, WhatsApp Evolution e e-mail." href="/admin/manage/settings" />
       </section>
 
       <section className="mt-6 rounded-3xl border border-black/10 bg-white/85 p-5 shadow-sm dark:border-white/10 dark:bg-slate-900/70">
