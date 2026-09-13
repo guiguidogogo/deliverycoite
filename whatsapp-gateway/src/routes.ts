@@ -6,7 +6,7 @@ import { config } from "./config.js";
 import { asyncRoute, HttpError, prisma } from "./lib.js";
 import { authenticateApp, requestHash } from "./security.js";
 import { distributedLimit } from "./rate-limit.js";
-import { whatsappProvider } from "./providers/evolution/evolution-provider.js";
+import { isEvolutionInstanceMissing, whatsappProvider } from "./providers/evolution/evolution-provider.js";
 import { enqueueMessage } from "./queue.js";
 
 export const apiRouter = Router();
@@ -72,7 +72,22 @@ apiRouter.post("/tenants", asyncRoute(async (req, res) => {
 apiRouter.post("/whatsapp/instances", asyncRoute(async (req, res) => {
   const body = parse(instanceBody, req.body);
   const tenant = await getTenant(req.hubApp!.id, body.tenant_id);
-  if (tenant.whatsappInstance) return res.status(200).json({ tenant_id: body.tenant_id, instance_id: tenant.whatsappInstance.id, status: tenant.whatsappInstance.status });
+  if (tenant.whatsappInstance) {
+    try {
+      await whatsappProvider.getConnectionStatus(tenant.whatsappInstance.evolutionInstanceName);
+    } catch (error) {
+      if (!isEvolutionInstanceMissing(error)) throw error;
+      await prisma.whatsappInstance.update({ where: { id: tenant.whatsappInstance.id }, data: { status: "connecting" } });
+      try {
+        await whatsappProvider.createInstance(tenant.whatsappInstance.evolutionInstanceName, `${config.APP_URL}/api/v1/webhooks/evolution`);
+      } catch (createError) {
+        await prisma.whatsappInstance.update({ where: { id: tenant.whatsappInstance.id }, data: { status: "error" } });
+        throw createError;
+      }
+      return res.status(200).json({ tenant_id: body.tenant_id, instance_id: tenant.whatsappInstance.id, status: "connecting", recovered: true });
+    }
+    return res.status(200).json({ tenant_id: body.tenant_id, instance_id: tenant.whatsappInstance.id, status: tenant.whatsappInstance.status });
+  }
   const instanceName = `hr_${randomBytes(12).toString("hex")}`;
   const instance = await prisma.whatsappInstance.create({ data: { tenantId: tenant.id, evolutionInstanceName: instanceName, status: "connecting" } });
   try {
@@ -94,7 +109,14 @@ apiRouter.get("/whatsapp/instances/:tenantId/qrcode", asyncRoute(async (req, res
 
 apiRouter.get("/whatsapp/instances/:tenantId/status", asyncRoute(async (req, res) => {
   const tenant = await getTenant(req.hubApp!.id, parse(externalId, req.params.tenantId), true);
-  const remote = await whatsappProvider.getConnectionStatus(tenant.whatsappInstance!.evolutionInstanceName);
+  let remote: Awaited<ReturnType<typeof whatsappProvider.getConnectionStatus>>;
+  try {
+    remote = await whatsappProvider.getConnectionStatus(tenant.whatsappInstance!.evolutionInstanceName);
+  } catch (error) {
+    if (!isEvolutionInstanceMissing(error)) throw error;
+    await prisma.whatsappInstance.update({ where: { id: tenant.whatsappInstance!.id }, data: { status: "error" } });
+    return res.json({ connected: false, status: "error", recoverable: true });
+  }
   const status = remote.state as InstanceStatus;
   const updated = await prisma.whatsappInstance.update({ where: { id: tenant.whatsappInstance!.id }, data: { status, phoneNumber: remote.phone, profileName: remote.profileName, profilePictureUrl: remote.profilePictureUrl, lastConnectedAt: status === "connected" ? new Date() : undefined } });
   res.json({ connected: status === "connected", status, phone: updated.phoneNumber, profile_name: updated.profileName, profile_picture_url: updated.profilePictureUrl });

@@ -2,6 +2,12 @@ import { config } from "../../config.js";
 import { HttpError, logger } from "../../lib.js";
 import type { ProviderStatus, WhatsAppProvider } from "../whatsapp-provider.js";
 
+export function isEvolutionInstanceMissing(error: unknown) {
+  if (!(error instanceof HttpError) || error.code !== "provider_error") return false;
+  const details = error.details;
+  return Boolean(details && typeof details === "object" && "providerStatus" in details && details.providerStatus === 404);
+}
+
 export class EvolutionProvider implements WhatsAppProvider {
   private async request(path: string, init: RequestInit = {}) {
     const controller = new AbortController();
