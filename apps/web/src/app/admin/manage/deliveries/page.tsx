@@ -89,6 +89,7 @@ export default function DeliveriesPage() {
   const [showDriverForm, setShowDriverForm] = useState(false);
   const [driverForm, setDriverForm] = useState(blankDriver);
   const [saving, setSaving] = useState(false);
+  const [sendingRouteId, setSendingRouteId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -155,6 +156,9 @@ export default function DeliveriesPage() {
     try {
       const route = await adminApi<DeliveryRoute & {
         push?: { sent: number; errors: string[] };
+        whatsappSent?: boolean;
+        whatsappPending?: boolean;
+        whatsappError?: string;
       }>("/admin/deliveries/routes", {
         method: "POST",
         body: JSON.stringify({ driverId, orderIds: selected })
@@ -169,6 +173,13 @@ export default function DeliveriesPage() {
             ? `Rota criada, mas o push falhou: ${route.push.errors[0]}`
             : "Rota criada. O motoboy ainda não registrou um aparelho para push."
         );
+      }
+      if (route.whatsappSent) {
+        toast.success("Rota aceita pelo Evolution para envio ao motoboy");
+      } else if (route.whatsappPending) {
+        toast.info("Rota em processamento no Evolution");
+      } else if (route.whatsappError) {
+        toast.error(route.whatsappError);
       }
       await load();
       window.open(route.googleMapsUrl, "_blank", "noopener,noreferrer");
@@ -229,8 +240,26 @@ export default function DeliveriesPage() {
     }
   }
 
-  function whatsappUrl(route: DeliveryRoute) {
-    return `https://wa.me/${route.driver.whatsapp}?text=${encodeURIComponent(route.whatsappMessage)}`;
+  async function sendRouteWhatsapp(route: DeliveryRoute) {
+    setSendingRouteId(route.id);
+    try {
+      const result = await adminApi<{
+        whatsappSent: boolean;
+        whatsappPending: boolean;
+        whatsappError?: string;
+      }>(`/admin/deliveries/routes/${route.id}/whatsapp`, { method: "POST" });
+      if (result.whatsappSent) {
+        toast.success("Rota aceita pelo Evolution para envio ao motoboy");
+      } else if (result.whatsappPending) {
+        toast.info("Rota em processamento no Evolution");
+      } else {
+        toast.error(result.whatsappError ?? "Nao foi possivel enviar a rota pelo Evolution");
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao enviar a rota pelo Evolution");
+    } finally {
+      setSendingRouteId(null);
+    }
   }
 
   function wazeUrl(route: DeliveryRoute) {
@@ -355,9 +384,13 @@ export default function DeliveriesPage() {
                   <a className="rounded-xl bg-sky-500 px-3 py-2 text-sm text-white" href={wazeUrl(route)} target="_blank" rel="noreferrer">
                     Abrir no Waze
                   </a>
-                  <a className="rounded-xl bg-emerald-600 px-3 py-2 text-sm text-white" href={whatsappUrl(route)} target="_blank" rel="noreferrer">
-                    Enviar no WhatsApp
-                  </a>
+                  <button
+                    className="rounded-xl bg-emerald-600 px-3 py-2 text-sm text-white disabled:opacity-50"
+                    disabled={sendingRouteId === route.id}
+                    onClick={() => void sendRouteWhatsapp(route)}
+                  >
+                    {sendingRouteId === route.id ? "Enviando pelo Evolution..." : "Enviar pelo Evolution"}
+                  </button>
                 </div>
               </div>
               <ol className="mt-4 space-y-2">

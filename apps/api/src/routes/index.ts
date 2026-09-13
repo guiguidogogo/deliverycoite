@@ -84,6 +84,7 @@ import {
   listDeliveryRoutes,
   listDrivers,
   listReadyDeliveryOrders,
+  sendDeliveryRouteWhatsapp,
   updateDeliveryRouteStatus,
   updateDriver
 } from "../controllers/delivery-routes-controller.js";
@@ -341,6 +342,7 @@ route.patch("/admin/deliveries/drivers/:id", requirePermission("ORDERS"), update
 route.get("/admin/deliveries/routes", requirePermission("ORDERS"), listDeliveryRoutes);
 route.post("/admin/deliveries/routes", requirePermission("ORDERS"), createDeliveryRoute);
 route.get("/admin/deliveries/routes/:id", requirePermission("ORDERS"), getDeliveryRoute);
+route.post("/admin/deliveries/routes/:id/whatsapp", requirePermission("ORDERS"), sendDeliveryRouteWhatsapp);
 route.patch("/admin/deliveries/routes/:id/status", requirePermission("ORDERS"), updateDeliveryRouteStatus);
 route.get("/admin/dining-areas", requirePermission("SETTINGS"), listDiningAreas);
 route.post("/admin/dining-areas", requirePermission("SETTINGS"), createDiningArea);

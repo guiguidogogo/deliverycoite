@@ -16,6 +16,7 @@ import { expirePendingRouteOffers, routeOfferExpiresAt } from "../utils/route-of
 import { companyWhere, getCompanyId } from "../utils/tenant.js";
 import { optimizeRoute } from "../utils/route-optimizer.js";
 import { isOrderEligibleForDeliveryRoute } from "../utils/delivery-order.js";
+import { dispatchWhatsappMessage } from "../services/whatsapp.js";
 
 const optionalText = z.preprocess(
   (value) => typeof value === "string" && !value.trim() ? null : value,
@@ -72,6 +73,26 @@ const routeInclude = {
     include: { order: { include: { customer: true } } }
   }
 };
+
+async function sendRouteByEvolution(companyId: string, whatsapp: string, message: string) {
+  const settings = await prisma.setting.findFirst({ where: { companyId } });
+  if (!settings) {
+    return {
+      whatsappSent: false,
+      whatsappPending: false,
+      whatsappError: "As configuracoes da empresa nao foram encontradas"
+    };
+  }
+
+  const result = await dispatchWhatsappMessage(settings, whatsapp, message);
+  return {
+    whatsappSent: result.channel === "EVOLUTION",
+    whatsappPending: result.channel === "EVOLUTION_PENDING",
+    whatsappError: result.channel === "WHATSAPP_LINK"
+      ? result.error ?? "Nao foi possivel enviar a rota pelo Evolution"
+      : undefined
+  };
+}
 
 export async function listDrivers(req: Request, res: Response) {
   return res.json(await prisma.driver.findMany({
@@ -268,12 +289,27 @@ export async function createDeliveryRoute(req: Request, res: Response) {
   }));
   repeatDriverRouteOfferPush(route.id, pushMessage, route.offerExpiresAt!);
 
+  const whatsapp = await sendRouteByEvolution(companyId, driver.whatsapp, message);
+
   return res.status(201).json({
     ...route,
     navigationUrl,
     push,
-    whatsappUrl: `https://wa.me/${driver.whatsapp}?text=${encodeURIComponent(message)}`
+    ...whatsapp,
+    whatsappUrl: null
   });
+}
+
+export async function sendDeliveryRouteWhatsapp(req: Request, res: Response) {
+  const companyId = getCompanyId(req);
+  const route = await prisma.deliveryRoute.findFirst({
+    where: { id: req.params.id, companyId },
+    include: { driver: { select: { whatsapp: true } } }
+  });
+  if (!route) return res.status(404).json({ message: "Rota nao encontrada" });
+
+  const whatsapp = await sendRouteByEvolution(companyId, route.driver.whatsapp, route.whatsappMessage);
+  return res.json({ ...whatsapp, whatsappUrl: null });
 }
 
 export async function updateDeliveryRouteStatus(req: Request, res: Response) {
