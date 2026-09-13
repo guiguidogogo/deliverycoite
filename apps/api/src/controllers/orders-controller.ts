@@ -259,6 +259,8 @@ export async function createOrder(req: Request, res: Response) {
   const {
     latitude: _latitude,
     longitude: _longitude,
+    phone: _phone,
+    email: _email,
     ...customerData
   } = body.customer;
   const phone = normalizePhone(body.customer.phone);
@@ -302,44 +304,51 @@ export async function createOrder(req: Request, res: Response) {
     phone,
     email
   });
-  const customer = await prisma.customer.upsert({
-    where: {
-      companyId_phone: {
-        companyId,
-        phone
-      }
-    },
-    create: {
-      companyId,
-      globalCustomerId: linkedCustomer.globalCustomer.id,
-      companyCustomerId: linkedCustomer.companyCustomer.id,
-      ...customerData,
-      phone,
-      email,
-      address: pickup || tableOrder ? (tableOrder ? `Mesa ${table?.number}` : "Retirada na loja") : body.customer.address,
-      number: pickup || tableOrder ? "S/N" : body.customer.number,
-      district: pickup || tableOrder ? (tableOrder ? "Atendimento na mesa" : "Retirada") : body.customer.district
-    },
-    update: pickup
-      ? {
-          name: body.customer.name,
+  const [customerByPhone, customerByEmail] = await Promise.all([
+    prisma.customer.findUnique({ where: { companyId_phone: { companyId, phone } } }),
+    email ? prisma.customer.findUnique({ where: { companyId_email: { companyId, email } } }) : null
+  ]);
+  const commonCustomerUpdate = {
+    name: body.customer.name,
+    globalCustomerId: linkedCustomer.globalCustomer.id,
+    companyCustomerId: linkedCustomer.companyCustomer.id,
+    deletedAt: null,
+    deletedBy: null,
+    deletionReason: null
+  };
+  const deliveryCustomerUpdate = pickup
+    ? commonCustomerUpdate
+    : {
+        ...customerData,
+        phone,
+        ...(!customerByEmail || customerByEmail.id === customerByPhone?.id ? { email } : {}),
+        ...commonCustomerUpdate
+      };
+  const customer = !customerByPhone && customerByEmail
+    ? await prisma.customer.update({
+        where: { id: customerByEmail.id },
+        data: {
+          ...(pickup ? {} : customerData),
+          phone,
+          email,
+          ...commonCustomerUpdate
+        }
+      })
+    : await prisma.customer.upsert({
+        where: { companyId_phone: { companyId, phone } },
+        create: {
+          companyId,
           globalCustomerId: linkedCustomer.globalCustomer.id,
           companyCustomerId: linkedCustomer.companyCustomer.id,
-          deletedAt: null,
-          deletedBy: null,
-          deletionReason: null
-        }
-      : {
           ...customerData,
           phone,
           email,
-          globalCustomerId: linkedCustomer.globalCustomer.id,
-          companyCustomerId: linkedCustomer.companyCustomer.id,
-          deletedAt: null,
-          deletedBy: null,
-          deletionReason: null
-        }
-  });
+          address: pickup || tableOrder ? (tableOrder ? `Mesa ${table?.number}` : "Retirada na loja") : body.customer.address,
+          number: pickup || tableOrder ? "S/N" : body.customer.number,
+          district: pickup || tableOrder ? (tableOrder ? "Atendimento na mesa" : "Retirada") : body.customer.district
+        },
+        update: deliveryCustomerUpdate
+      });
 
   let discountNumber = 0;
   let normalizedCouponCode: string | undefined;
