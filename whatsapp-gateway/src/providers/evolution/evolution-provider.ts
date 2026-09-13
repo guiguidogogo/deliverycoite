@@ -3,9 +3,24 @@ import { HttpError, logger } from "../../lib.js";
 import type { ProviderStatus, WhatsAppProvider } from "../whatsapp-provider.js";
 
 export function isEvolutionInstanceMissing(error: unknown) {
+  return isEvolutionProviderStatus(error, 404);
+}
+
+function isEvolutionProviderStatus(error: unknown, status: number) {
   if (!(error instanceof HttpError) || error.code !== "provider_error") return false;
   const details = error.details;
-  return Boolean(details && typeof details === "object" && "providerStatus" in details && details.providerStatus === 404);
+  return Boolean(details && typeof details === "object" && "providerStatus" in details && details.providerStatus === status);
+}
+
+function providerMessage(data: any) {
+  const value = data?.response?.message ?? data?.message ?? data?.error;
+  if (typeof value === "string") return value.slice(0, 300);
+  if (Array.isArray(value)) return value.map(String).join("; ").slice(0, 300);
+  return undefined;
+}
+
+function brazilianLegacyNumber(number: string) {
+  return /^55\d{2}9\d{8}$/.test(number) ? `${number.slice(0, 4)}${number.slice(5)}` : null;
 }
 
 export class EvolutionProvider implements WhatsAppProvider {
@@ -20,8 +35,9 @@ export class EvolutionProvider implements WhatsAppProvider {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        logger.warn({ provider: "evolution", path, status: response.status }, "Evolution request failed");
-        throw new HttpError(502, "Falha na comunicação com o provedor WhatsApp", "provider_error", { providerStatus: response.status });
+        const message = providerMessage(data);
+        logger.warn({ provider: "evolution", path, status: response.status, providerMessage: message }, "Evolution request failed");
+        throw new HttpError(502, "Falha na comunicação com o provedor WhatsApp", "provider_error", { providerStatus: response.status, providerMessage: message });
       }
       return data as any;
     } catch (error) {
@@ -47,7 +63,21 @@ export class EvolutionProvider implements WhatsAppProvider {
     return { code: data?.code, base64: data?.base64 };
   }
   reconnect(instanceName: string) { return this.getQrCode(instanceName); }
-  sendText(instanceName: string, to: string, message: string) { return this.request(`/message/sendText/${encodeURIComponent(instanceName)}`, { method: "POST", body: JSON.stringify({ number: to, text: message }) }); }
+  async sendText(instanceName: string, to: string, message: string) {
+    const path = `/message/sendText/${encodeURIComponent(instanceName)}`;
+    const send = (number: string) => this.request(path, {
+      method: "POST",
+      body: JSON.stringify({ number, text: message, delay: 800, linkPreview: false })
+    });
+    try {
+      return await send(to);
+    } catch (error) {
+      const legacyNumber = brazilianLegacyNumber(to);
+      if (!legacyNumber || !isEvolutionProviderStatus(error, 400)) throw error;
+      logger.info({ provider: "evolution", phoneLast4: legacyNumber.slice(-4) }, "Retrying Brazilian number without the ninth digit");
+      return send(legacyNumber);
+    }
+  }
   sendImage(instanceName: string, to: string, imageUrl: string, caption?: string) { return this.request(`/message/sendMedia/${encodeURIComponent(instanceName)}`, { method: "POST", body: JSON.stringify({ number: to, mediatype: "image", media: imageUrl, caption }) }); }
   sendDocument(instanceName: string, to: string, documentUrl: string, filename: string, caption?: string) { return this.request(`/message/sendMedia/${encodeURIComponent(instanceName)}`, { method: "POST", body: JSON.stringify({ number: to, mediatype: "document", media: documentUrl, fileName: filename, caption }) }); }
   async logout(instanceName: string) { await this.request(`/instance/logout/${encodeURIComponent(instanceName)}`, { method: "DELETE" }); }
