@@ -123,6 +123,7 @@ import {
 import { createOrderMercadoPagoPix, createOrderMercadoPagoPreference, getMercadoPagoPublicConfig, getOrderMercadoPagoStatus, mercadoPagoWebhook, refundOrderMercadoPago } from "../controllers/mercadopago-controller.js";
 import { listNewOrders } from "../controllers/notifications-controller.js";
 import { whatsappAiWebhook } from "../controllers/whatsapp-ai-controller.js";
+import { listInboxConversations, listInboxMessages, listInboxLabels, createInboxLabel, listInboxQuickReplies, createInboxQuickReply, updateInboxQuickReply, deleteInboxQuickReply, sendInboxMessage, createInboxContact, listInboxAddresses } from "../controllers/whatsapp-inbox-controller.js";
 import {
   generatePrinterAgentToken,
   getPrinterAgentConfig,
@@ -302,6 +303,17 @@ route.get("/orders/:orderId/mercadopago/status", getOrderMercadoPagoStatus);
 route.post("/mercadopago/webhook", mercadoPagoWebhook);
 route.post("/integrations/whatsapp/webhook", whatsappAiWebhook);
 route.post("/integrations/whatsapp/webhook/:event", whatsappAiWebhook);
+route.get("/admin/whatsapp/inbox/conversations", requirePermission("CUSTOMERS"), listInboxConversations);
+route.get("/admin/whatsapp/inbox/messages/:phone", requirePermission("CUSTOMERS"), listInboxMessages);
+route.get("/admin/whatsapp/inbox/labels", requirePermission("CUSTOMERS"), listInboxLabels);
+route.post("/admin/whatsapp/inbox/labels", requirePermission("CUSTOMERS"), createInboxLabel);
+route.get("/admin/whatsapp/inbox/quick-replies", requirePermission("CUSTOMERS"), listInboxQuickReplies);
+route.post("/admin/whatsapp/inbox/quick-replies", requirePermission("CUSTOMERS"), createInboxQuickReply);
+route.patch("/admin/whatsapp/inbox/quick-replies/:id", requirePermission("CUSTOMERS"), updateInboxQuickReply);
+route.delete("/admin/whatsapp/inbox/quick-replies/:id", requirePermission("CUSTOMERS"), deleteInboxQuickReply);
+route.post("/admin/whatsapp/inbox/send", requirePermission("CUSTOMERS"), sendInboxMessage);
+route.post("/admin/whatsapp/inbox/contact", requirePermission("CUSTOMERS"), createInboxContact);
+route.get("/admin/whatsapp/inbox/addresses/:phone", requirePermission("CUSTOMERS"), listInboxAddresses);
 route.get("/mercadopago/webhook", mercadoPagoWebhook);
 route.get("/printer-agent/orders", listPrinterAgentOrders);
 route.post("/printer-agent/orders/:id/printed", markPrinterAgentOrderPrinted);
