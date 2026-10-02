@@ -36,7 +36,7 @@ async function askOllama(text: string) {
 export async function whatsappAiWebhook(req: Request, res: Response) {
   if (!env.whatsappAiEnabled) return res.status(202).json({ ignored: true, reason: "disabled" });
   const body = (req.body ?? {}) as Record<string, unknown>;
-  if (String(body.event ?? "").toUpperCase() !== "MESSAGES_UPSERT") return res.status(202).json({ ignored: true, reason: "event" });
+  const routeEvent = String(req.params.event ?? "").replace(/[.-]/g, "_").toUpperCase();`n  const bodyEvent = String(body.event ?? "").replace(/[.-]/g, "_").toUpperCase();`n  if ((routeEvent || bodyEvent) !== "MESSAGES_UPSERT") return res.status(202).json({ ignored: true, reason: "event" });
   const data = (body.data ?? {}) as Record<string, unknown>;
   const key = (data.key ?? {}) as Record<string, unknown>;
   if (Boolean(key.fromMe) || String(key.remoteJid ?? "").endsWith("@g.us")) return res.status(202).json({ ignored: true, reason: "outgoing_or_group" });
@@ -49,3 +49,4 @@ export async function whatsappAiWebhook(req: Request, res: Response) {
   await sendHubWhatsappText(env.whatsappAiTenantId, phone, reply, `ai_${String(key.id ?? Date.now())}`);
   return res.status(202).json({ accepted: true, phone });
 }
+
