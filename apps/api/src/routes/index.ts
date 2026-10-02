@@ -303,17 +303,17 @@ route.get("/orders/:orderId/mercadopago/status", getOrderMercadoPagoStatus);
 route.post("/mercadopago/webhook", mercadoPagoWebhook);
 route.post("/integrations/whatsapp/webhook", whatsappAiWebhook);
 route.post("/integrations/whatsapp/webhook/:event", whatsappAiWebhook);
-route.get("/admin/whatsapp/inbox/conversations", requirePermission("CUSTOMERS"), listInboxConversations);
-route.get("/admin/whatsapp/inbox/messages/:phone", requirePermission("CUSTOMERS"), listInboxMessages);
-route.get("/admin/whatsapp/inbox/labels", requirePermission("CUSTOMERS"), listInboxLabels);
-route.post("/admin/whatsapp/inbox/labels", requirePermission("CUSTOMERS"), createInboxLabel);
-route.get("/admin/whatsapp/inbox/quick-replies", requirePermission("CUSTOMERS"), listInboxQuickReplies);
-route.post("/admin/whatsapp/inbox/quick-replies", requirePermission("CUSTOMERS"), createInboxQuickReply);
-route.patch("/admin/whatsapp/inbox/quick-replies/:id", requirePermission("CUSTOMERS"), updateInboxQuickReply);
-route.delete("/admin/whatsapp/inbox/quick-replies/:id", requirePermission("CUSTOMERS"), deleteInboxQuickReply);
-route.post("/admin/whatsapp/inbox/send", requirePermission("CUSTOMERS"), sendInboxMessage);
-route.post("/admin/whatsapp/inbox/contact", requirePermission("CUSTOMERS"), createInboxContact);
-route.get("/admin/whatsapp/inbox/addresses/:phone", requirePermission("CUSTOMERS"), listInboxAddresses);
+route.get("/admin/whatsapp/inbox/conversations", requireAnyPermission(["CUSTOMERS", "ORDERS", "SETTINGS"]), listInboxConversations);
+route.get("/admin/whatsapp/inbox/messages/:phone", requireAnyPermission(["CUSTOMERS", "ORDERS", "SETTINGS"]), listInboxMessages);
+route.get("/admin/whatsapp/inbox/labels", requireAnyPermission(["CUSTOMERS", "ORDERS", "SETTINGS"]), listInboxLabels);
+route.post("/admin/whatsapp/inbox/labels", requireAnyPermission(["CUSTOMERS", "ORDERS", "SETTINGS"]), createInboxLabel);
+route.get("/admin/whatsapp/inbox/quick-replies", requireAnyPermission(["CUSTOMERS", "ORDERS", "SETTINGS"]), listInboxQuickReplies);
+route.post("/admin/whatsapp/inbox/quick-replies", requireAnyPermission(["CUSTOMERS", "ORDERS", "SETTINGS"]), createInboxQuickReply);
+route.patch("/admin/whatsapp/inbox/quick-replies/:id", requireAnyPermission(["CUSTOMERS", "ORDERS", "SETTINGS"]), updateInboxQuickReply);
+route.delete("/admin/whatsapp/inbox/quick-replies/:id", requireAnyPermission(["CUSTOMERS", "ORDERS", "SETTINGS"]), deleteInboxQuickReply);
+route.post("/admin/whatsapp/inbox/send", requireAnyPermission(["CUSTOMERS", "ORDERS", "SETTINGS"]), sendInboxMessage);
+route.post("/admin/whatsapp/inbox/contact", requireAnyPermission(["CUSTOMERS", "ORDERS", "SETTINGS"]), createInboxContact);
+route.get("/admin/whatsapp/inbox/addresses/:phone", requireAnyPermission(["CUSTOMERS", "ORDERS", "SETTINGS"]), listInboxAddresses);
 route.get("/mercadopago/webhook", mercadoPagoWebhook);
 route.get("/printer-agent/orders", listPrinterAgentOrders);
 route.post("/printer-agent/orders/:id/printed", markPrinterAgentOrderPrinted);
@@ -450,5 +450,6 @@ route.delete("/admin/staff/roles/:id", requirePermission("USERS"), deleteStaffRo
 route.get("/admin/staff/users", requirePermission("USERS"), listStaffUsers);
 route.post("/admin/staff/users", requirePermission("USERS"), createStaffUser);
 route.patch("/admin/staff/users/:id", requirePermission("USERS"), updateStaffUser);
+
 
 
