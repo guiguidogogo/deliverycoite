@@ -300,7 +300,8 @@ route.post("/orders/:orderId/mercadopago/preference", createOrderMercadoPagoPref
 route.post("/orders/:orderId/mercadopago/pix", createOrderMercadoPagoPix);
 route.get("/orders/:orderId/mercadopago/status", getOrderMercadoPagoStatus);
 route.post("/mercadopago/webhook", mercadoPagoWebhook);
-route.post("/integrations/whatsapp/webhook", whatsappAiWebhook);`nroute.post("/integrations/whatsapp/webhook/:event", whatsappAiWebhook);
+route.post("/integrations/whatsapp/webhook", whatsappAiWebhook);
+route.post("/integrations/whatsapp/webhook/:event", whatsappAiWebhook);
 route.get("/mercadopago/webhook", mercadoPagoWebhook);
 route.get("/printer-agent/orders", listPrinterAgentOrders);
 route.post("/printer-agent/orders/:id/printed", markPrinterAgentOrderPrinted);
@@ -437,4 +438,5 @@ route.delete("/admin/staff/roles/:id", requirePermission("USERS"), deleteStaffRo
 route.get("/admin/staff/users", requirePermission("USERS"), listStaffUsers);
 route.post("/admin/staff/users", requirePermission("USERS"), createStaffUser);
 route.patch("/admin/staff/users/:id", requirePermission("USERS"), updateStaffUser);
+
 
