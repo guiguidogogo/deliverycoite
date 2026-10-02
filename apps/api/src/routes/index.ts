@@ -1,3 +1,5 @@
+import { getWhatsappContent } from "../controllers/whatsapp-content-controller.js";
+import { receiveCampaignMedia, uploadCampaignMedia } from "../controllers/campaign-media-controller.js";
 import { Router, type RequestHandler } from "express";
 import { login } from "../controllers/auth-controller.js";
 import {
@@ -123,7 +125,7 @@ import {
 import { createOrderMercadoPagoPix, createOrderMercadoPagoPreference, getMercadoPagoPublicConfig, getOrderMercadoPagoStatus, mercadoPagoWebhook, refundOrderMercadoPago } from "../controllers/mercadopago-controller.js";
 import { listNewOrders } from "../controllers/notifications-controller.js";
 import { whatsappAiWebhook } from "../controllers/whatsapp-ai-controller.js";
-import { listInboxConversations, listInboxMessages, listInboxLabels, createInboxLabel, listInboxQuickReplies, createInboxQuickReply, updateInboxQuickReply, deleteInboxQuickReply, sendInboxMessage, createInboxContact, listInboxAddresses } from "../controllers/whatsapp-inbox-controller.js";
+import { receiveWhatsappInboxWebhook, listWhatsappConversations, listWhatsappMessages, listWhatsappLabels, createWhatsappLabel, listWhatsappQuickReplies, createWhatsappQuickReply, updateWhatsappQuickReply, deleteWhatsappQuickReply, sendWhatsappInboxMessage, createWhatsappContact, listWhatsappCustomerAddresses } from "../controllers/whatsapp-inbox-controller.js";
 import {
   generatePrinterAgentToken,
   getPrinterAgentConfig,
@@ -303,24 +305,28 @@ route.get("/orders/:orderId/mercadopago/status", getOrderMercadoPagoStatus);
 route.post("/mercadopago/webhook", mercadoPagoWebhook);
 route.post("/integrations/whatsapp/webhook", whatsappAiWebhook);
 route.post("/integrations/whatsapp/webhook/:event", whatsappAiWebhook);
-route.get("/admin/whatsapp/inbox/conversations", auth, listInboxConversations);
-route.get("/admin/whatsapp/inbox/messages/:phone", auth, listInboxMessages);
-route.get("/admin/whatsapp/inbox/labels", auth, listInboxLabels);
-route.post("/admin/whatsapp/inbox/labels", auth, createInboxLabel);
-route.get("/admin/whatsapp/inbox/quick-replies", auth, listInboxQuickReplies);
-route.post("/admin/whatsapp/inbox/quick-replies", auth, createInboxQuickReply);
-route.patch("/admin/whatsapp/inbox/quick-replies/:id", auth, updateInboxQuickReply);
-route.delete("/admin/whatsapp/inbox/quick-replies/:id", auth, deleteInboxQuickReply);
-route.post("/admin/whatsapp/inbox/send", auth, sendInboxMessage);
-route.post("/admin/whatsapp/inbox/contact", auth, createInboxContact);
-route.get("/admin/whatsapp/inbox/addresses/:phone", auth, listInboxAddresses);
 route.get("/mercadopago/webhook", mercadoPagoWebhook);
 route.get("/printer-agent/orders", listPrinterAgentOrders);
 route.post("/printer-agent/orders/:id/printed", markPrinterAgentOrderPrinted);
 route.get("/printer-agent/test", getPrinterAgentTestReceipt);
 route.post("/printer-agent/test", getPrinterAgentTestReceipt);
 
+route.post("/webhooks/whatsapp/inbox", receiveWhatsappInboxWebhook);
+
 router.use(auth());
+route.get("/admin/whatsapp/inbox/conversations", requirePermission("CUSTOMERS"), listWhatsappConversations);
+route.get("/admin/whatsapp/inbox/messages/:phone", requirePermission("CUSTOMERS"), listWhatsappMessages);
+route.get("/admin/whatsapp/inbox/labels", requirePermission("CUSTOMERS"), listWhatsappLabels);
+route.post("/admin/whatsapp/inbox/labels", requirePermission("CUSTOMERS"), createWhatsappLabel);
+route.get("/admin/whatsapp/inbox/quick-replies", requirePermission("CUSTOMERS"), listWhatsappQuickReplies);
+route.post("/admin/whatsapp/inbox/quick-replies", requirePermission("CUSTOMERS"), createWhatsappQuickReply);
+route.patch("/admin/whatsapp/inbox/quick-replies/:id", requirePermission("CUSTOMERS"), updateWhatsappQuickReply);
+route.delete("/admin/whatsapp/inbox/quick-replies/:id", requirePermission("CUSTOMERS"), deleteWhatsappQuickReply);
+route.post("/admin/whatsapp/inbox/send", requirePermission("CUSTOMERS"), sendWhatsappInboxMessage);
+route.post("/admin/whatsapp/inbox/contact", requirePermission("CUSTOMERS"), createWhatsappContact);
+route.get("/admin/whatsapp/inbox/addresses/:phone", requirePermission("CUSTOMERS"), listWhatsappCustomerAddresses);
+route.get("/admin/whatsapp/inbox/content/:id", requirePermission("CUSTOMERS"), getWhatsappContent);
+route.post("/admin/whatsapp-campaigns/media", requirePermission("CUSTOMERS"), receiveCampaignMedia, uploadCampaignMedia);
 route.get("/admin/me", getCurrentStaff);
 route.get("/admin/companies/subdomain", requireSuperAdmin, generateCompanySubdomain);
 route.post("/admin/companies/upload", requireSuperAdmin, persistentImageUpload.single("image"), uploadPersistentImage);

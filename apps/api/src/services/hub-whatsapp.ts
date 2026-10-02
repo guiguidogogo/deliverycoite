@@ -139,6 +139,17 @@ export function getHubWhatsappJob(jobId: string) {
   return gatewayRequest<HubWhatsappJob>(`/api/v1/whatsapp/jobs/${encodeURIComponent(jobId)}`);
 }
 
+export function sendHubWhatsappMedia(tenantId: string, to: string, media: { url: string; filename: string; mimeType: string }, caption: string, idempotencyKey: string) {
+  const image = media.mimeType.startsWith("image/");
+  const digits = to.replace(/\D/g, "");
+  const number = /^\d{10,11}$/.test(digits) ? `55${digits}` : digits;
+  return gatewayRequest<{ job_id: string; status: string }>(`/api/v1/whatsapp/send/${image ? "image" : "document"}`, {
+    method: "POST",
+    headers: { "idempotency-key": idempotencyKey },
+    body: JSON.stringify({ tenant_id: tenantId, to: number, ...(image ? { image_url: media.url } : { document_url: media.url, filename: media.filename }), caption: caption.slice(0, 1024) })
+  });
+}
+
 export async function waitForHubWhatsappJob(jobId: string, timeoutMs = 7000) {
   const deadline = Date.now() + timeoutMs;
   let job = await getHubWhatsappJob(jobId);
