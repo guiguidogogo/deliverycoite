@@ -2,10 +2,12 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import AdminNativeWorkspace from "./admin-native-workspace";
 import { toast } from "sonner";
 import { API_URL, apiFetch, readApiJson } from "../lib/api";
 import { orderReceiptHtml, printOrderInBrowser, type ReceiptOrder } from "../lib/browser-print";
 import { printHtmlWithAgent } from "../lib/qz-print";
+import WhatsAppPage from "./whatsapp-page";
 
 function toInputDate(value: Date) {
   const yyyy = value.getFullYear();
@@ -69,6 +71,7 @@ const labels: Record<Order["status"], string> = {
 };
 
 const ADMIN_SOUND_KEY = "delivery:admin-sound-enabled";
+const ADMIN_MENU_KEY = "delivery:admin-menu-mode";
 
 function isMercadoPagoPending(order: Order) {
   return order.paymentMethod === "MERCADO_PAGO" && !order.paidAt && order.mercadoPagoStatus !== "refunded";
@@ -176,6 +179,11 @@ export function AdminPanel() {
   const [permissions, setPermissions] = useState<string[]>([]);
   const [userRole, setUserRole] = useState<string>("");
   const [ordersPaused, setOrdersPaused] = useState(false);
+  const [classicMenu, setClassicMenu] = useState(false);
+  const [workspacePath, setWorkspacePath] = useState<string | null>(null);
+  const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
+  const [stockAlerts, setStockAlerts] = useState<Array<{ id: string; name: string; quantity: number; threshold: number | null; status: "out" | "low" }>>([]);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [printSettings, setPrintSettings] = useState({
     companyName: "Delivery",
     paperWidth: 58 as 58 | 80,
@@ -255,6 +263,34 @@ export function AdminPanel() {
       })
       .catch(() => undefined);
   }, [router]);
+
+  useEffect(() => {
+    if (!token || classicMenu) return;
+    let cancelled = false;
+    const loadStockAlerts = async () => {
+      try {
+        const response = await apiFetch("/admin/products", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+        if (!response.ok) return;
+        const products = await readApiJson<Array<{ id: string; name: string; trackStock?: boolean; stockQuantity?: number; lowStockAlert?: number | null }>>(response);
+        if (cancelled) return;
+        setStockAlerts(products.filter((item) => item.trackStock && (Number(item.stockQuantity ?? 0) <= 0 || (item.lowStockAlert != null && Number(item.stockQuantity ?? 0) <= Number(item.lowStockAlert)))).map((item) => ({ id: item.id, name: item.name, quantity: Number(item.stockQuantity ?? 0), threshold: item.lowStockAlert == null ? null : Number(item.lowStockAlert), status: Number(item.stockQuantity ?? 0) <= 0 ? "out" : "low" })));
+      } catch { /* o sino não deve interromper o painel */ }
+    };
+    void loadStockAlerts();
+    const timer = window.setInterval(loadStockAlerts, 30000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [token, classicMenu]);
+
+  useEffect(() => {
+    setClassicMenu(localStorage.getItem(ADMIN_MENU_KEY) === "classic");
+  }, []);
+
+  function changeMenu(mode: "new" | "classic") {
+    const isClassic = mode === "classic";
+    setClassicMenu(isClassic);
+    localStorage.setItem(ADMIN_MENU_KEY, mode);
+    setWorkspacePath(null);
+  }
 
   const can = useCallback(
     (permission: string) => permissions.includes("*") || permissions.includes(permission),
@@ -381,7 +417,7 @@ export function AdminPanel() {
       toast.success(`Pedido #${String(payload.order.orderNumber).padStart(5, "0")} impresso automaticamente`);
     } catch {
       autoPrintedOrdersRef.current.delete(orderId);
-      toast.error("Impressao automatica falhou. Verifique se o QZ Tray esta aberto.");
+      toast.error("Impressao automatica falhou. Verifique se o Printer Agent esta aberto.");
     }
   }, [printSettings, token]);
 
@@ -468,10 +504,44 @@ export function AdminPanel() {
   }
 
   return (
-    <main className="mx-auto max-w-6xl p-4 md:p-8">
+    <div className={classicMenu ? "min-h-screen" : "admin-layout"}>
+      <style>{`.admin-sidebar{background:#005956;color:#fff;min-height:calc(100vh - 64px);padding:16px 14px;display:flex;flex-direction:column}.admin-brand{display:flex;align-items:center;gap:10px;padding:8px 8px 18px;border-bottom:1px solid rgba(255,255,255,.18)}.admin-brand span{background:#fff;color:#005956;border-radius:12px;padding:8px}.admin-brand strong,.admin-brand small{display:block}.admin-brand small{font-size:10px;opacity:.7;letter-spacing:.08em}.admin-navigation{display:flex;flex-direction:column;gap:4px;padding-top:18px}.admin-navigation p{font-size:10px;letter-spacing:.14em;opacity:.65;margin:12px 8px 4px}.admin-navigation button{border:0;background:transparent;color:#fff;text-align:left;border-radius:9px;padding:10px 9px;font-weight:600;cursor:pointer}.admin-navigation button:hover,.admin-navigation button.active{background:rgba(255,255,255,.16)}.admin-sidebar-mode,.admin-account{margin-top:auto;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff;border-radius:10px;padding:11px;text-align:left}.admin-account{margin-top:8px;text-decoration:none}`}</style>
+      <style>{`.admin-menu-switch{display:flex;gap:3px;padding:4px;background:#fff;border:1px solid #d7e5df;border-radius:12px}.admin-menu-switch button{padding:8px 12px;border-radius:8px}.admin-menu-switch .selected{background:#008b78;color:white;font-weight:700}.admin-layout{display:grid;grid-template-columns:248px minmax(0,1fr);min-height:calc(100vh - 64px)}.admin-sidebar{position:sticky;top:54px;height:calc(100dvh - 54px);min-height:0;overflow-y:auto;align-self:start}.admin-navigation{padding-bottom:24px}.admin-sidebar-mode{flex-shrink:0}.admin-account{flex-shrink:0}@media(max-width:767px){.admin-layout{display:block}.admin-sidebar{display:none;position:relative;top:0;height:auto}.admin-sidebar.mobile-open{display:flex}.admin-menu-switch button{padding:8px}}`}</style>
+      {!classicMenu && (
+        <aside className={`admin-sidebar ${mobileNavigationOpen ? "mobile-open" : ""}`}>
+          <div className="admin-brand"><span>✦</span><div><strong>HubRegional</strong><small>{printSettings.companyName}</small></div></div>
+          <nav className="admin-navigation" onClick={() => setMobileNavigationOpen(false)}>
+            <p>OPERAÇÃO</p>
+            <button className={!workspacePath ? "active" : ""} onClick={() => setWorkspacePath(null)}>⌂ <span>Visão geral</span></button>
+            {can("CATALOG") && <><button className={workspacePath === "/admin/manage/products" ? "active" : ""} onClick={() => setWorkspacePath("/admin/manage/products")}>▣ <span>Produtos</span></button><button className={workspacePath === "/admin/manage/stock" ? "active" : ""} onClick={() => setWorkspacePath("/admin/manage/stock")}>▤ <span>Estoque</span></button></>}
+            {can("CATALOG") && <button className={workspacePath === "/admin/manage/categories" ? "active" : ""} onClick={() => setWorkspacePath("/admin/manage/categories")}>◇ <span>Categorias</span></button>}
+            {can("CATALOG") && <button className={workspacePath === "/admin/manage/complements" ? "active" : ""} onClick={() => setWorkspacePath("/admin/manage/complements")}>⊕ <span>Complementos</span></button>}
+            <p>ATENDIMENTO</p>
+            {can("ORDERS") && <button className={workspacePath === "/admin/manage/balcao" ? "active" : ""} onClick={() => setWorkspacePath("/admin/manage/balcao")}>⊕ <span>Balcão / Pedido rápido</span></button>}
+            {can("SETTINGS") && <button className={workspacePath === "/admin/manage/tables" ? "active" : ""} onClick={() => setWorkspacePath("/admin/manage/tables")}>▦ <span>Mesas / QR Code</span></button>}
+            {can("ORDERS") && <button className={workspacePath === "/admin/manage/pdv" ? "active" : ""} onClick={() => setWorkspacePath("/admin/manage/pdv")}>▣ <span>PDV Mesas</span></button>}
+            {can("ORDERS") && <button className={workspacePath === "/admin/manage/kitchen" ? "active" : ""} onClick={() => setWorkspacePath("/admin/manage/kitchen")}>♨ <span>Cozinha</span></button>}
+            {can("CUSTOMERS") && <button className={workspacePath === "/admin/manage/customers" ? "active" : ""} onClick={() => setWorkspacePath("/admin/manage/customers")}>♙ <span>Clientes</span></button>}
+            {can("ORDERS") && <button className={workspacePath === "/admin/manage/deliveries" ? "active" : ""} onClick={() => setWorkspacePath("/admin/manage/deliveries")}>⌁ <span>Entregas</span></button>}
+            <button className={workspacePath === "whatsapp-native" ? "active" : ""} onClick={() => setWorkspacePath("whatsapp-native")}>◉ <span>WhatsApp</span></button>
+            <p>GESTÃO</p>
+            {can("COUPONS") && <button className={workspacePath === "/admin/manage/coupons" ? "active" : ""} onClick={() => setWorkspacePath("/admin/manage/coupons")}>▢ <span>Cupons</span></button>}
+            {can("REPORTS") && <button className={workspacePath === "/admin/manage/reports" ? "active" : ""} onClick={() => setWorkspacePath("/admin/manage/reports")}>▥ <span>Relatórios</span></button>}
+            {(can("FINANCE") || can("CASH_MANAGE")) && <button className={workspacePath === "/admin/manage/finance" ? "active" : ""} onClick={() => setWorkspacePath("/admin/manage/finance")}>$ <span>Financeiro / Caixa</span></button>}
+            {can("USERS") && <button className={workspacePath === "/admin/manage/users" ? "active" : ""} onClick={() => setWorkspacePath("/admin/manage/users")}>♙ <span>Usuários e acessos</span></button>}
+            {can("SETTINGS") && <button className={workspacePath === "/admin/manage/settings" ? "active" : ""} onClick={() => setWorkspacePath("/admin/manage/settings")}>⚙ <span>Configurações</span></button>}
+          </nav>
+          <button className="admin-sidebar-mode" onClick={() => changeMenu("classic")}>↔ Usar modo clássico</button>
+          <button className="admin-account" onClick={() => setWorkspacePath("/admin/account")}>Minha conta <b>›</b></button>
+        </aside>
+      )}
+    <main className={classicMenu ? "mx-auto max-w-6xl p-4 md:p-8" : "min-w-0 bg-emerald-50 p-4 md:p-8"}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="font-display text-4xl">Painel Administrativo</h1>
-        <div className="flex items-center gap-2 text-xs">
+        <div><p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Painel administrativo</p>{(!workspacePath || classicMenu) && <h1 className="font-display text-4xl">Visão geral</h1>}</div>
+        <div className="flex flex-wrap items-center gap-2 text-xs"><button className="rounded-lg bg-emerald-700 px-3 py-2 font-bold text-white md:hidden" onClick={() => { if (classicMenu) changeMenu("new"); setWorkspacePath("whatsapp-native"); }}>WhatsApp</button>
+          {!classicMenu && can("STORE_PAUSE") && <button className={`rounded-lg px-3 py-2 text-white ${ordersPaused ? "bg-emerald-600" : "bg-red-600"}`} onClick={() => void toggleStorePause()}>{ordersPaused ? "Reabrir loja" : "Pausar novos pedidos"}</button>}
+          {!classicMenu && <button className="rounded-lg border border-emerald-700 px-3 py-2 font-bold text-emerald-800 md:hidden" aria-expanded={mobileNavigationOpen} onClick={() => setMobileNavigationOpen((value) => !value)}>☰ Menu</button>}<div className="admin-menu-switch"><button className={!classicMenu ? "selected" : ""} onClick={() => changeMenu("new")}>Menu novo</button><button className={classicMenu ? "selected" : ""} onClick={() => changeMenu("classic")}>Modo clássico</button></div>
+          {!classicMenu && <div className="relative"><button aria-label={`Notificações${stockAlerts.length ? `: ${stockAlerts.length}` : ""}`} className="relative rounded-full border border-emerald-200 bg-white px-3 py-2 text-lg" onClick={() => setNotificationsOpen((value) => !value)}>🔔{stockAlerts.length > 0 && <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-black text-white">{stockAlerts.length > 9 ? "9+" : stockAlerts.length}</span>}</button>{notificationsOpen && <div className="absolute right-0 top-11 z-40 w-72 rounded-2xl border border-slate-200 bg-white p-3 text-left text-slate-800 shadow-xl"><b className="block border-b pb-2">Alertas</b>{stockAlerts.length ? <div className="max-h-64 overflow-y-auto">{stockAlerts.map((item) => <button key={item.id} className="block w-full border-b py-2 text-left text-xs last:border-0" onClick={() => { setWorkspacePath("/admin/manage/stock"); setNotificationsOpen(false); }}><span className={`font-bold ${item.status === "out" ? "text-red-700" : "text-amber-700"}`}>{item.status === "out" ? "Esgotado" : "Estoque baixo"}</span><span className="block truncate">{item.name} · {item.quantity}</span></button>)}</div> : <p className="py-3 text-xs text-slate-500">Nenhum alerta no momento.</p>}</div>}</div>}
           <span className={`rounded-full px-3 py-2 ${connected ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
             {connected ? "Aguardando novos pedidos" : "Reconectando..."}
           </span>
@@ -484,7 +554,8 @@ export function AdminPanel() {
         </div>
       </div>
 
-      <section className="mt-3 flex flex-wrap gap-2">
+      {classicMenu && <section className="mt-3 flex flex-wrap gap-2">
+        {can("ORDERS") && <a className="rounded-lg bg-emerald-700 px-3 py-2 text-sm text-white" href="/admin/manage/balcao">Balcão / Pedido rápido</a>}
         <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/account">
           Minha conta
         </a>
@@ -518,6 +589,9 @@ export function AdminPanel() {
         {can("ORDERS") && <a className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white" href="/admin/manage/deliveries">
           Entregas
         </a>}
+        <a className="rounded-lg bg-emerald-700 px-3 py-2 text-sm text-white" href="/admin/whatsapp">
+          WhatsApp
+        </a>
         {can("COUPONS") && <a className="rounded-lg bg-ink px-3 py-2 text-sm text-white" href="/admin/manage/coupons">
           Cupons
         </a>}
@@ -538,8 +612,11 @@ export function AdminPanel() {
             {ordersPaused ? "Reabrir loja" : "Pausar novos pedidos"}
           </button>
         )}
-      </section>
+      </section>}
 
+      {!classicMenu && workspacePath === "whatsapp-native" && <WhatsAppPage token={token} />}
+      {!classicMenu && workspacePath && workspacePath !== "whatsapp-native" && <AdminNativeWorkspace path={workspacePath} onNavigate={setWorkspacePath} />}
+      {(!workspacePath || classicMenu) && <>
       <section className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-6">
         <Metric title="Pedidos Hoje" value={dashboard?.ordersToday ?? 0} />
         <Metric title="Faturamento Hoje" value={`R$ ${(dashboard?.salesToday ?? 0).toFixed(2)}`} />
@@ -548,8 +625,9 @@ export function AdminPanel() {
         <Metric title="Pendentes" value={dashboard?.pendingOrders ?? 0} />
         <Metric title="Top Produto" value={dashboard?.topSelling?.[0]?.product ?? "-"} />
       </section>
+      </>}
 
-      <section className="mt-5 rounded-2xl border border-black/10 bg-white/80 p-4 dark:border-white/10 dark:bg-slate-900/70">
+      {(!workspacePath || classicMenu) && <section className="mt-5 rounded-2xl border border-black/10 bg-white/80 p-4 dark:border-white/10 dark:bg-slate-900/70">
         <div className="flex flex-wrap gap-2">
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/20" placeholder="Buscar cliente" value={search} onChange={(e) => setSearch(e.target.value)} />
           <input className="rounded-xl border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/20" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
@@ -797,7 +875,7 @@ export function AdminPanel() {
                       )
                         .then(() => toast.success("Pedido enviado para a impressora"))
                         .catch(() => {
-                          toast.error("QZ Tray indisponivel. Abrindo impressao manual.");
+                          toast.error("Printer Agent indisponivel. Abrindo impressao manual.");
                           printOrderInBrowser(order, printSettings);
                         });
                     } else {
@@ -861,8 +939,9 @@ export function AdminPanel() {
             </article>
           ))}
         </div>
-      </section>
+      </section>}
     </main>
+    </div>
   );
 }
 
