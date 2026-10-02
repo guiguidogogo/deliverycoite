@@ -54,5 +54,23 @@ export const env = {
   get hubWhatsappTimeoutMs() {
     const value = Number(process.env.HUB_WHATSAPP_TIMEOUT_MS ?? 10000);
     return Number.isFinite(value) && value > 0 ? value : 10000;
+  },
+  get whatsappAiEnabled() {
+    return (process.env.WHATSAPP_AI_ENABLED ?? "false").toLowerCase() === "true";
+  },
+  get whatsappAiAllowedPhones() {
+    return (process.env.WHATSAPP_AI_ALLOWED_PHONES ?? "")
+      .split(",")
+      .map((phone) => phone.replace(/\D/g, ""))
+      .filter(Boolean);
+  },
+  get whatsappAiTenantId() {
+    return (process.env.WHATSAPP_AI_TENANT_ID ?? "").trim();
+  },
+  get ollamaUrl() {
+    return (process.env.OLLAMA_URL ?? "http://hubregional-ollama:11434").trim().replace(/\/$/, "");
+  },
+  get ollamaModel() {
+    return (process.env.OLLAMA_MODEL ?? "gemma3:1b-it-qat").trim();
   }
 };

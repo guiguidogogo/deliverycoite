@@ -122,6 +122,7 @@ import {
 } from "../controllers/whatsapp-integration-controller.js";
 import { createOrderMercadoPagoPix, createOrderMercadoPagoPreference, getMercadoPagoPublicConfig, getOrderMercadoPagoStatus, mercadoPagoWebhook, refundOrderMercadoPago } from "../controllers/mercadopago-controller.js";
 import { listNewOrders } from "../controllers/notifications-controller.js";
+import { whatsappAiWebhook } from "../controllers/whatsapp-ai-controller.js";
 import {
   generatePrinterAgentToken,
   getPrinterAgentConfig,
@@ -299,6 +300,7 @@ route.post("/orders/:orderId/mercadopago/preference", createOrderMercadoPagoPref
 route.post("/orders/:orderId/mercadopago/pix", createOrderMercadoPagoPix);
 route.get("/orders/:orderId/mercadopago/status", getOrderMercadoPagoStatus);
 route.post("/mercadopago/webhook", mercadoPagoWebhook);
+route.post("/integrations/whatsapp/webhook", whatsappAiWebhook);
 route.get("/mercadopago/webhook", mercadoPagoWebhook);
 route.get("/printer-agent/orders", listPrinterAgentOrders);
 route.post("/printer-agent/orders/:id/printed", markPrinterAgentOrderPrinted);
