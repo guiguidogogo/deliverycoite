@@ -1,0 +1,48 @@
+{
+  "name": "Delivery - WhatsApp IA (fundação)",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "delivery-whatsapp-ai", "responseMode": "responseNode", "options": {} },
+      "id": "evolution-webhook", "name": "Evolution Webhook", "type": "n8n-nodes-base.webhook", "typeVersion": 2, "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const p = $json.body ?? $json; const d = p.data ?? {}; const k = d.key ?? {}; const m = d.message ?? {}; const text = m.conversation ?? m.extendedTextMessage?.text ?? m.imageMessage?.caption ?? ''; return [{json:{event:String(p.event ?? '').replace(/[.-]/g,'_').toUpperCase(),tenantId:String($json.query?.tenantId ?? p.tenantId ?? ''),messageId:String(k.id ?? p.messageId ?? ''),phone:String(k.remoteJidAlt ?? k.remoteJid ?? p.phone ?? '').replace(/\\D/g,''),text:String(text ?? p.text ?? '').trim(),fromMe:Boolean(k.fromMe),isGroup:String(k.remoteJid ?? '').endsWith('@g.us')}}];"
+      },
+      "id": "normalize", "name": "Normalizar evento", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [240, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST", "url": "={{$env.SAAS_API_URL}}/api/integrations/whatsapp/webhook",
+        "sendHeaders": true, "headerParameters": { "parameters": [{ "name": "x-automation-key", "value": "={{$env.AUTOMATION_API_KEY}}" }] },
+        "sendBody": true, "contentType": "raw", "rawContentType": "application/json", "body": "={{JSON.stringify($json)}}", "options": {}
+      },
+      "id": "saas", "name": "Validar e executar no SaaS", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [500, 0]
+    },
+    {
+      "parameters": { "conditions": { "options": { "caseSensitive": true, "typeValidation": "strict" }, "conditions": [{ "leftValue": "={{$json.dispatchRequired}}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } }] } },
+      "id": "dispatch", "name": "Precisa enviar resposta?", "type": "n8n-nodes-base.if", "typeVersion": 2.2, "position": [740, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST", "url": "={{$env.HUB_WHATSAPP_URL}}/api/v1/whatsapp/send/text",
+        "sendHeaders": true, "headerParameters": { "parameters": [{ "name": "x-hub-api-key", "value": "={{$env.HUB_WHATSAPP_KEY}}" }, { "name": "idempotency-key", "value": "={{'n8n_' + $json.tenantId + '_' + $json.phone + '_' + $execution.id}}" }] },
+        "sendBody": true, "contentType": "raw", "rawContentType": "application/json", "body": "={{JSON.stringify({tenant_id:$json.tenantId,to:$json.phone,message:$json.reply})}}", "options": {}
+      },
+      "id": "send", "name": "Enviar pela Evolution", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [980, -100]
+    },
+    {
+      "parameters": { "respondWith": "json", "responseBody": "={{JSON.stringify({accepted:true})}}", "options": {} },
+      "id": "response", "name": "Responder webhook", "type": "n8n-nodes-base.respondToWebhook", "typeVersion": 1.4, "position": [1220, 0]
+    }
+  ],
+  "connections": {
+    "Evolution Webhook": { "main": [[{ "node": "Normalizar evento", "type": "main", "index": 0 }]] },
+    "Normalizar evento": { "main": [[{ "node": "Validar e executar no SaaS", "type": "main", "index": 0 }]] },
+    "Validar e executar no SaaS": { "main": [[{ "node": "Precisa enviar resposta?", "type": "main", "index": 0 }]] },
+    "Precisa enviar resposta?": { "main": [[{ "node": "Enviar pela Evolution", "type": "main", "index": 0 }], [{ "node": "Responder webhook", "type": "main", "index": 0 }]] },
+    "Enviar pela Evolution": { "main": [[{ "node": "Responder webhook", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1", "saveDataErrorExecution": "all", "saveDataSuccessExecution": "none" },
+  "active": false
+}

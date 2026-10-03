@@ -150,6 +150,27 @@ enum WhatsappCampaignRecipientStatus {
   CANCELED
 }
 
+enum WhatsappConversationState {
+  IDLE
+  BROWSING_MENU
+  SELECTING_PRODUCT
+  SELECTING_OPTIONS
+  CART
+  AWAITING_ADDRESS
+  AWAITING_LOCATION
+  AWAITING_PAYMENT_METHOD
+  AWAITING_CONFIRMATION
+  ORDER_CONFIRMED
+  HUMAN_SUPPORT
+}
+
+enum WhatsappMessageActor {
+  CUSTOMER
+  AI
+  ATTENDANT
+  SYSTEM
+}
+
 model User {
   id                  String          @id @default(cuid())
   name                String
@@ -260,6 +281,8 @@ model Company {
   raffleAuditLogs            RaffleAuditLog[]
   whatsappCampaigns          WhatsappCampaign[]
   whatsappCampaignRecipients WhatsappCampaignRecipient[]
+  whatsappConversations      WhatsappConversation[]
+  whatsappWebhookEvents      WhatsappWebhookEvent[]
 }
 
 model CompanyBusinessHour {
@@ -410,6 +433,7 @@ model Customer {
   deletedBy                  String?
   deletionReason             String?
   whatsappCampaignRecipients WhatsappCampaignRecipient[]
+  whatsappConversations      WhatsappConversation[]
 
   @@unique([companyId, phone])
   @@unique([companyId, email])
@@ -417,6 +441,55 @@ model Customer {
   @@index([companyCustomerId])
   @@index([companyId])
   @@index([companyId, deletedAt])
+}
+
+model WhatsappConversation {
+  id            String                        @id @default(cuid())
+  companyId     String
+  company       Company                       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customerId    String?
+  customer      Customer?                     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  phone         String
+  state         WhatsappConversationState     @default(IDLE)
+  context       Json                          @default("{}")
+  humanSupport  Boolean                       @default(false)
+  lastMessageAt DateTime                      @default(now())
+  createdAt     DateTime                      @default(now())
+  updatedAt     DateTime                      @updatedAt
+  messages      WhatsappConversationMessage[]
+
+  @@unique([companyId, phone])
+  @@index([companyId, state])
+  @@index([companyId, lastMessageAt])
+  @@index([customerId])
+}
+
+model WhatsappConversationMessage {
+  id             String               @id @default(cuid())
+  companyId      String
+  conversationId String
+  conversation   WhatsappConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  actor          WhatsappMessageActor
+  body           String
+  intent         String?
+  metadata       Json?
+  createdAt      DateTime             @default(now())
+
+  @@index([companyId, conversationId, createdAt])
+}
+
+model WhatsappWebhookEvent {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  externalId  String
+  eventType   String
+  payloadHash String
+  processedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@unique([companyId, externalId])
+  @@index([companyId, createdAt])
 }
 
 model WhatsappCampaign {

@@ -72,5 +72,15 @@ export const env = {
   },
   get ollamaModel() {
     return (process.env.OLLAMA_MODEL ?? "gemma3:1b-it-qat").trim();
+  },
+  get ollamaTimeoutMs() {
+    const value = Number(process.env.OLLAMA_TIMEOUT_MS ?? 30000);
+    return Number.isFinite(value) && value > 0 ? value : 30000;
+  },
+  get automationApiKey() {
+    return (process.env.AUTOMATION_API_KEY ?? "").trim();
+  },
+  get whatsappAiSendDirect() {
+    return (process.env.WHATSAPP_AI_SEND_DIRECT ?? "false").toLowerCase() === "true";
   }
 };
