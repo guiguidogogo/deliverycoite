@@ -125,7 +125,7 @@ import {
 import { createOrderMercadoPagoPix, createOrderMercadoPagoPreference, getMercadoPagoPublicConfig, getOrderMercadoPagoStatus, mercadoPagoWebhook, refundOrderMercadoPago } from "../controllers/mercadopago-controller.js";
 import { listNewOrders } from "../controllers/notifications-controller.js";
 import { whatsappAiWebhook } from "../controllers/whatsapp-ai-controller.js";
-import { receiveWhatsappInboxWebhook, listWhatsappConversations, listWhatsappMessages, listWhatsappLabels, createWhatsappLabel, listWhatsappQuickReplies, createWhatsappQuickReply, updateWhatsappQuickReply, deleteWhatsappQuickReply, sendWhatsappInboxMessage, createWhatsappContact, listWhatsappCustomerAddresses } from "../controllers/whatsapp-inbox-controller.js";
+import { markWhatsappMessagesRead, receiveWhatsappInboxWebhook, listWhatsappConversations, listWhatsappMessages, listWhatsappLabels, createWhatsappLabel, listWhatsappQuickReplies, createWhatsappQuickReply, updateWhatsappQuickReply, deleteWhatsappQuickReply, sendWhatsappInboxMessage, createWhatsappContact, listWhatsappCustomerAddresses } from "../controllers/whatsapp-inbox-controller.js";
 import {
   generatePrinterAgentToken,
   getPrinterAgentConfig,
@@ -316,6 +316,7 @@ route.post("/webhooks/whatsapp/inbox", receiveWhatsappInboxWebhook);
 router.use(auth());
 route.get("/admin/whatsapp/inbox/conversations", requirePermission("CUSTOMERS"), listWhatsappConversations);
 route.get("/admin/whatsapp/inbox/messages/:phone", requirePermission("CUSTOMERS"), listWhatsappMessages);
+route.post("/admin/whatsapp/inbox/messages/:phone/read", requirePermission("CUSTOMERS"), markWhatsappMessagesRead);
 route.get("/admin/whatsapp/inbox/labels", requirePermission("CUSTOMERS"), listWhatsappLabels);
 route.post("/admin/whatsapp/inbox/labels", requirePermission("CUSTOMERS"), createWhatsappLabel);
 route.get("/admin/whatsapp/inbox/quick-replies", requirePermission("CUSTOMERS"), listWhatsappQuickReplies);

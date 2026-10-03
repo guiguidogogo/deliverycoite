@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { apiFetch, readApiJson } from "../lib/api";
 
-type Message = { id: string; body: string; messageType?: string; mediaUrl?: string | null; latitude?: number | null; longitude?: number | null };
+type Message = { id: string; body: string; quotedMessage?: { id: string; text: string; messageType: string; author?: string } | null; messageType?: string; mediaUrl?: string | null; latitude?: number | null; longitude?: number | null };
 type Content = { text: string; messageType: string; latitude?: number; longitude?: number; base64?: string; mimeType?: string; filename?: string };
 const names: Record<string, string> = { image: "Imagem", sticker: "Figurinha", audio: "Áudio", video: "Vídeo", document: "Documento" };
 
@@ -51,6 +51,7 @@ export default function WhatsappMessageContent({ item, token }: { item: Message;
   }, [item.id, empty, location, kind]);
 
   return <div ref={root} className="space-y-2">
+    {item.quotedMessage && <blockquote className="rounded-lg border-l-4 border-emerald-600 bg-emerald-50 px-3 py-2 text-xs text-emerald-950" aria-label="Mensagem respondida"><b className="block">Em resposta a</b><p className="line-clamp-3 whitespace-pre-wrap break-words">{item.quotedMessage.text || names[item.quotedMessage.messageType] || (item.quotedMessage.messageType === "location" ? "Localização" : "Mensagem original")}</p></blockquote>}
     {location && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3"><b className="block">📍 Localização compartilhada</b><span className="block text-xs text-slate-500">{Number(latitude).toFixed(6)}, {Number(longitude).toFixed(6)}</span><a className="mt-2 inline-block font-bold text-emerald-800 underline" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${latitude},${longitude}`)}`} target="_blank" rel="noopener noreferrer">Abrir no mapa ↗</a></div>}
     {names[kind] && <div className="space-y-2"><b className="block">{names[kind]}</b>{!url ? <button disabled={busy} className="rounded-lg border border-emerald-600 px-3 py-2 text-emerald-800 disabled:opacity-50" onClick={() => void load()}>{busy ? "Carregando…" : `Carregar ${names[kind].toLowerCase()}`}</button> : <>
       {(kind === "image" || kind === "sticker") && <button onClick={() => setExpanded(true)} aria-label="Ampliar imagem"><img src={url} alt={text || names[kind]} className="max-h-72 max-w-full rounded-lg" onError={() => setError("Formato não compatível com o navegador. Baixe o arquivo para abrir.")} /></button>}

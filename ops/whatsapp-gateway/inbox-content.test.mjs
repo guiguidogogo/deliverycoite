@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import { inboxContent } from './inbox-content.mjs';
+assert.deepEqual(inboxContent({message:{conversation:'oi'}}),{messageType:'text',text:'oi'});
+const contextInfo={stanzaId:'original-id',participant:'557100000000@s.whatsapp.net',quotedMessage:{conversation:'Qual lanche?'}};
+const reply=inboxContent({message:{extendedTextMessage:{text:'Este aqui',contextInfo}}});
+assert.equal(reply.text,'Este aqui');assert.equal(reply.quotedMessage.text,'Qual lanche?');assert.equal(reply.quotedMessage.id,'original-id');
+assert.equal(inboxContent({message:{ephemeralMessage:{message:{imageMessage:{caption:'sim',contextInfo}}}}}).quotedMessage.id,'original-id');
+assert.equal(inboxContent({message:{viewOnceMessage:{message:{imageMessage:{contextInfo}}}}}).quotedMessage,undefined);
+assert.equal(inboxContent({message:{extendedTextMessage:{text:'ok',contextInfo:{stanzaId:'x',quotedMessage:{imageMessage:{}}}}}}).quotedMessage.messageType,'image');
+console.log('PASS: text, reply, media reply, nested message and view-once protection');

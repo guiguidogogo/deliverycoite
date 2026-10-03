@@ -29,6 +29,10 @@ function ensureTables() {
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS whatsapp_inbox_phone_idx ON whatsapp_inbox_messages(company_id, phone, sent_at DESC)`);
       await prisma.$executeRawUnsafe(`ALTER TABLE whatsapp_inbox_messages ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION`);
       await prisma.$executeRawUnsafe(`ALTER TABLE whatsapp_inbox_messages ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION`);
+      // Existing messages start read; only newly received messages trigger alerts.
+      await prisma.$executeRawUnsafe(`ALTER TABLE whatsapp_inbox_messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ DEFAULT NOW()`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE whatsapp_inbox_messages ALTER COLUMN read_at DROP DEFAULT`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE whatsapp_inbox_messages ADD COLUMN IF NOT EXISTS quoted_message JSONB`);
       await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS whatsapp_customer_first_access (customer_id TEXT PRIMARY KEY, company_id TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
       await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS whatsapp_inbox_labels (
         id TEXT PRIMARY KEY,
@@ -97,7 +101,8 @@ export async function listWhatsappConversations(req: Request, res: Response) {
       (c.id IS NOT NULL) AS "isCustomer",
       c.id AS "customerId", c.address, c.number, c.district, c.complement,
       (ARRAY_AGG(m.body ORDER BY m.sent_at DESC))[1] AS "lastMessage",
-      MAX(m.sent_at) AS "lastMessageAt"
+      MAX(m.sent_at) AS "lastMessageAt",
+      COUNT(*) FILTER (WHERE m.direction = 'in' AND m.read_at IS NULL)::integer AS "unreadCount"
     FROM whatsapp_inbox_messages m
     LEFT JOIN "Customer" c ON c."companyId" = m.company_id
       AND c."deletedAt" IS NULL
@@ -123,12 +128,25 @@ export async function listWhatsappMessages(req: Request, res: Response) {
   const phone = digits(req.params.phone);
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(`
     SELECT id, phone, contact_name AS "contactName", direction, body,
-      message_type AS "messageType", media_url AS "mediaUrl", latitude, longitude, sent_at AS "sentAt"
-    FROM whatsapp_inbox_messages
+      message_type AS "messageType", media_url AS "mediaUrl", latitude, longitude, sent_at AS "sentAt", read_at AS "readAt", quoted_message AS "quotedMessage"
+    FROM (SELECT * FROM whatsapp_inbox_messages
     WHERE company_id = $1 AND REGEXP_REPLACE(phone, '\\D', '', 'g') = $2
-    ORDER BY sent_at ASC LIMIT 500
+    ORDER BY sent_at DESC, id DESC LIMIT 500) recent
+    ORDER BY sent_at ASC, id ASC
   `, companyId, phone);
   return res.json(rows);
+}
+
+export async function markWhatsappMessagesRead(req: Request, res: Response) {
+  const { ids } = z.object({ ids: z.array(z.string().min(1).max(200)).min(1).max(500) }).parse(req.body);
+  await ensureTables();
+  const rows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(`
+    UPDATE whatsapp_inbox_messages SET read_at = NOW()
+    WHERE company_id = $1 AND REGEXP_REPLACE(phone, '\\D', '', 'g') = $2
+      AND id IN (SELECT jsonb_array_elements_text($3::jsonb))
+      AND direction = 'in' AND read_at IS NULL RETURNING id
+  `, getCompanyId(req), digits(req.params.phone), JSON.stringify(ids));
+  return res.json({ ids: rows.map((row) => row.id) });
 }
 
 export async function listWhatsappCustomerAddresses(req: Request, res: Response) {
@@ -252,6 +270,7 @@ export async function receiveWhatsappInboxWebhook(req: Request, res: Response) {
   let savedLocationAddress = locationText || (text && !/^localiza[cç][aã]o recebida$/i.test(text) && !/^https?:\/\//i.test(text) ? text : "Localizacao recebida pelo WhatsApp");
   const contactName = String(payload.pushName ?? payload.contact_name ?? payload.name ?? "") || null;
   const direction = payload.direction === "out" || payload.fromMe === true ? "out" : "in";
+  const quote = z.object({ id: z.string().max(200), text: z.string().max(4000), messageType: z.string().max(40), author: z.string().max(100).optional() }).safeParse(payload.quotedMessage);
   const textCoordinates = coordinatesFromText(text);
   const rawLatitude = payload.latitude ?? payload.lat ?? textCoordinates.latitude;
   const rawLongitude = payload.longitude ?? payload.lng ?? payload.lon ?? textCoordinates.longitude;
@@ -263,10 +282,10 @@ export async function receiveWhatsappInboxWebhook(req: Request, res: Response) {
     if (geocoded) savedLocationAddress = geocoded.address;
   }
   await prisma.$executeRawUnsafe(`
-    INSERT INTO whatsapp_inbox_messages (id, company_id, external_id, phone, contact_name, direction, body, latitude, longitude, sent_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+    INSERT INTO whatsapp_inbox_messages (id, company_id, external_id, phone, contact_name, direction, body, latitude, longitude, sent_at, read_at, quoted_message, message_type)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), CASE WHEN $6 = 'out' THEN NOW() ELSE NULL END, $10::jsonb, $11)
     ON CONFLICT (company_id, external_id) WHERE external_id IS NOT NULL DO NOTHING
-  `, randomUUID(), companyId, externalId, phone, contactName, direction, text, Number.isFinite(latitude) ? latitude : null, Number.isFinite(longitude) ? longitude : null);
+  `, randomUUID(), companyId, externalId, phone, contactName, direction, text, Number.isFinite(latitude) ? latitude : null, Number.isFinite(longitude) ? longitude : null, quote.success ? JSON.stringify(quote.data) : null, String(payload.messageType ?? 'text').slice(0, 40));
   if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
     const customer = await prisma.customer.findFirst({
       where: { companyId, deletedAt: null, phone: { in: [phone, `+${phone}`] } }

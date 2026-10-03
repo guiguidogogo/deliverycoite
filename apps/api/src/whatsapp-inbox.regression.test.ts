@@ -28,6 +28,15 @@ try {
  assert.equal(calls.length,before);
  assert.equal((await request('/webhooks/whatsapp/inbox',{method:'POST',headers:{'content-type':'application/json','x-webhook-secret':'local-test-secret'},body:JSON.stringify({tenant_id:'shop-a',from:'5571992294907',id:'test-new',text:'mensagem de teste'})})).status,204);
  assert(calls.some(c=>String(c[0]).includes('INSERT INTO whatsapp_inbox_messages') && c.includes('test-new')&&c.includes('shop-a')));
+ const readPath='/admin/whatsapp/inbox/messages/5571992294907/read';
+ assert.equal((await request(readPath,{method:'POST',headers,body:JSON.stringify({ids:[]})})).status,400);
+ assert.equal((await request(readPath,{method:'POST',headers,body:JSON.stringify({ids:['visible-message']})})).status,200);
+ const update=calls.find(c=>String(c[0]).includes('UPDATE whatsapp_inbox_messages SET read_at'))!;
+ assert.equal(update[1],'shop-a'); assert.equal(update[2],'5571992294907'); assert.equal(update[3],'["visible-message"]');
+ assert(String(update[0]).includes("direction = 'in' AND read_at IS NULL"));
+ assert.equal((await request('/webhooks/whatsapp/inbox',{method:'POST',headers:{'content-type':'application/json','x-webhook-secret':'local-test-secret'},body:JSON.stringify({tenant_id:'shop-a',from:'5571992294907',id:'test-quote',text:'este',quotedMessage:{id:'original',text:'Qual produto?',messageType:'text'}})})).status,204);
+ const insert=calls.find(c=>String(c[0]).includes('INSERT INTO whatsapp_inbox_messages')&&c.includes('test-quote'))!;
+ assert.equal(JSON.parse(String(insert[10])).id,'original');
  assert.equal((await request('/admin/whatsapp/inbox/send',{method:'POST',headers,body:JSON.stringify({phone:'5571992294907',message:''})})).status,400);
  console.log('PASS: routes respond; authentication; authorization; tenant isolation; authenticated receive; send validation');
 } finally {server.closeAllConnections();server.close();await prisma.$disconnect();}
