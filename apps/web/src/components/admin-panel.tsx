@@ -29,6 +29,14 @@ type Dashboard = {
   topSelling: Array<{ product: string; quantity: number }>;
 };
 
+type QuickReply = {
+  id: string;
+  name: string;
+  message: string;
+  showOnOrders?: boolean;
+  systemKey?: string | null;
+};
+
 type Order = {
   id: string;
   orderNumber: number;
@@ -97,6 +105,12 @@ function orderSourceTone(order: Order) {
   if (order.source === "WAITER") return "text-orange-700";
   if (order.source === "COUNTER") return "text-violet-700";
   return order.fulfillmentType === "PICKUP" ? "text-violet-600" : "text-blue-600";
+}
+
+function renderQuickReplyMessage(message: string, order: Order) {
+  return message
+    .replaceAll("{nome}", order.customer.name)
+    .replaceAll("{pedido}", String(order.orderNumber).padStart(5, "0"));
 }
 
 class AdminApiError extends Error {
@@ -172,6 +186,7 @@ export function AdminPanel() {
   const [dateTo, setDateTo] = useState(() => toInputDate(new Date()));
   const [payingOrderId, setPayingOrderId] = useState<string | null>(null);
   const [pickupNoticeOrderId, setPickupNoticeOrderId] = useState<string | null>(null);
+  const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(() =>
     typeof window !== "undefined" && localStorage.getItem(ADMIN_SOUND_KEY) === "true"
@@ -238,6 +253,9 @@ export function AdminPanel() {
       return;
     }
     setToken(storedToken);
+    void authApi<QuickReply[]>("/admin/whatsapp/inbox/quick-replies", storedToken)
+      .then(setQuickReplies)
+      .catch(() => undefined);
     void authApi<{ permissions: string[]; role: string }>("/admin/me", storedToken)
       .then((me) => {
         if (me.role === "SUPER_ADMIN") {
@@ -777,28 +795,28 @@ export function AdminPanel() {
                     🛵 Enviar para Motoboy
                   </button>
                 )}
-                {order.fulfillmentType === "PICKUP" && order.status === "PREPARING" && !isMercadoPagoPending(order) && !isMercadoPagoRefunded(order) && (
+                {order.source !== "TABLE" && order.source !== "COUNTER" && ["RECEIVED", "PREPARING", "OUT_FOR_DELIVERY"].includes(order.status) && !isMercadoPagoPending(order) && !isMercadoPagoRefunded(order) && quickReplies.filter((reply) => reply.showOnOrders !== false).map((reply) => (
                   <button
-                    className="rounded-lg bg-amber-600 px-2 py-1 text-xs font-bold text-white"
-                    disabled={pickupNoticeOrderId === order.id}
+                    key={reply.id}
+                    className={`rounded-lg px-2 py-1 text-xs font-bold text-white ${reply.systemKey === "PICKUP_READY" ? "bg-amber-600" : "bg-emerald-700"}`}
+                    disabled={pickupNoticeOrderId === `${order.id}:${reply.id}`}
+                    title={renderQuickReplyMessage(reply.message, order)}
                     onClick={() => {
-                      setPickupNoticeOrderId(order.id);
+                      const busyKey = `${order.id}:${reply.id}`;
+                      setPickupNoticeOrderId(busyKey);
                       void authApi<{ sendPending?: boolean }>("/admin/whatsapp/inbox/send", token, {
                         method: "POST",
-                        body: JSON.stringify({
-                          phone: order.customer.phone,
-                          message: `Olá, ${order.customer.name}! Seu pedido #${String(order.orderNumber).padStart(5, "0")} está pronto para retirada no local. Estamos aguardando você!`
-                        })
+                        body: JSON.stringify({ phone: order.customer.phone, message: renderQuickReplyMessage(reply.message, order) })
                       }).then((payload) => {
-                        toast.success(payload.sendPending ? "Aviso de retirada colocado em processamento" : "Aviso de retirada enviado");
+                        toast.success(payload.sendPending ? "Mensagem colocada em processamento" : "Mensagem enviada ao cliente");
                       }).catch((error) => {
-                        toast.error(error instanceof Error ? error.message : "Não foi possível enviar o aviso de retirada");
+                        toast.error(error instanceof Error ? error.message : "Não foi possível enviar a mensagem");
                       }).finally(() => setPickupNoticeOrderId(null));
                     }}
                   >
-                    {pickupNoticeOrderId === order.id ? "Enviando…" : "📦 Pronto para retirada"}
+                    {pickupNoticeOrderId === `${order.id}:${reply.id}` ? "Enviando…" : `${reply.systemKey === "PICKUP_READY" ? "📦 " : "💬 "}${reply.name}`}
                   </button>
-                )}
+                ))}
                 {order.status !== "CANCELED" && !order.notes?.includes("[PAGO:") && !order.paidAt && order.paymentMethod !== "MERCADO_PAGO" && (
                   <>
                     <button className="rounded-lg bg-emerald-600 px-2 py-1 text-xs text-white" onClick={() => setPayingOrderId(order.id)}>

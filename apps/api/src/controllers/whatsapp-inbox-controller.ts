@@ -50,6 +50,9 @@ function ensureTables() {
         UNIQUE(company_id, name)
       )`);
       await prisma.$executeRawUnsafe(`ALTER TABLE whatsapp_inbox_quick_replies ADD COLUMN IF NOT EXISTS media JSONB NOT NULL DEFAULT '[]'::jsonb`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE whatsapp_inbox_quick_replies ADD COLUMN IF NOT EXISTS show_on_orders BOOLEAN NOT NULL DEFAULT TRUE`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE whatsapp_inbox_quick_replies ADD COLUMN IF NOT EXISTS system_key TEXT`);
+      await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_inbox_quick_replies_system_idx ON whatsapp_inbox_quick_replies(company_id, system_key) WHERE system_key IS NOT NULL`);
     })().catch((error: unknown) => {
       tablesReady = null;
       throw error;
@@ -223,24 +226,44 @@ export async function createWhatsappLabel(req: Request, res: Response) {
 
 export async function listWhatsappQuickReplies(req: Request, res: Response) {
   await ensureTables();
-  return res.json(await prisma.$queryRawUnsafe(`SELECT id, name, message, media FROM whatsapp_inbox_quick_replies WHERE company_id = $1 ORDER BY name`, getCompanyId(req)));
+  const companyId = getCompanyId(req);
+  await prisma.$executeRawUnsafe(
+    `UPDATE whatsapp_inbox_quick_replies
+     SET system_key = 'PICKUP_READY', show_on_orders = TRUE
+     WHERE company_id = $1 AND LOWER(name) = LOWER('Pronto para retirada') AND system_key IS NULL
+       AND NOT EXISTS (SELECT 1 FROM whatsapp_inbox_quick_replies WHERE company_id = $1 AND system_key = 'PICKUP_READY')`,
+    companyId
+  );
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO whatsapp_inbox_quick_replies (id, company_id, name, message, media, show_on_orders, system_key)
+     VALUES ($1, $2, 'Pronto para retirada', 'Olá, {nome}! Seu pedido #{pedido} está pronto para retirada no local. Estamos aguardando você!', '[]'::jsonb, TRUE, 'PICKUP_READY')
+     ON CONFLICT (company_id, system_key) WHERE system_key IS NOT NULL DO NOTHING`,
+    randomUUID(), companyId
+  );
+  return res.json(await prisma.$queryRawUnsafe(
+    `SELECT id, name, message, media, show_on_orders AS "showOnOrders", system_key AS "systemKey"
+     FROM whatsapp_inbox_quick_replies WHERE company_id = $1 ORDER BY CASE WHEN system_key = 'PICKUP_READY' THEN 0 ELSE 1 END, name`,
+    companyId
+  ));
 }
 
 export async function createWhatsappQuickReply(req: Request, res: Response) {
   await ensureTables();
-  const body = z.object({ name: z.string().trim().min(2).max(50), message: z.string().trim().max(4000).default(""), media: z.array(z.object({ url: z.string(), filename: z.string(), mimeType: z.string() })).max(5).default([]) }).parse(req.body);
+  const body = z.object({ name: z.string().trim().min(2).max(50), message: z.string().trim().max(4000).default(""), media: z.array(z.object({ url: z.string(), filename: z.string(), mimeType: z.string() })).max(5).default([]), showOnOrders: z.boolean().default(true) }).parse(req.body);
   if (!body.message && !body.media.length) return res.status(400).json({ message: "Adicione texto ou anexo ao atalho" });
   const id = randomUUID();
-  await prisma.$executeRawUnsafe(`INSERT INTO whatsapp_inbox_quick_replies (id, company_id, name, message, media) VALUES ($1, $2, $3, $4, $5::jsonb)`, id, getCompanyId(req), body.name, body.message, JSON.stringify(body.media));
+  await prisma.$executeRawUnsafe(`INSERT INTO whatsapp_inbox_quick_replies (id, company_id, name, message, media, show_on_orders) VALUES ($1, $2, $3, $4, $5::jsonb, $6)`, id, getCompanyId(req), body.name, body.message, JSON.stringify(body.media), body.showOnOrders);
   return res.status(201).json({ id, ...body });
 }
 
 export async function updateWhatsappQuickReply(req: Request, res: Response) {
   await ensureTables();
-  const body = z.object({ name: z.string().trim().min(2).max(50), message: z.string().trim().max(4000).default(""), media: z.array(z.object({ url: z.string(), filename: z.string(), mimeType: z.string() })).max(5).default([]) }).parse(req.body);
+  const body = z.object({ name: z.string().trim().min(2).max(50), message: z.string().trim().max(4000).default(""), media: z.array(z.object({ url: z.string(), filename: z.string(), mimeType: z.string() })).max(5).default([]), showOnOrders: z.boolean().optional() }).parse(req.body);
   const result = await prisma.$queryRawUnsafe<Array<{ id: string; name: string; message: string }>>(
-    `UPDATE whatsapp_inbox_quick_replies SET name = $3, message = $4, media = $5::jsonb WHERE id = $1 AND company_id = $2 RETURNING id, name, message, media`,
-    req.params.id, getCompanyId(req), body.name, body.message, JSON.stringify(body.media)
+    `UPDATE whatsapp_inbox_quick_replies SET name = $3, message = $4, media = $5::jsonb, show_on_orders = COALESCE($6, show_on_orders)
+     WHERE id = $1 AND company_id = $2
+     RETURNING id, name, message, media, show_on_orders AS "showOnOrders", system_key AS "systemKey"`,
+    req.params.id, getCompanyId(req), body.name, body.message, JSON.stringify(body.media), body.showOnOrders ?? null
   );
   if (!result[0]) return res.status(404).json({ message: "Atalho não encontrado" });
   return res.json(result[0]);
@@ -248,6 +271,11 @@ export async function updateWhatsappQuickReply(req: Request, res: Response) {
 
 export async function deleteWhatsappQuickReply(req: Request, res: Response) {
   await ensureTables();
+  const systemReply = await prisma.$queryRawUnsafe<Array<{ systemKey: string | null }>>(
+    `SELECT system_key AS "systemKey" FROM whatsapp_inbox_quick_replies WHERE id = $1 AND company_id = $2`,
+    req.params.id, getCompanyId(req)
+  );
+  if (systemReply[0]?.systemKey) return res.status(400).json({ message: "O botão padrão pode ser editado, mas não excluído" });
   const result = await prisma.$executeRawUnsafe(`DELETE FROM whatsapp_inbox_quick_replies WHERE id = $1 AND company_id = $2`, req.params.id, getCompanyId(req));
   if (!result) return res.status(404).json({ message: "Atalho não encontrado" });
   return res.status(204).send();

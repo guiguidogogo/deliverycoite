@@ -22,6 +22,14 @@ type BusinessHourDay = {
   periods: BusinessHourPeriod[];
 };
 
+type QuickReply = {
+  id: string;
+  name: string;
+  message: string;
+  showOnOrders?: boolean;
+  systemKey?: string | null;
+};
+
 const weekDays = [
   { dayOfWeek: 1, label: "Segunda-feira" },
   { dayOfWeek: 2, label: "Terca-feira" },
@@ -112,6 +120,9 @@ export default function SettingsManagePage() {
     lastSeenAt: null as string | null
   });
   const [newPrinterToken, setNewPrinterToken] = useState("");
+  const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
+  const [quickReplyForm, setQuickReplyForm] = useState({ id: "", name: "", message: "", showOnOrders: true });
+  const [savingQuickReply, setSavingQuickReply] = useState(false);
 
   async function handleUnauthorized(response: Response) {
     if (response.status !== 401 || sessionExpiredRef.current) return false;
@@ -241,7 +252,64 @@ export default function SettingsManagePage() {
         if (!sessionExpiredRef.current) toast.error(error.message ?? "Falha ao carregar agente de impressao");
       });
 
+    void loadQuickReplies(token);
+
   }, []);
+
+  async function loadQuickReplies(token = localStorage.getItem("delivery:token") ?? "") {
+    if (!token) return;
+    const response = await apiFetch(`/admin/whatsapp/inbox/quick-replies`, {
+      headers: { Authorization: `Bearer ${token}` }, cache: "no-store"
+    });
+    const data = await ensureAdminResponse(response, "Falha ao carregar mensagens rapidas");
+    if (Array.isArray(data)) setQuickReplies(data);
+  }
+
+  async function saveQuickReply() {
+    const token = localStorage.getItem("delivery:token");
+    if (!token) return;
+    if (quickReplyForm.name.trim().length < 2 || !quickReplyForm.message.trim()) {
+      toast.error("Informe o nome do botão e a mensagem");
+      return;
+    }
+    setSavingQuickReply(true);
+    try {
+      const response = await apiFetch(`/admin/whatsapp/inbox/quick-replies${quickReplyForm.id ? `/${quickReplyForm.id}` : ""}`, {
+        method: quickReplyForm.id ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          name: quickReplyForm.name.trim(),
+          message: quickReplyForm.message.trim(),
+          media: [],
+          showOnOrders: quickReplyForm.showOnOrders
+        })
+      });
+      await ensureAdminResponse(response, "Falha ao salvar mensagem rapida");
+      await loadQuickReplies(token);
+      setQuickReplyForm({ id: "", name: "", message: "", showOnOrders: true });
+      toast.success(quickReplyForm.id ? "Botão atualizado" : "Botão criado");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao salvar mensagem rapida");
+    } finally {
+      setSavingQuickReply(false);
+    }
+  }
+
+  async function deleteQuickReply(reply: QuickReply) {
+    if (reply.systemKey || !window.confirm(`Excluir o botão “${reply.name}”?`)) return;
+    const token = localStorage.getItem("delivery:token");
+    if (!token) return;
+    const response = await apiFetch(`/admin/whatsapp/inbox/quick-replies/${reply.id}`, {
+      method: "DELETE", headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!response.ok) {
+      const data: { message?: string } = await readApiJson<{ message?: string }>(response).catch(() => ({}));
+      toast.error(data.message ?? "Falha ao excluir botão");
+      return;
+    }
+    setQuickReplies((items) => items.filter((item) => item.id !== reply.id));
+    toast.success("Botão excluído");
+  }
 
   async function save() {
     const token = localStorage.getItem("delivery:token");
@@ -797,6 +865,97 @@ export default function SettingsManagePage() {
       </section>
 
       <WhatsappConnectionCard />
+
+      <section className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-slate-900 dark:border-amber-500/30 dark:bg-amber-950/20 dark:text-white">
+        <h2 className="text-xl font-bold">Botões e mensagens rápidas</h2>
+        <p className="mt-1 text-sm opacity-75">
+          Crie mensagens que aparecem no WhatsApp e, quando ativadas, também nos cartões dos pedidos. Use <b>{"{nome}"}</b> para o nome do cliente e <b>{"{pedido}"}</b> para o número do pedido.
+        </p>
+
+        <div className="mt-4 grid gap-2 md:grid-cols-[220px_1fr]">
+          <label>
+            <span className="mb-1 block text-xs font-semibold">Nome do botão</span>
+            <input
+              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 dark:border-white/20 dark:bg-slate-950"
+              placeholder="Ex.: Pronto para retirada"
+              value={quickReplyForm.name}
+              onChange={(event) => setQuickReplyForm((value) => ({ ...value, name: event.target.value }))}
+            />
+          </label>
+          <label>
+            <span className="mb-1 block text-xs font-semibold">Mensagem enviada ao cliente</span>
+            <textarea
+              className="min-h-24 w-full rounded-xl border border-black/10 bg-white px-3 py-2 dark:border-white/20 dark:bg-slate-950"
+              placeholder="Digite a mensagem completa"
+              value={quickReplyForm.message}
+              onChange={(event) => setQuickReplyForm((value) => ({ ...value, message: event.target.value }))}
+            />
+          </label>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-2 rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-semibold dark:border-white/20 dark:bg-slate-950">
+            <input
+              type="checkbox"
+              checked={quickReplyForm.showOnOrders}
+              onChange={(event) => setQuickReplyForm((value) => ({ ...value, showOnOrders: event.target.checked }))}
+            />
+            Mostrar este botão nos pedidos
+          </label>
+          <button
+            type="button"
+            className="rounded-xl bg-amber-600 px-4 py-2 font-bold text-white disabled:opacity-60"
+            disabled={savingQuickReply}
+            onClick={() => void saveQuickReply()}
+          >
+            {savingQuickReply ? "Salvando..." : quickReplyForm.id ? "Salvar alteração" : "+ Criar botão"}
+          </button>
+          {quickReplyForm.id && (
+            <button
+              type="button"
+              className="rounded-xl border border-black/15 px-4 py-2 font-semibold dark:border-white/20"
+              onClick={() => setQuickReplyForm({ id: "", name: "", message: "", showOnOrders: true })}
+            >
+              Cancelar edição
+            </button>
+          )}
+        </div>
+
+        <div className="mt-4 space-y-2">
+          {quickReplies.map((reply) => (
+            <article key={reply.id} className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-slate-950/70">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <b>{reply.systemKey === "PICKUP_READY" ? "📦 " : "💬 "}{reply.name}</b>
+                    {reply.showOnOrders !== false && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-800">Aparece nos pedidos</span>}
+                    {reply.systemKey && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800">Botão padrão</span>}
+                  </div>
+                  <p className="mt-1 whitespace-pre-wrap text-sm opacity-75">{reply.message}</p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-bold text-white"
+                    onClick={() => setQuickReplyForm({ id: reply.id, name: reply.name, message: reply.message, showOnOrders: reply.showOnOrders !== false })}
+                  >
+                    Editar
+                  </button>
+                  {!reply.systemKey && (
+                    <button
+                      type="button"
+                      className="rounded-lg bg-red-600 px-3 py-2 text-sm font-bold text-white"
+                      onClick={() => void deleteQuickReply(reply)}
+                    >
+                      Excluir
+                    </button>
+                  )}
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
 
       <section className="mt-4 rounded-2xl border border-black/10 bg-white/85 p-4 dark:border-white/10 dark:bg-slate-900/70">
         <h2 className="mb-1 text-xl font-bold">Mensagens por etapa</h2>
