@@ -115,16 +115,24 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path?: s
   const method = request.method.toUpperCase();
   const body = method === "GET" || method === "HEAD" ? undefined : await request.arrayBuffer();
 
-  let response: Response;
-  try {
-    response = await fetch(targetUrl, {
-      method,
-      headers,
-      body,
-      redirect: "manual",
-      cache: "no-store"
-    });
-  } catch {
+  let response: Response | undefined;
+  // A rolling API update can leave a very short connection gap. Retry the
+  // server-side proxy before exposing a misleading 502 to the browser.
+  for (const delay of [0, 150, 400]) {
+    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+    try {
+      response = await fetch(targetUrl, {
+        method,
+        headers,
+        body,
+        redirect: "manual",
+        cache: "no-store",
+        signal: AbortSignal.timeout(8000)
+      });
+      break;
+    } catch { }
+  }
+  if (!response) {
     return Response.json(
       { message: "API indisponivel no ambiente DEV. Verifique o servico da API no Coolify." },
       { status: 502 }
