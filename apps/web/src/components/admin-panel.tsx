@@ -171,6 +171,7 @@ export function AdminPanel() {
   const [dateFrom, setDateFrom] = useState(() => toInputDate(new Date()));
   const [dateTo, setDateTo] = useState(() => toInputDate(new Date()));
   const [payingOrderId, setPayingOrderId] = useState<string | null>(null);
+  const [pickupNoticeOrderId, setPickupNoticeOrderId] = useState<string | null>(null);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(() =>
     typeof window !== "undefined" && localStorage.getItem(ADMIN_SOUND_KEY) === "true"
@@ -774,6 +775,28 @@ export function AdminPanel() {
                     }}
                   >
                     🛵 Enviar para Motoboy
+                  </button>
+                )}
+                {order.fulfillmentType === "PICKUP" && order.status === "PREPARING" && !isMercadoPagoPending(order) && !isMercadoPagoRefunded(order) && (
+                  <button
+                    className="rounded-lg bg-amber-600 px-2 py-1 text-xs font-bold text-white"
+                    disabled={pickupNoticeOrderId === order.id}
+                    onClick={() => {
+                      setPickupNoticeOrderId(order.id);
+                      void authApi<{ sendPending?: boolean }>("/admin/whatsapp/inbox/send", token, {
+                        method: "POST",
+                        body: JSON.stringify({
+                          phone: order.customer.phone,
+                          message: `Olá, ${order.customer.name}! Seu pedido #${String(order.orderNumber).padStart(5, "0")} está pronto para retirada no local. Estamos aguardando você!`
+                        })
+                      }).then((payload) => {
+                        toast.success(payload.sendPending ? "Aviso de retirada colocado em processamento" : "Aviso de retirada enviado");
+                      }).catch((error) => {
+                        toast.error(error instanceof Error ? error.message : "Não foi possível enviar o aviso de retirada");
+                      }).finally(() => setPickupNoticeOrderId(null));
+                    }}
+                  >
+                    {pickupNoticeOrderId === order.id ? "Enviando…" : "📦 Pronto para retirada"}
                   </button>
                 )}
                 {order.status !== "CANCELED" && !order.notes?.includes("[PAGO:") && !order.paidAt && order.paymentMethod !== "MERCADO_PAGO" && (
