@@ -283,6 +283,7 @@ export async function updateWhatsappInboxPreferences(req: Request, res: Response
 export async function listWhatsappCustomerOrders(req: Request, res: Response) {
   await ensureTables();
   const phone = digits(req.params.phone);
+  const includeCompleted = String(req.query.includeCompleted ?? "false") === "true";
   if (phone.length < 8) return res.status(400).json({ message: "Numero de telefone invalido" });
   const orders = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
     `SELECT o.id, o."orderNumber", o.status, o."fulfillmentType", o."paymentMethod", o.total,
@@ -291,9 +292,10 @@ export async function listWhatsappCustomerOrders(req: Request, res: Response) {
      INNER JOIN "Customer" c ON c.id = o."customerId" AND c."companyId" = o."companyId"
      WHERE o."companyId" = $1 AND o."deletedAt" IS NULL
        AND RIGHT(REGEXP_REPLACE(c.phone, '\\D', '', 'g'), 8) = RIGHT($2, 8)
+       AND ($3::boolean = TRUE OR o.status NOT IN ('FINISHED', 'CANCELED'))
      ORDER BY o."createdAt" DESC
-     LIMIT 5`,
-    getCompanyId(req), phone
+     LIMIT 10`,
+    getCompanyId(req), phone, includeCompleted
   );
   return res.json(orders);
 }
