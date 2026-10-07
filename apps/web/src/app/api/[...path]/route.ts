@@ -77,19 +77,17 @@ function subdomainFromRequest(request: NextRequest) {
   return looksLikeCoolifyGeneratedHost(subdomain) ? "" : subdomain;
 }
 
-const hopByHopRequestHeaders = [
-  "accept-encoding",
-  "connection",
-  "content-length",
-  "expect",
-  "host",
-  "keep-alive",
-  "proxy-authenticate",
-  "proxy-authorization",
-  "te",
-  "trailer",
-  "transfer-encoding",
-  "upgrade"
+const forwardedRequestHeaders = [
+  "accept",
+  "authorization",
+  "content-type",
+  "cookie",
+  "if-modified-since",
+  "if-none-match",
+  "origin",
+  "range",
+  "referer",
+  "user-agent"
 ];
 
 async function proxy(request: NextRequest, context: { params: Promise<{ path?: string[] }> }) {
@@ -97,9 +95,13 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path?: s
   const targetUrl = new URL(`${apiServerUrl}/api/${path.map(encodeURIComponent).join("/")}`);
   request.nextUrl.searchParams.forEach((value, key) => targetUrl.searchParams.append(key, value));
 
-  const headers = new Headers(request.headers);
-  for (const header of hopByHopRequestHeaders) {
-    headers.delete(header);
+  // Build a clean upstream request. Proxy/CDN headers from the public request
+  // must not be forwarded to the API because they can create routing loops or
+  // stale upstream connections after a Coolify rolling update.
+  const headers = new Headers();
+  for (const header of forwardedRequestHeaders) {
+    const value = request.headers.get(header);
+    if (value) headers.set(header, value);
   }
   headers.set("accept-encoding", "identity");
   headers.set("x-forwarded-host", normalizeHost(request.headers.get("x-forwarded-host") ?? request.headers.get("host")));
