@@ -123,6 +123,7 @@ export default function SettingsManagePage() {
   const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
   const [quickReplyForm, setQuickReplyForm] = useState({ id: "", name: "", message: "", showOnOrders: true });
   const [savingQuickReply, setSavingQuickReply] = useState(false);
+  const [whatsappOrderControlsEnabled, setWhatsappOrderControlsEnabled] = useState(true);
 
   async function handleUnauthorized(response: Response) {
     if (response.status !== 401 || sessionExpiredRef.current) return false;
@@ -253,6 +254,16 @@ export default function SettingsManagePage() {
       });
 
     void loadQuickReplies(token);
+    void apiFetch(`/admin/whatsapp/inbox/preferences`, {
+      headers: { Authorization: `Bearer ${token}` }, cache: "no-store"
+    })
+      .then((response) => ensureAdminResponse(response, "Falha ao carregar controles do WhatsApp"))
+      .then((data) => {
+        if (data) setWhatsappOrderControlsEnabled(data.orderControlsEnabled !== false);
+      })
+      .catch((error) => {
+        if (!sessionExpiredRef.current) toast.error(error.message ?? "Falha ao carregar controles do WhatsApp");
+      });
 
   }, []);
 
@@ -367,6 +378,19 @@ export default function SettingsManagePage() {
     if (!hoursRes.ok) {
       const payload = await readApiJson<any>(hoursRes).catch(() => ({}));
       toast.error(payload.message ?? "Falha ao salvar horarios de funcionamento");
+      return;
+    }
+
+    const whatsappPreferencesRes = await apiFetch(`/admin/whatsapp/inbox/preferences`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ orderControlsEnabled: whatsappOrderControlsEnabled })
+    });
+
+    if (await handleUnauthorized(whatsappPreferencesRes)) return;
+    if (!whatsappPreferencesRes.ok) {
+      const payload: { message?: string } = await readApiJson<{ message?: string }>(whatsappPreferencesRes).catch(() => ({}));
+      toast.error(payload.message ?? "Falha ao salvar controles do WhatsApp");
       return;
     }
 
@@ -871,6 +895,19 @@ export default function SettingsManagePage() {
         <p className="mt-1 text-sm opacity-75">
           Crie mensagens que aparecem no WhatsApp e, quando ativadas, também nos cartões dos pedidos. Use <b>{"{nome}"}</b> para o nome do cliente e <b>{"{pedido}"}</b> para o número do pedido.
         </p>
+
+        <label className="mt-4 flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-500/30 dark:bg-emerald-950/30">
+          <input
+            className="mt-1"
+            type="checkbox"
+            checked={whatsappOrderControlsEnabled}
+            onChange={(event) => setWhatsappOrderControlsEnabled(event.target.checked)}
+          />
+          <span>
+            <b className="block">Mostrar pedidos e controles na tela do WhatsApp</b>
+            <span className="text-sm opacity-75">Exibe o status dos pedidos do cliente e os botões para avançar, dar baixa e finalizar.</span>
+          </span>
+        </label>
 
         <div className="mt-4 grid gap-2 md:grid-cols-[220px_1fr]">
           <label>

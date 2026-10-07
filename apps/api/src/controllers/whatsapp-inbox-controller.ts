@@ -53,6 +53,11 @@ function ensureTables() {
       await prisma.$executeRawUnsafe(`ALTER TABLE whatsapp_inbox_quick_replies ADD COLUMN IF NOT EXISTS show_on_orders BOOLEAN NOT NULL DEFAULT TRUE`);
       await prisma.$executeRawUnsafe(`ALTER TABLE whatsapp_inbox_quick_replies ADD COLUMN IF NOT EXISTS system_key TEXT`);
       await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_inbox_quick_replies_system_idx ON whatsapp_inbox_quick_replies(company_id, system_key) WHERE system_key IS NOT NULL`);
+      await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS whatsapp_inbox_preferences (
+        company_id TEXT PRIMARY KEY,
+        order_controls_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`);
     })().catch((error: unknown) => {
       tablesReady = null;
       throw error;
@@ -245,6 +250,52 @@ export async function listWhatsappQuickReplies(req: Request, res: Response) {
      FROM whatsapp_inbox_quick_replies WHERE company_id = $1 ORDER BY CASE WHEN system_key = 'PICKUP_READY' THEN 0 ELSE 1 END, name`,
     companyId
   ));
+}
+
+export async function getWhatsappInboxPreferences(req: Request, res: Response) {
+  await ensureTables();
+  const companyId = getCompanyId(req);
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO whatsapp_inbox_preferences (company_id, order_controls_enabled) VALUES ($1, TRUE)
+     ON CONFLICT (company_id) DO NOTHING`,
+    companyId
+  );
+  const rows = await prisma.$queryRawUnsafe<Array<{ orderControlsEnabled: boolean }>>(
+    `SELECT order_controls_enabled AS "orderControlsEnabled" FROM whatsapp_inbox_preferences WHERE company_id = $1`,
+    companyId
+  );
+  return res.json(rows[0] ?? { orderControlsEnabled: true });
+}
+
+export async function updateWhatsappInboxPreferences(req: Request, res: Response) {
+  await ensureTables();
+  const body = z.object({ orderControlsEnabled: z.boolean() }).parse(req.body);
+  const rows = await prisma.$queryRawUnsafe<Array<{ orderControlsEnabled: boolean }>>(
+    `INSERT INTO whatsapp_inbox_preferences (company_id, order_controls_enabled, updated_at)
+     VALUES ($1, $2, NOW())
+     ON CONFLICT (company_id) DO UPDATE SET order_controls_enabled = EXCLUDED.order_controls_enabled, updated_at = NOW()
+     RETURNING order_controls_enabled AS "orderControlsEnabled"`,
+    getCompanyId(req), body.orderControlsEnabled
+  );
+  return res.json(rows[0]);
+}
+
+export async function listWhatsappCustomerOrders(req: Request, res: Response) {
+  await ensureTables();
+  const phone = digits(req.params.phone);
+  if (phone.length < 8) return res.status(400).json({ message: "Numero de telefone invalido" });
+  const orders = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+    `SELECT o.id, o."orderNumber", o.status, o."fulfillmentType", o."paymentMethod", o.total,
+            o."paidAt", o."createdAt"
+     FROM "Order" o
+     INNER JOIN "Customer" c ON c.id = o."customerId" AND c."companyId" = o."companyId"
+     WHERE o."companyId" = $1 AND o."deletedAt" IS NULL
+       AND RIGHT(REGEXP_REPLACE(c.phone, '\\D', '', 'g'), 8) = RIGHT($2, 8)
+     ORDER BY o."createdAt" DESC
+     LIMIT 5`,
+    getCompanyId(req), phone
+  );
+  return res.json(orders);
 }
 
 export async function createWhatsappQuickReply(req: Request, res: Response) {

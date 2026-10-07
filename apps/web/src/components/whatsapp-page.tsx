@@ -8,9 +8,76 @@ type Conversation = { phone: string; name: string; unreadCount?: number; isCusto
 type Message = { id: string; phone: string; direction: "in" | "out"; body: string; sentAt: string; readAt?: string | null; quotedMessage?: { id: string; text: string; messageType: string; author?: string } | null; messageType?: string; mediaUrl?: string | null; latitude?: number | null; longitude?: number | null };
 type Label = { id: string; name: string };
 type MediaAttachment = { url: string; filename: string; mimeType: string };
-type QuickReply = { id: string; name: string; message: string; media?: MediaAttachment[] };
+type QuickReply = { id: string; name: string; message: string; media?: MediaAttachment[]; systemKey?: string | null; showOnOrders?: boolean };
 type Product = { id: string; name: string; price: number | string; active?: boolean; available?: boolean };
 type CustomerAddress = { id: string; label?: string | null; address: string; number?: string | null; district?: string | null; complement?: string | null; latitude?: number | null; longitude?: number | null; isDefault?: boolean };
+type CustomerOrderStatus = "RECEIVED" | "PREPARING" | "OUT_FOR_DELIVERY" | "DELIVERED" | "FINISHED" | "CANCELED";
+type CustomerOrder = { id: string; orderNumber: number; status: CustomerOrderStatus; fulfillmentType: "DELIVERY" | "PICKUP"; paymentMethod: string; total: number | string; paidAt?: string | null; createdAt: string };
+
+const orderStatusLabels: Record<CustomerOrderStatus, string> = {
+  RECEIVED: "Recebido",
+  PREPARING: "Em preparo",
+  OUT_FOR_DELIVERY: "Saiu para entrega",
+  DELIVERED: "Entregue",
+  FINISHED: "Finalizado",
+  CANCELED: "Cancelado"
+};
+
+function customerOrderStatusLabel(order: CustomerOrder) {
+  if (order.fulfillmentType === "PICKUP" && order.status === "OUT_FOR_DELIVERY") return "Pronto para retirada";
+  return orderStatusLabels[order.status];
+}
+
+function nextCustomerOrderAction(order: CustomerOrder): { label: string; status: CustomerOrderStatus } | null {
+  if (order.status === "RECEIVED") return { label: "Iniciar preparo", status: "PREPARING" };
+  if (order.status === "PREPARING") return order.fulfillmentType === "PICKUP"
+    ? { label: "Pronto para retirada", status: "OUT_FOR_DELIVERY" }
+    : { label: "Saiu para entrega", status: "OUT_FOR_DELIVERY" };
+  if (order.status === "OUT_FOR_DELIVERY") return { label: "Marcar entregue", status: "DELIVERED" };
+  if (order.status === "DELIVERED") return { label: "Dar baixa / Finalizar", status: "FINISHED" };
+  return null;
+}
+
+function CustomerOrdersPanel({ orders, canManage, updatingOrderId, onAdvance }: {
+  orders: CustomerOrder[];
+  canManage: boolean;
+  updatingOrderId: string;
+  onAdvance: (order: CustomerOrder, status: CustomerOrderStatus) => void;
+}) {
+  return <div className="mt-4 border-t pt-4">
+    <h4 className="text-sm font-bold">Pedidos do cliente</h4>
+    {!orders.length && <p className="mt-2 text-xs text-slate-400">Nenhum pedido encontrado para este número.</p>}
+    <div className="mt-2 space-y-2">
+      {orders.map((order) => {
+        const action = nextCustomerOrderAction(order);
+        const closed = order.status === "FINISHED" || order.status === "CANCELED";
+        return <article key={order.id} className={`rounded-xl border p-3 text-xs ${closed ? "bg-slate-50" : "border-emerald-200 bg-emerald-50"}`}>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <b className="block text-sm">Pedido #{String(order.orderNumber).padStart(5, "0")}</b>
+              <span className="text-slate-500">{new Date(order.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+            </div>
+            <b>R$ {Number(order.total).toFixed(2)}</b>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1">
+            <span className={`rounded-full px-2 py-1 font-bold ${order.status === "CANCELED" ? "bg-red-100 text-red-700" : order.status === "FINISHED" ? "bg-slate-200 text-slate-700" : "bg-emerald-700 text-white"}`}>{customerOrderStatusLabel(order)}</span>
+            <span className={`rounded-full px-2 py-1 font-bold ${order.paidAt ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-800"}`}>{order.paidAt ? "Pago" : "Pagamento pendente"}</span>
+            <span className="rounded-full bg-white px-2 py-1 text-slate-600">{order.fulfillmentType === "PICKUP" ? "Retirada" : "Entrega"}</span>
+          </div>
+          {canManage && action && <button
+            type="button"
+            disabled={Boolean(updatingOrderId)}
+            className="mt-2 w-full rounded-lg bg-emerald-700 px-3 py-2 font-bold text-white disabled:opacity-50"
+            onClick={() => onAdvance(order, action.status)}
+          >
+            {updatingOrderId === order.id ? "Atualizando..." : action.label}
+          </button>}
+        </article>;
+      })}
+    </div>
+    {!canManage && orders.length > 0 && <p className="mt-2 text-[11px] text-slate-500">Seu acesso permite consultar o status, sem alterar o pedido.</p>}
+  </div>;
+}
 
 async function inboxApi<T>(path: string, token: string, init?: RequestInit): Promise<T> {
   const response = await apiFetch(`/admin/whatsapp/inbox${path}`, { ...init, headers: { ...init?.headers, Authorization: `Bearer ${token}` } });
@@ -64,6 +131,10 @@ export default function WhatsAppPage({ token: tokenProp }: { token?: string }) {
   const [savedAddresses, setSavedAddresses] = useState<CustomerAddress[]>([]);
   const [freightQuote, setFreightQuote] = useState<{ fee: number; distanceKm?: number | null } | null>(null);
   const [freightError, setFreightError] = useState("");
+  const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
+  const [orderControlsEnabled, setOrderControlsEnabled] = useState(true);
+  const [canManageOrders, setCanManageOrders] = useState(false);
+  const [updatingOrderId, setUpdatingOrderId] = useState("");
   const conversationsLoaded = useRef(false);
   const messagesLoaded = useRef(false);
   const messagesViewport = useRef<HTMLDivElement>(null);
@@ -91,8 +162,22 @@ export default function WhatsAppPage({ token: tokenProp }: { token?: string }) {
     finally { setLoadingMessages(false); }
   }, [selectedPhone, token]);
 
+  const loadCustomerOrders = useCallback(async () => {
+    if (!token || !selectedPhone || !orderControlsEnabled) {
+      setCustomerOrders([]);
+      return;
+    }
+    try {
+      const data = await inboxApi<CustomerOrder[]>(`/customer-orders/${encodeURIComponent(selectedPhone)}`, token);
+      if (selectedPhoneRef.current === selectedPhone) setCustomerOrders(data);
+    } catch {
+      setCustomerOrders([]);
+    }
+  }, [orderControlsEnabled, selectedPhone, token]);
+
   useEffect(() => { void loadConversations(); }, [loadConversations]);
   useEffect(() => { void loadMessages(); }, [loadMessages]);
+  useEffect(() => { void loadCustomerOrders(); }, [loadCustomerOrders]);
 
   useEffect(() => {
     const root = messagesViewport.current;
@@ -135,14 +220,24 @@ export default function WhatsAppPage({ token: tokenProp }: { token?: string }) {
   }, [messages, selectedPhone, loadingMessages]);
   useEffect(() => {
     if (!token) return;
-    void Promise.all([inboxApi<Label[]>("/labels", token).then(setLabels), inboxApi<QuickReply[]>("/quick-replies", token).then(setQuickReplies)]).catch(() => undefined);
-    const timer = window.setInterval(() => { void loadConversations(); void loadMessages(); }, 10000);
+    void Promise.all([
+      inboxApi<Label[]>("/labels", token).then(setLabels),
+      inboxApi<QuickReply[]>("/quick-replies", token).then(setQuickReplies),
+      inboxApi<{ orderControlsEnabled: boolean }>("/preferences", token).then((value) => setOrderControlsEnabled(value.orderControlsEnabled !== false)),
+      apiFetch("/admin/me", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" })
+        .then((response) => response.ok ? readApiJson<{ permissions?: string[]; role?: string }>(response) : null)
+        .then((me) => setCanManageOrders(me?.role === "OWNER" || me?.role === "ADMIN" || me?.permissions?.includes("ORDERS") === true))
+    ]).catch(() => undefined);
+    const timer = window.setInterval(() => { void loadConversations(); void loadMessages(); void loadCustomerOrders(); }, 10000);
     return () => window.clearInterval(timer);
-  }, [loadConversations, loadMessages, token]);
+  }, [loadConversations, loadCustomerOrders, loadMessages, token]);
 
   const selected = conversations.find((item) => item.phone === selectedPhone);
   const filtered = useMemo(() => conversations.filter((item) => (!unreadOnly || (item.unreadCount || 0) > 0) && `${item.name} ${item.phone}`.toLowerCase().includes(search.toLowerCase())), [conversations, search, unreadOnly]);
   const lastLocation = useMemo(() => [...messages].reverse().find((item) => item.latitude != null && item.longitude != null), [messages]);
+  const quickReplyDraft = useCallback((item: QuickReply) => item.message
+    .replaceAll("{nome}", selected?.name || "cliente")
+    .replaceAll("{pedido}", customerOrders[0] ? String(customerOrders[0].orderNumber).padStart(5, "0") : ""), [customerOrders, selected?.name]);
 
   async function uploadFiles(files: File[]) {
     const media: MediaAttachment[] = [];
@@ -213,6 +308,28 @@ export default function WhatsAppPage({ token: tokenProp }: { token?: string }) {
     if (!selectedPhone || busy) return; setBusy(true);
     try { await inboxApi("/send", token, { method: "POST", body: JSON.stringify({ phone: selectedPhone, message: item.message || "", media: item.media || [] }) }); await Promise.all([loadMessages(), loadConversations()]); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Falha ao enviar atalho"); } finally { setBusy(false); }
+  }
+
+  async function updateCustomerOrder(order: CustomerOrder, status: CustomerOrderStatus) {
+    if (!canManageOrders || updatingOrderId) return;
+    setUpdatingOrderId(order.id);
+    try {
+      const response = await apiFetch(`/admin/orders/${order.id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ status })
+      });
+      if (!response.ok) {
+        const data: { message?: string } = await readApiJson<{ message?: string }>(response).catch(() => ({}));
+        throw new Error(data.message ?? "Não foi possível atualizar o pedido");
+      }
+      await loadCustomerOrders();
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível atualizar o pedido");
+    } finally {
+      setUpdatingOrderId("");
+    }
   }
 
   async function removeShortcut(id: string) {
@@ -288,8 +405,8 @@ export default function WhatsAppPage({ token: tokenProp }: { token?: string }) {
     {selectedPhone && <div className="border-b bg-white px-4 py-2"><button type="button" className={`rounded-lg border px-3 py-2 text-sm font-bold ${recording ? "border-red-500 text-red-700" : "border-emerald-600 text-emerald-800"}`} onClick={() => void toggleRecording()}>{recording ? "■ Parar gravação" : "🎤 Gravar áudio"}</button></div>}
     <div className="grid min-h-0 flex-1 md:grid-cols-[270px_minmax(0,1fr)_250px]">
       <aside className="min-h-0 overflow-hidden border-r bg-slate-50"><div className="p-3"><input className="w-full rounded-xl border bg-white px-3 py-2 text-sm" placeholder="Buscar conversa" value={search} onChange={(e) => setSearch(e.target.value)} /></div><div className="px-3 pb-2"><button type="button" aria-pressed={unreadOnly} onClick={() => setUnreadOnly((value) => !value)} className={`w-full rounded-lg border px-3 py-2 text-sm font-bold ${unreadOnly ? "bg-emerald-700 text-white" : "bg-white text-emerald-800"}`}>Não lidas ({conversations.reduce((total, item) => total + (item.unreadCount || 0), 0)})</button></div><div className="h-[calc(100%-120px)] overflow-y-auto">{loadingConversations ? <p className="p-5 text-center text-sm text-slate-500">Carregando conversas…</p> : filtered.map((item) => <button key={item.phone} onClick={() => { if (item.phone !== selectedPhone) { selectedPhoneRef.current = item.phone; setMessages([]); messagesLoaded.current = false; setLoadingMessages(true); setSelectedPhone(item.phone); } }} className={`block w-full border-t px-4 py-3 text-left ${(item.unreadCount || 0) > 0 ? "whatsapp-unread" : ""} ${selectedPhone === item.phone ? "bg-emerald-100" : "hover:bg-white"}`}><b className="block truncate text-sm">{item.name || item.phone}</b>{(item.unreadCount || 0) > 0 && <span className="inline-block rounded-full bg-emerald-700 px-2 py-0.5 text-xs font-bold text-white" aria-label={`${item.unreadCount} mensagens não lidas`}>{item.unreadCount} não lida{item.unreadCount === 1 ? "" : "s"}</span>}<span className="block truncate text-xs text-slate-500">{item.lastMessage || "Sem mensagem"}</span><small className="text-[10px] text-slate-400">{time(item.lastMessageAt)}</small></button>)}{!loadingConversations && !filtered.length && <p className="p-5 text-center text-sm text-slate-400">{unreadOnly ? "Nenhuma mensagem não lida." : "Nenhuma conversa recebida ainda."}</p>}</div></aside>
-      <div className="flex min-h-0 min-w-0 flex-col bg-[#f4faf7]"><div className="border-b bg-white px-4 py-3"><b>{selected?.name || selectedPhone || "Selecione uma conversa"}</b>{selectedPhone && <span className="ml-2 text-xs text-slate-500">{selectedPhone}</span>}</div><div ref={messagesViewport} className="min-h-0 flex-1 space-y-2 overflow-y-auto p-4">{loadingMessages ? <p className="pt-20 text-center text-sm text-slate-500">Carregando mensagens…</p> : messages.map((item) => <div key={item.id} data-unread-id={item.direction === "in" && item.readAt === null ? item.id : undefined} className={`flex ${item.direction === "out" ? "justify-end" : "justify-start"}`}><div className={`max-w-[78%] rounded-2xl px-4 py-2 text-sm shadow-sm ${item.direction === "out" ? "bg-emerald-100" : "bg-white"}`}><WhatsappMessageContent item={item} token={token} /><small className="mt-1 block text-[10px] text-slate-500">{time(item.sentAt)}</small></div></div>)}{selectedPhone && !loadingMessages && !messages.length && <p className="pt-20 text-center text-sm text-slate-400">Ainda não há mensagens nesta conversa.</p>}</div><div className="border-t bg-white p-3"><div className="mb-2 flex flex-wrap gap-1">{selectedPhone && <button type="button" className="rounded-full border border-amber-600 bg-amber-50 px-2 py-1 text-xs font-bold text-amber-800" onClick={() => setDraft(`Olá, ${selected?.name || "tudo bem"}! Seu pedido está pronto para retirada no local. Estamos aguardando você!`)}>📦 Pronto para retirada</button>}{quickReplies.map((item) => <button key={item.id} className="rounded-full border border-emerald-600 px-2 py-1 text-xs text-emerald-800" onClick={() => setDraft(item.message)}>{item.name}</button>)}</div><div className="mb-2 flex items-center gap-2"><label className="cursor-pointer rounded-lg border px-3 py-2 text-sm" title="Anexar áudio, vídeo ou imagem">📎<input className="hidden" type="file" accept="image/*,audio/*,video/*" multiple onChange={(e) => setAttachments(Array.from(e.target.files || []).slice(0, 5))} /></label>{attachments.length > 0 && <span className="text-xs text-slate-600">{attachments.length} anexo(s) selecionado(s)</span>}</div><div className="flex gap-2"><textarea disabled={!selectedPhone} className="min-h-12 flex-1 resize-none rounded-xl border px-3 py-2 text-sm" placeholder="Digite uma mensagem" value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void sendMessage(); } }} /><button disabled={!selectedPhone || busy} className="rounded-xl bg-emerald-700 px-5 font-bold text-white disabled:opacity-50" onClick={() => void sendMessage()}>{busy ? "..." : "Enviar"}</button></div></div></div>
-      <aside className="min-h-0 overflow-y-auto border-l bg-white p-4"><h3 className="font-bold">Contato</h3>{selectedPhone ? <><p className="mt-1 text-sm text-slate-500">{selectedPhone}</p>{selected?.isCustomer ? <div className="mt-4 rounded-xl bg-emerald-50 p-3"><span className="text-xs text-emerald-700">Cliente cadastrado</span><b className="block">{selected.name}</b><button className="mt-3 w-full rounded-xl bg-emerald-700 px-3 py-3 font-bold text-white" onClick={() => void openManualOrder()}>Adicionar pedido</button></div> : <div className="mt-4 space-y-2"><p className="text-sm text-slate-600">Este número ainda não é cliente.</p><input className="input mt-0" placeholder="Nome da pessoa" value={contactName} onChange={(e) => setContactName(e.target.value)} /><input className="input mt-0 bg-slate-50" value={selectedPhone} readOnly /><button className="w-full rounded-xl bg-emerald-700 px-3 py-3 font-bold text-white" onClick={() => void addCustomer()}>Adicionar cliente</button>{temporaryPassword && <p className="rounded-lg bg-amber-50 p-2 text-xs text-amber-800">Senha temporária: <b>{temporaryPassword}</b><br />No primeiro acesso, o cliente deverá criar outra senha.</p>}</div>}{lastLocation && <p className="mt-3 rounded-lg bg-sky-50 p-2 text-xs text-sky-800">Localização recebida: pronta para preencher o pedido.</p>}<div className="mt-5 border-t pt-4"><h4 className="text-sm font-bold">Etiquetas disponíveis</h4><div className="mt-2 flex flex-wrap gap-1">{labels.map((item) => <span key={item.id} className="rounded-full bg-slate-100 px-2 py-1 text-xs">{item.name}</span>)}{!labels.length && <span className="text-xs text-slate-400">Crie uma etiqueta acima.</span>}</div></div></> : <p className="mt-4 text-sm text-slate-400">Selecione uma conversa.</p>}</aside>
+      <div className="flex min-h-0 min-w-0 flex-col bg-[#f4faf7]"><div className="border-b bg-white px-4 py-3"><b>{selected?.name || selectedPhone || "Selecione uma conversa"}</b>{selectedPhone && <span className="ml-2 text-xs text-slate-500">{selectedPhone}</span>}</div><div ref={messagesViewport} className="min-h-0 flex-1 space-y-2 overflow-y-auto p-4">{loadingMessages ? <p className="pt-20 text-center text-sm text-slate-500">Carregando mensagens…</p> : messages.map((item) => <div key={item.id} data-unread-id={item.direction === "in" && item.readAt === null ? item.id : undefined} className={`flex ${item.direction === "out" ? "justify-end" : "justify-start"}`}><div className={`max-w-[78%] rounded-2xl px-4 py-2 text-sm shadow-sm ${item.direction === "out" ? "bg-emerald-100" : "bg-white"}`}><WhatsappMessageContent item={item} token={token} /><small className="mt-1 block text-[10px] text-slate-500">{time(item.sentAt)}</small></div></div>)}{selectedPhone && !loadingMessages && !messages.length && <p className="pt-20 text-center text-sm text-slate-400">Ainda não há mensagens nesta conversa.</p>}</div><div className="border-t bg-white p-3"><div className="mb-2 flex flex-wrap gap-1">{selectedPhone && quickReplies.map((item) => <button key={item.id} className={`rounded-full border px-2 py-1 text-xs ${item.systemKey === "PICKUP_READY" ? "border-amber-600 bg-amber-50 font-bold text-amber-800" : "border-emerald-600 text-emerald-800"}`} onClick={() => setDraft(quickReplyDraft(item))}>{item.systemKey === "PICKUP_READY" ? "📦 " : ""}{item.name}</button>)}</div><div className="mb-2 flex items-center gap-2"><label className="cursor-pointer rounded-lg border px-3 py-2 text-sm" title="Anexar áudio, vídeo ou imagem">📎<input className="hidden" type="file" accept="image/*,audio/*,video/*" multiple onChange={(e) => setAttachments(Array.from(e.target.files || []).slice(0, 5))} /></label>{attachments.length > 0 && <span className="text-xs text-slate-600">{attachments.length} anexo(s) selecionado(s)</span>}</div><div className="flex gap-2"><textarea disabled={!selectedPhone} className="min-h-12 flex-1 resize-none rounded-xl border px-3 py-2 text-sm" placeholder="Digite uma mensagem" value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void sendMessage(); } }} /><button disabled={!selectedPhone || busy} className="rounded-xl bg-emerald-700 px-5 font-bold text-white disabled:opacity-50" onClick={() => void sendMessage()}>{busy ? "..." : "Enviar"}</button></div></div></div>
+      <aside className="min-h-0 overflow-y-auto border-l bg-white p-4"><h3 className="font-bold">Contato</h3>{selectedPhone ? <><p className="mt-1 text-sm text-slate-500">{selectedPhone}</p>{selected?.isCustomer ? <div className="mt-4 rounded-xl bg-emerald-50 p-3"><span className="text-xs text-emerald-700">Cliente cadastrado</span><b className="block">{selected.name}</b><button className="mt-3 w-full rounded-xl bg-emerald-700 px-3 py-3 font-bold text-white" onClick={() => void openManualOrder()}>Adicionar pedido</button></div> : <div className="mt-4 space-y-2"><p className="text-sm text-slate-600">Este número ainda não é cliente.</p><input className="input mt-0" placeholder="Nome da pessoa" value={contactName} onChange={(e) => setContactName(e.target.value)} /><input className="input mt-0 bg-slate-50" value={selectedPhone} readOnly /><button className="w-full rounded-xl bg-emerald-700 px-3 py-3 font-bold text-white" onClick={() => void addCustomer()}>Adicionar cliente</button>{temporaryPassword && <p className="rounded-lg bg-amber-50 p-2 text-xs text-amber-800">Senha temporária: <b>{temporaryPassword}</b><br />No primeiro acesso, o cliente deverá criar outra senha.</p>}</div>}{lastLocation && <p className="mt-3 rounded-lg bg-sky-50 p-2 text-xs text-sky-800">Localização recebida: pronta para preencher o pedido.</p>}{orderControlsEnabled && <CustomerOrdersPanel orders={customerOrders} canManage={canManageOrders} updatingOrderId={updatingOrderId} onAdvance={(order, status) => void updateCustomerOrder(order, status)} />}<div className="mt-5 border-t pt-4"><h4 className="text-sm font-bold">Etiquetas disponíveis</h4><div className="mt-2 flex flex-wrap gap-1">{labels.map((item) => <span key={item.id} className="rounded-full bg-slate-100 px-2 py-1 text-xs">{item.name}</span>)}{!labels.length && <span className="text-xs text-slate-400">Crie uma etiqueta acima.</span>}</div></div></> : <p className="mt-4 text-sm text-slate-400">Selecione uma conversa.</p>}</aside>
     </div>
     {showManualOrder && <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/50 p-4"><div className="mx-auto my-8 max-w-2xl rounded-2xl bg-white p-5 shadow-2xl"><div className="flex items-center justify-between"><div><h3 className="text-xl font-bold">Pedido manual</h3><p className="text-sm text-slate-500">{selected?.name} · {selectedPhone}</p></div><button className="rounded-lg px-3 py-2" onClick={() => setShowManualOrder(false)}>Fechar</button></div>{savedAddresses.length > 0 && <div className="mt-4"><label className="mb-1 block text-xs font-bold text-slate-600">Endereço salvo</label><select className="w-full rounded-xl border px-3 py-2" defaultValue="" onChange={(e) => { const address = savedAddresses.find((item) => item.id === e.target.value); if (!address) return; setManualAddress(address.address); setManualNumber(address.number || "S/N"); setManualDistrict(address.district || "A confirmar"); setManualComplement(address.complement || ""); void quoteFreight(address.latitude, address.longitude); }}><option value="">Escolher endereço…</option>{savedAddresses.map((address) => <option key={address.id} value={address.id}>{address.label || "Endereço"} — {address.address}, {address.number || "S/N"}</option>)}</select></div>}<div className="mt-4 grid gap-2 md:grid-cols-2"><input className="input mt-0" value={manualAddress} onChange={(e) => setManualAddress(e.target.value)} placeholder="Endereço" /><input className="input mt-0" value={manualNumber} onChange={(e) => setManualNumber(e.target.value)} placeholder="Número" /><input className="input mt-0" value={manualDistrict} onChange={(e) => setManualDistrict(e.target.value)} placeholder="Bairro" /><input className="input mt-0" value={manualComplement} onChange={(e) => setManualComplement(e.target.value)} placeholder="Complemento" /></div>{lastLocation && <p className="mt-2 text-xs text-emerald-700">✓ Coordenadas da localização do WhatsApp serão usadas no cálculo do frete.</p>}{freightQuote && <p className="mt-2 rounded-lg bg-emerald-50 p-3 text-sm font-bold text-emerald-800">Frete: R$ {freightQuote.fee.toFixed(2)}{freightQuote.distanceKm != null ? ` · ${Number(freightQuote.distanceKm).toFixed(1)} km` : ""}</p>}{freightError && <p className="mt-2 rounded-lg bg-amber-50 p-3 text-xs text-amber-800">Frete não calculado: {freightError}</p>}<div className="mt-4 max-h-60 overflow-y-auto rounded-xl border">{products.map((product) => <div key={product.id} className="flex items-center justify-between border-b px-3 py-2"><span>{product.name} <small className="text-slate-500">R$ {Number(product.price).toFixed(2)}</small></span><div className="flex items-center gap-2"><button className="rounded border px-2" onClick={() => setQuantities((current) => ({ ...current, [product.id]: Math.max(0, (current[product.id] || 0) - 1) }))}>−</button><b>{quantities[product.id] || 0}</b><button className="rounded border px-2" onClick={() => setQuantities((current) => ({ ...current, [product.id]: (current[product.id] || 0) + 1 }))}>+</button></div></div>)}</div><div className="mt-4 flex flex-wrap items-center justify-between gap-3"><select className="rounded-xl border px-3 py-2" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}><option value="PIX">Pix</option><option value="CASH">Dinheiro</option><option value="CARD">Cartão</option></select><button disabled={busy} className="rounded-xl bg-emerald-700 px-5 py-3 font-bold text-white disabled:opacity-50" onClick={() => void createManualOrder()}>{busy ? "Criando..." : "Criar pedido e enviar à loja"}</button></div></div></div>}
   </section>;
